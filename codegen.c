@@ -1,4 +1,4 @@
-#include "chibicc.h"
+#include "superc.h"
 
 #define GP_MAX 6
 #define FP_MAX 8
@@ -1301,6 +1301,10 @@ static void gen_stmt(Node *node) {
   case ND_ASM:
     println("  %s", node->asm_str);
     return;
+  /* SuperC */
+  case ND_DEFER:
+    /* NOTHING */
+    return;
   }
 
   error_tok(node->tok, "invalid statement");
@@ -1576,6 +1580,17 @@ static void emit_text(Obj *prog) {
 
     // Epilogue
     println(".L.return.%s:", fn->name);
+
+    if (fn->defers_count > 0) {
+      push(); /* Save the return value (for if it's destroyed) */
+      /* Emit deferred statements in reverse order */
+      for (int i = fn->defers_count - 1; i >= 0; i--) {
+        println("  .L.defer.%s.%d:", fn->name, i);
+        gen_stmt(fn->defers[i]);
+      }
+      pop("%rax"); /* Recover the return value */
+    }
+
     println("  mov %%rbp, %%rsp");
     println("  pop %%rbp");
     println("  ret");

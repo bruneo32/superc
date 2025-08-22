@@ -1,4 +1,4 @@
-#include "chibicc.h"
+#include "superc.h"
 
 Type *ty_void = &(Type){TY_VOID, 1, 1};
 Type *ty_bool = &(Type){TY_BOOL, 1, 1};
@@ -304,4 +304,146 @@ void add_type(Node *node) {
     node->ty = node->lhs->ty->base;
     return;
   }
+}
+
+/** Check if two types are C compatible. */
+bool same_type(Type *a, Type *b) {
+  if (a == b)
+    return true;
+  if (a->kind != b->kind)
+    return false;
+
+  switch (a->kind) {
+  case TY_VOID:
+    return true;
+  case TY_BOOL: case TY_CHAR: case TY_SHORT: case TY_INT: case TY_LONG:
+  case TY_FLOAT: case TY_DOUBLE:
+    // For primitive scalars: check size + signedness
+    return a->size == b->size && a->is_unsigned == b->is_unsigned;
+
+  case TY_PTR:
+    return same_type(a->base, b->base);
+
+  case TY_ARRAY:
+    return a->array_len == b->array_len && same_type(a->base, b->base);
+
+  case TY_FUNC:
+    if (!same_type(a->return_ty, b->return_ty))
+      return false;
+    // Compare parameter lists
+    Type *pa = a->params, *pb = b->params;
+    for (; pa && pb; pa=pa->next, pb=pb->next)
+      if (!same_type(pa, pb))
+        return false;
+    return pa == NULL && pb == NULL && a->is_variadic == b->is_variadic;
+
+  case TY_STRUCT: case TY_UNION:
+    // easiest: require them to be the *same tag* (same declaration symbol)
+    return a->name && b->name && !strncmp(a->name->loc, b->name->loc, a->name->len);
+
+  default:
+    return false;
+  }
+}
+
+char *type_to_string(Type *ty) {
+  char buf[512];
+  char *s = buf;
+  #define BUFSIZE (sizeof(buf) - (s - buf))
+
+  switch (ty->kind) {
+  case TY_VOID:
+    s += snprintf(s, BUFSIZE, "void");
+    break;
+  case TY_BOOL:
+    s += snprintf(s, BUFSIZE, "bool");
+    break;
+  case TY_CHAR:
+    s += snprintf(s, BUFSIZE, "char");
+    break;
+  case TY_SHORT:
+    s += snprintf(s, BUFSIZE, "short");
+    break;
+  case TY_INT:
+    s += snprintf(s, BUFSIZE, "int");
+    break;
+  case TY_LONG:
+    s += snprintf(s, BUFSIZE, "long");
+    break;
+  case TY_FLOAT:
+    s += snprintf(s, BUFSIZE, "float");
+    break;
+  case TY_DOUBLE:
+    s += snprintf(s, BUFSIZE, "double");
+    break;
+  case TY_LDOUBLE:
+    s += snprintf(s, BUFSIZE, "long double");
+    break;
+
+  case TY_ENUM: {
+    s += snprintf(s, BUFSIZE, "enum");
+    if (ty->name) {
+      char name[ty->name->len + 1];
+      strncpy(name, ty->name->loc, ty->name->len);
+      s += snprintf(s, BUFSIZE, " %s", name);
+    }
+  } break;
+
+  case TY_PTR: {
+    char *base = type_to_string(ty->base);
+    s += snprintf(s, BUFSIZE, "%s*", base);
+    free(base);
+  } break;
+
+  case TY_ARRAY: {
+    char *base = type_to_string(ty->base);
+    s += snprintf(s, BUFSIZE, "%s[%d]", base, ty->array_len);
+    free(base);
+  } break;
+
+  case TY_VLA: {
+    char *base = type_to_string(ty->base);
+    s += snprintf(s, BUFSIZE, "%s[]", base);
+    free(base);
+  } break;
+
+  case TY_STRUCT: {
+    s += snprintf(s, BUFSIZE, "struct");
+    if (ty->name) {
+      char name[ty->name->len + 1];
+      strncpy(name, ty->name->loc, ty->name->len);
+      s += snprintf(s, BUFSIZE, " %s", name);
+    }
+  } break;
+
+  case TY_UNION: {
+    s += snprintf(s, BUFSIZE, "union");
+    if (ty->name) {
+      char name[ty->name->len + 1];
+      strncpy(name, ty->name->loc, ty->name->len);
+      s += snprintf(s, BUFSIZE, " %s", name);
+    }
+  } break;
+
+  case TY_FUNC: {
+    char *ret = type_to_string(ty->return_ty);
+    s += snprintf(s, BUFSIZE, "%s(", ret);
+    free(ret);
+    for (Type *p = ty->params; p; p = p->next) {
+      if (p != ty->params) s += snprintf(s, BUFSIZE, ", ");
+      char *pt = type_to_string(p);
+      s += snprintf(s, BUFSIZE, "%s", pt);
+      free(pt);
+    }
+    if (ty->is_variadic) s += snprintf(s, BUFSIZE, "%s...", ty->params ? ", " : "");
+    s += snprintf(s, BUFSIZE, ")");
+  } break;
+
+  default:
+    s += snprintf(s, BUFSIZE, "unknown");
+  }
+
+  #undef BUFSIZE
+
+  return strdup(buf);
 }

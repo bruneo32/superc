@@ -18,6 +18,13 @@
 #include <time.h>
 #include <unistd.h>
 
+#define PROJECT_VERSION_MAJOR    0
+#define PROJECT_VERSION_MINOR    1
+#define PROJECT_VERSION_PATCH    0
+#define PROJECT_VERSION_REVISION 0
+
+#define MAX_DEFERS 100
+
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
@@ -148,12 +155,15 @@ struct Obj {
 
   // Function
   bool is_inline;
+  Type *method_ty;
   Obj *params;
   Node *body;
   Obj *locals;
   Obj *va_area;
   Obj *alloca_bottom;
   int stack_size;
+  Node *defers[MAX_DEFERS];
+  int defers_count;
 
   // Static inline function
   bool is_live;
@@ -222,6 +232,8 @@ typedef enum {
   ND_ASM,       // "asm"
   ND_CAS,       // Atomic compare-and-swap
   ND_EXCH,      // Atomic exchange
+  /* SuperC */
+  ND_DEFER,     // "defer"
 } NodeKind;
 
 // AST node type
@@ -253,6 +265,7 @@ struct Node {
 
   // Function call
   Type *func_ty;
+  Node *recv;
   Node *args;
   bool pass_by_stack;
   Obj *ret_buffer;
@@ -403,6 +416,8 @@ Type *vla_of(Type *base, Node *expr);
 Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
+bool same_type(Type *a, Type *b);
+char *type_to_string(Type *ty);
 
 //
 // codegen.c

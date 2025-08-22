@@ -22,7 +22,7 @@
 // standard's wording:
 // https://github.com/rui314/chibicc/wiki/cpp.algo.pdf
 
-#include "chibicc.h"
+#include "superc.h"
 
 typedef struct MacroParam MacroParam;
 struct MacroParam {
@@ -1084,7 +1084,7 @@ void init_macros(void) {
   define_macro("__alignof__", "_Alignof");
   define_macro("__amd64", "1");
   define_macro("__amd64__", "1");
-  define_macro("__chibicc__", "1");
+  define_macro("__superc__", "1");
   define_macro("__const__", "const");
   define_macro("__gnu_linux__", "1");
   define_macro("__inline__", "inline");

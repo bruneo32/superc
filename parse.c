@@ -16,7 +16,7 @@
 // So it is very easy to lookahead arbitrary number of tokens in this
 // parser.
 
-#include "chibicc.h"
+#include "superc.h"
 
 // Scope for local variables, global variables, typedefs
 // or enum constants
@@ -149,12 +149,15 @@ static Type *struct_decl(Token **rest, Token *tok);
 static Type *union_decl(Token **rest, Token *tok);
 static Node *postfix(Token **rest, Token *tok);
 static Node *funcall(Token **rest, Token *tok, Node *node);
+static Node *methodcall(Token **rest, Token *tok, Node *node);
 static Node *unary(Token **rest, Token *tok);
 static Node *primary(Token **rest, Token *tok);
 static Token *parse_typedef(Token *tok, Type *basety);
 static bool is_function(Token *tok);
+static bool is_type_method(Token *tok);
 static Token *function(Token *tok, Type *basety, VarAttr *attr);
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
+static Obj *find_func(char *name);
 
 static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
@@ -1541,6 +1544,7 @@ static Node *asm_stmt(Token **rest, Token *tok) {
 //      | "goto" (ident | "*" expr) ";"
 //      | "break" ";"
 //      | "continue" ";"
+//      | "defer" compound_stmt
 //      | ident ":" stmt
 //      | "{" compound-stmt
 //      | expr-stmt
@@ -1741,6 +1745,27 @@ static Node *stmt(Token **rest, Token *tok) {
     node->unique_label = cont_label;
     *rest = skip(tok->next, ";");
     return node;
+  }
+
+  if (equal(tok, "defer")) {
+    if (!current_fn)
+      error_tok(tok, "stray defer");
+
+    if(current_fn->defers_count < MAX_DEFERS)
+      current_fn->defers_count++;
+    else
+      error_tok(tok, "too many defers");
+
+    Node* node;
+
+    tok = tok->next;
+    if (equal(tok, "{"))
+      node = compound_stmt(rest, tok->next);
+    else
+      error_tok(tok, "expected expression statement after 'defer'");
+
+    current_fn->defers[current_fn->defers_count - 1] = node;
+    return new_node(ND_BLOCK, tok); /* NOP */
   }
 
   if (tok->kind == TK_IDENT && equal(tok->next, ":")) {
@@ -2841,8 +2866,17 @@ static Node *postfix(Token **rest, Token *tok) {
     }
 
     if (equal(tok, ".")) {
-      node = struct_ref(node, tok->next);
-      tok = tok->next->next;
+      Token *name_tok = tok->next;
+      Token *after_name = name_tok->next;
+
+      if (equal(after_name, "(")) {
+        node = methodcall(&tok, tok, node);
+        continue;
+      }
+
+      // normal struct member
+      node = struct_ref(node, name_tok);
+      tok = after_name;
       continue;
     }
 
@@ -2885,8 +2919,26 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   Node head = {};
   Node *cur = &head;
 
+  // Add receiver as first parameter of the function
+  if (fn->recv) {
+    add_type(fn->recv);
+
+    if (param_ty) {
+      if (param_ty->kind != TY_STRUCT && param_ty->kind != TY_UNION)
+        fn->recv = new_cast(fn->recv, param_ty);
+      param_ty = param_ty->next;
+    } else if (fn->recv->ty->kind == TY_FLOAT) {
+      // If parameter type is omitted (e.g. in "..."), float
+      // arguments are promoted to double.
+      fn->recv = new_cast(fn->recv, ty_double);
+    }
+
+    cur = cur->next = fn->recv;
+  }
+
+  bool first = true;
   while (!equal(tok, ")")) {
-    if (cur != &head)
+    if (!first)
       tok = skip(tok, ",");
 
     Node *arg = assign(&tok, tok);
@@ -2905,6 +2957,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
       arg = new_cast(arg, ty_double);
     }
 
+    first = false;
     cur = cur->next = arg;
   }
 
@@ -2923,6 +2976,39 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
     node->ret_buffer = new_lvar("", node->ty);
   return node;
+}
+
+// methodcall = expr "." ident "(" func-args ")"
+// rewrites "obj.method(a, b)" to "method(obj, a, b)"
+static Node *methodcall(Token **rest, Token *tok, Node *recv) {
+  // method call: (expr).ident(...)
+  Token *name_tok = tok->next;
+  Token *after_name = name_tok->next;
+
+  add_type(recv);
+
+  Type *basety = recv->ty;
+
+  Obj *fnobj = NULL;
+  if (name_tok->kind == TK_IDENT)
+    fnobj = find_func(get_ident(name_tok));
+  else
+    error_tok(name_tok, "expected a method name");
+
+  /* Check that is the type expected */
+  Type *impl_type = fnobj->ty->params; /* First param holds the method implicit type */
+  if (!same_type(basety, impl_type))
+    error_tok(name_tok, "expected a method of type '%s'", type_to_string(basety));
+
+  tok = skip(after_name, "(");
+
+  Node *fn = new_var_node(fnobj, name_tok);  // callee is an identifier
+  fn->ty = fnobj->ty;
+  fn->func_ty = fnobj->ty;
+  fn->recv = recv;
+
+  *rest = tok;
+  return funcall(rest, tok, fn);
 }
 
 // generic-selection = "(" assign "," generic-assoc ("," generic-assoc)* ")"
@@ -3101,7 +3187,7 @@ static Node *primary(Token **rest, Token *tok) {
 
     if (equal(tok->next, "("))
       error_tok(tok, "implicit declaration of a function");
-    error_tok(tok, "undefined variable");
+    error_tok(tok, "undefined variable '%s'", get_ident(tok));
   }
 
   if (tok->kind == TK_STR) {
@@ -3196,7 +3282,32 @@ static void mark_live(Obj *var) {
   }
 }
 
+static bool is_type_method(Token *tok) {
+  if (!equal(tok, "(") || !is_typename(tok->next))
+    return false;
+  return true;
+}
+
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
+  /* Check if it's a type method */
+  Type* impl_type = NULL;
+
+  if (is_type_method(tok)) {
+    tok = tok->next;
+
+    Type* impl_base = declspec(&tok, tok, NULL);
+    impl_type = declarator(&tok, tok, impl_base);
+
+    if (!impl_type->name)
+      error_tok(impl_type->name_pos, "expected an identifier");
+
+    /* This is not arbitrary, the next declarator function
+     * would destroy the impl_type references. So copy to save. */
+    impl_type = copy_type(impl_type);
+
+    tok = skip(tok, ")");
+  }
+
   Type *ty = declarator(&tok, tok, basety);
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
@@ -3221,6 +3332,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   }
 
   fn->is_root = !(fn->is_static && fn->is_inline);
+  fn->method_ty = impl_type;
 
   if (consume(&tok, tok, ";"))
     return tok;
@@ -3228,6 +3340,13 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   current_fn = fn;
   locals = NULL;
   enter_scope();
+
+  /* If there is an method implicit receiver, prepend it to param list */
+  if (impl_type) {
+    impl_type->next = ty->params;
+    ty->params = impl_type;
+  }
+
   create_param_lvars(ty->params);
 
   // A buffer for a struct/union return value is passed
@@ -3293,6 +3412,20 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
 static bool is_function(Token *tok) {
   if (equal(tok, ";"))
     return false;
+
+  /* Check if it's type method */
+  if (is_type_method(tok)) {
+    tok = tok->next;
+
+    /* Skip type specifiers */
+    Type *bt = declspec(&tok, tok, NULL);
+    Type *ty = declarator(&tok, tok, bt);
+
+    if (!ty->name)
+      error_tok(ty->name_pos, "expected an identifier");
+
+    tok = skip(tok, ")");
+  }
 
   Type dummy = {};
   Type *ty = declarator(&tok, tok, &dummy);

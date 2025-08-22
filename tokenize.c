@@ -1,4 +1,4 @@
-#include "chibicc.h"
+#include "superc.h"
 
 // Input file
 static File *current_file;
@@ -168,6 +168,8 @@ static bool is_keyword(Token *tok) {
       "__restrict", "__restrict__", "_Noreturn", "float", "double",
       "typeof", "asm", "_Thread_local", "__thread", "_Atomic",
       "__attribute__",
+      /* SuperC */
+      "defer",
     };
 
     for (int i = 0; i < sizeof(kw) / sizeof(*kw); i++)

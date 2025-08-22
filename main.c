@@ -1,4 +1,4 @@
-#include "chibicc.h"
+#include "superc.h"
 
 typedef enum {
   FILE_NONE, FILE_C, FILE_ASM, FILE_OBJ, FILE_AR, FILE_DSO,
@@ -34,8 +34,15 @@ static char *output_file;
 static StringArray input_paths;
 static StringArray tmpfiles;
 
-static void usage(int status) {
-  fprintf(stderr, "chibicc [ -o <path> ] <file>\n");
+static void print_usage_exit(int status, const char* progname) {
+  fprintf(stderr, "%s [ -o <path> ] <file>\n", progname);
+  exit(status);
+}
+
+static void print_version_exit(int status) {
+  fprintf(stderr, "%d.%d.%d.%d\n",
+        PROJECT_VERSION_MAJOR, PROJECT_VERSION_MINOR,
+        PROJECT_VERSION_PATCH, PROJECT_VERSION_REVISION);
   exit(status);
 }
 
@@ -51,7 +58,7 @@ static bool take_arg(char *arg) {
 }
 
 static void add_default_include_paths(char *argv0) {
-  // We expect that chibicc-specific include files are installed
+  // We expect that superc-specific include files are installed
   // to ./include relative to argv[0].
   strarray_push(&include_paths, format("%s/include", dirname(strdup(argv0))));
 
@@ -117,7 +124,7 @@ static void parse_args(int argc, char **argv) {
   for (int i = 1; i < argc; i++)
     if (take_arg(argv[i]))
       if (!argv[++i])
-        usage(1);
+        print_usage_exit(1, argv[0]);
 
   StringArray idirafter = {};
 
@@ -132,8 +139,11 @@ static void parse_args(int argc, char **argv) {
       continue;
     }
 
-    if (!strcmp(argv[i], "--help"))
-      usage(0);
+    if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h"))
+      print_usage_exit(0, argv[0]);
+
+    if (!strcmp(argv[i], "--version"))
+      print_version_exit(0);
 
     if (!strcmp(argv[i], "-o")) {
       opt_o = argv[++i];
@@ -378,7 +388,7 @@ static void cleanup(void) {
 }
 
 static char *create_tmpfile(void) {
-  char *path = strdup("/tmp/chibicc-XXXXXX");
+  char *path = strdup("/tmp/superc-XXXXXX");
   int fd = mkstemp(path);
   if (fd == -1)
     error("mkstemp failed: %s", strerror(errno));

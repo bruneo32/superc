@@ -1,4 +1,4 @@
-#include "chibicc.h"
+#include "superc.h"
 
 void strarray_push(StringArray *arr, char *s) {
   if (!arr->data) {
