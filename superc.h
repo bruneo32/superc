@@ -360,6 +360,7 @@ struct Type {
   Obj *vla_size; // sizeof() value
 
   // Struct
+  Token *tagname;
   Member *members;
   bool is_flexible;
   bool is_packed;
@@ -418,6 +419,7 @@ Type *struct_type(void);
 void add_type(Node *node);
 bool same_type(Type *a, Type *b);
 char *type_to_string(Type *ty);
+char *type_to_cident(Type *ty);
 
 //
 // codegen.c

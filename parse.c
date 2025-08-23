@@ -768,6 +768,7 @@ static Type *enum_specifier(Token **rest, Token *tok) {
     if (ty->kind != TY_ENUM)
       error_tok(tag, "not an enum tag");
     *rest = tok;
+    ty->tagname = tag;
     return ty;
   }
 
@@ -791,8 +792,11 @@ static Type *enum_specifier(Token **rest, Token *tok) {
     sc->enum_val = val++;
   }
 
-  if (tag)
+  if (tag) {
+    ty->tagname = tag;
     push_tag_scope(tag, ty);
+  }
+
   return ty;
 }
 
@@ -2674,6 +2678,7 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
       return ty2;
 
     ty->size = -1;
+    ty->tagname = tag;
     push_tag_scope(tag, ty);
     return ty;
   }
@@ -2685,6 +2690,8 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
   *rest = attribute_list(tok, ty);
 
   if (tag) {
+    ty->tagname = tag;
+
     // If this is a redefinition, overwrite a previous type.
     // Otherwise, register the struct type.
     Type *ty2 = hashmap_get2(&scope->tags, tag->loc, tag->len);
@@ -2988,17 +2995,32 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   add_type(recv);
 
   Type *basety = recv->ty;
+  char *basety_str = type_to_string(basety);
 
   Obj *fnobj = NULL;
-  if (name_tok->kind == TK_IDENT)
-    fnobj = find_func(get_ident(name_tok));
-  else
+  if (name_tok->kind != TK_IDENT)
     error_tok(name_tok, "expected a method name");
 
+  char *name_str = get_ident(name_tok);
+
+  /* Rename symbol from `sum` to `sum$i` */
+  char *type_cname = type_to_cident(basety);
+  size_t newlen = strlen(name_str) + strlen(type_cname) + 2;
+  char *newname = malloc(newlen);
+  snprintf(newname, newlen, "%s$%s", name_str, type_cname);
+  free(name_str);
+  free(type_cname);
+  name_str = newname;
+
+  /* Lookup method */
+  fnobj = find_func(name_str);
+  if (!fnobj)
+    error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
+
   /* Check that is the type expected */
-  Type *impl_type = fnobj->ty->params; /* First param holds the method implicit type */
+  Type *impl_type = fnobj->method_ty;
   if (!same_type(basety, impl_type))
-    error_tok(name_tok, "expected a method of type '%s'", type_to_string(basety));
+    error_tok(name_tok, "expected a method of type '%s'", basety_str);
 
   tok = skip(after_name, "(");
 
@@ -3312,6 +3334,18 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
+
+  if (impl_type) {
+    /* Rename symbol from `sum` to `sum$i` */
+    char *type_cname = type_to_cident(impl_type);
+    size_t newlen = strlen(name_str) + strlen(type_cname) + 2;
+    char *newname = malloc(newlen);
+    snprintf(newname, newlen, "%s$%s", name_str, type_cname);
+    free(name_str);
+    free(type_cname);
+
+    name_str = newname;
+  }
 
   Obj *fn = find_func(name_str);
   if (fn) {

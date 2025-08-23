@@ -1,8 +1,8 @@
 #include "test.h"
 
-// int sum(int a, int b) {
-//   return a - b;
-// }
+int sum(int a, int b) {
+  return a - b;
+}
 
 int (int a) sum(int b) {
 	return a + b;
@@ -19,7 +19,7 @@ void (struct cat* c) roar() {
 
 int main() {
   ASSERT(3, ((int)1).sum(2));
-  // ASSERT(-1, sum(1, 2));
+  ASSERT(-1, sum(1, 2));
 
   struct cat mycat = { "Mr. Pants", 3 };
   (&mycat).roar();
