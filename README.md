@@ -1,9 +1,13 @@
 # SuperC: C11 superset language
 
-## Features
-- [Defer](#defer)
-- [Type methods](#type-methods)
+### Index
+- [Current developed features](#current-developed-features)
+  - [Defer](#defer)
+  - [Type methods](#type-methods)
+- [Current planned features](#current-planned-features)
+  - [Lambdas](#lambdas)
 
+# Current developed features
 ## Defer
 Will execute the code stated right before exiting a block of code.
 ### Examples
@@ -96,6 +100,59 @@ int main() {
 
   // Kachow has driven 203 kms
   printf("%s has driven %d kms\n", c.name, c.kms);
+  return 0;
+}
+```
+
+# Current planned features
+> Please note that the **syntax** of all the planned features is **subject to change**.
+
+## Lambdas
+Lambdas are anonymous functions that can be assigned to variables, or used immediately.
+
+### Examples
+```c
+#include <stdio.h>
+
+int main() {
+  auto add = int (int a, int b) {
+    return a + b;
+  }
+
+  // 5
+  printf("%d\n", add(2, 3));
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+void sort(int *a, int n, int (*cmp)(int, int)) {
+  for (int i = 0; i < n; i++) {
+    for (int j = i + 1; j < n; j++) {
+      if (cmp(a[i], a[j]) > 0) {
+        int tmp = a[i];
+        a[i] = a[j];
+        a[j] = tmp;
+      }
+    }
+  }
+}
+
+int main() {
+  /* Unordered array */
+  int a[10] = { 4, 1, -5, 1, 3, 2, 6, 8, 9, 7 };
+
+  sort(a, 10, int (int a, int b) {
+    /* Return 1 if a > b */
+    return a - b;
+  });
+
+  /* Print out the ordered array */
+  for (int i = 0; i < 10; i++)
+    printf("%d ", a[i]);
+  putchat('\n');
+
   return 0;
 }
 ```
