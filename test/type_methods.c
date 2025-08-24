@@ -19,6 +19,7 @@ void (struct cat* c) roar() {
 
 int main() {
   ASSERT(3, ((int)1).sum(2));
+  ASSERT(3, (int).sum(1, 2));
   ASSERT(-1, sum(1, 2));
 
   struct cat mycat = { "Mr. Pants", 3 };

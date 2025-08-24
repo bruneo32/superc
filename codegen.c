@@ -76,11 +76,18 @@ static char *reg_ax(int sz) {
   unreachable();
 }
 
+static char* get_symbol(Obj *var) {
+  if (var->symbol)
+    return var->symbol;
+  return var->name;
+}
+
 // Compute the absolute address of a given node.
 // It's an error if a given node does not reside in memory.
 static void gen_addr(Node *node) {
   switch (node->kind) {
-  case ND_VAR:
+  case ND_VAR: {
+    const char *symbol = get_symbol(node->var);
     // Variable-length array, which is always local.
     if (node->var->ty->kind == TY_VLA) {
       println("  mov %d(%%rbp), %%rax", node->var->offset);
@@ -96,7 +103,7 @@ static void gen_addr(Node *node) {
     if (opt_fpic) {
       // Thread-local variable
       if (node->var->is_tls) {
-        println("  data16 lea %s@tlsgd(%%rip), %%rdi", node->var->name);
+        println("  data16 lea %s@tlsgd(%%rip), %%rdi", symbol);
         println("  .value 0x6666");
         println("  rex64");
         println("  call __tls_get_addr@PLT");
@@ -104,14 +111,14 @@ static void gen_addr(Node *node) {
       }
 
       // Function or global variable
-      println("  mov %s@GOTPCREL(%%rip), %%rax", node->var->name);
+      println("  mov %s@GOTPCREL(%%rip), %%rax", symbol);
       return;
     }
 
     // Thread-local variable
     if (node->var->is_tls) {
       println("  mov %%fs:0, %%rax");
-      println("  add $%s@tpoff, %%rax", node->var->name);
+      println("  add $%s@tpoff, %%rax", symbol);
       return;
     }
 
@@ -141,15 +148,15 @@ static void gen_addr(Node *node) {
     // Function
     if (node->ty->kind == TY_FUNC) {
       if (node->var->is_definition)
-        println("  lea %s(%%rip), %%rax", node->var->name);
+        println("  lea %s(%%rip), %%rax", symbol);
       else
-        println("  mov %s@GOTPCREL(%%rip), %%rax", node->var->name);
+        println("  mov %s@GOTPCREL(%%rip), %%rax", symbol);
       return;
     }
 
     // Global variable
-    println("  lea %s(%%rip), %%rax", node->var->name);
-    return;
+    println("  lea %s(%%rip), %%rax", symbol);
+  } return;
   case ND_DEREF:
     gen_expr(node->lhs);
     return;
@@ -874,7 +881,7 @@ static void gen_expr(Node *node) {
     return;
   }
   case ND_FUNCALL: {
-    if (node->lhs->kind == ND_VAR && !strcmp(node->lhs->var->name, "alloca")) {
+    if (node->lhs->kind == ND_VAR && !strcmp(get_symbol(node->lhs->var), "alloca")) {
       gen_expr(node->args);
       println("  mov %%rax, %%rdi");
       builtin_alloca();
@@ -1293,7 +1300,7 @@ static void gen_stmt(Node *node) {
       }
     }
 
-    println("  jmp .L.return.%s", current_fn->name);
+    println("  jmp .L.return.%s", get_symbol(current_fn));
     return;
   case ND_EXPR_STMT:
     gen_expr(node->lhs);
@@ -1384,17 +1391,25 @@ static void emit_data(Obj *prog) {
     if (var->is_function || !var->is_definition)
       continue;
 
+    const char *symbol = get_symbol(var);
+
+    if (var->body && var->body->kind == ND_ASM) {
+      /* Global assembly statement */
+      println("%s", var->body->asm_str);
+      continue;
+    }
+
     if (var->is_static)
-      println("  .local %s", var->name);
+      println("  .local %s", symbol);
     else
-      println("  .globl %s", var->name);
+      println("  .globl %s", symbol);
 
     int align = (var->ty->kind == TY_ARRAY && var->ty->size >= 16)
       ? MAX(16, var->align) : var->align;
 
     // Common symbol
     if (opt_fcommon && var->is_tentative) {
-      println("  .comm %s, %d, %d", var->name, var->ty->size, align);
+      println("  .comm %s, %d, %d", symbol, var->ty->size, align);
       continue;
     }
 
@@ -1405,10 +1420,10 @@ static void emit_data(Obj *prog) {
       else
         println("  .data");
 
-      println("  .type %s, @object", var->name);
-      println("  .size %s, %d", var->name, var->ty->size);
+      println("  .type %s, @object", symbol);
+      println("  .size %s, %d", symbol, var->ty->size);
       println("  .align %d", align);
-      println("%s:", var->name);
+      println("%s:", symbol);
 
       Relocation *rel = var->rel;
       int pos = 0;
@@ -1431,7 +1446,7 @@ static void emit_data(Obj *prog) {
       println("  .bss");
 
     println("  .align %d", align);
-    println("%s:", var->name);
+    println("%s:", symbol);
     println("  .zero %d", var->ty->size);
   }
 }
@@ -1476,19 +1491,21 @@ static void emit_text(Obj *prog) {
     if (!fn->is_function || !fn->is_definition)
       continue;
 
+    const char *symbol = get_symbol(fn);
+
     // No code is emitted for "static inline" functions
     // if no one is referencing them.
     if (!fn->is_live)
       continue;
 
     if (fn->is_static)
-      println("  .local %s", fn->name);
+      println("  .local %s", symbol);
     else
-      println("  .globl %s", fn->name);
+      println("  .globl %s", symbol);
 
     println("  .text");
-    println("  .type %s, @function", fn->name);
-    println("%s:", fn->name);
+    println("  .type %s, @function", symbol);
+    println("%s:", symbol);
     current_fn = fn;
 
     // Prologue
@@ -1575,17 +1592,17 @@ static void emit_text(Obj *prog) {
     // a special rule for the main function. Reaching the end of the
     // main function is equivalent to returning 0, even though the
     // behavior is undefined for the other functions.
-    if (strcmp(fn->name, "main") == 0)
+    if (strcmp(symbol, "main") == 0)
       println("  mov $0, %%rax");
 
     // Epilogue
-    println(".L.return.%s:", fn->name);
+    println(".L.return.%s:", symbol);
 
     if (fn->defers_count > 0) {
       push(); /* Save the return value (for if it's destroyed) */
       /* Emit deferred statements in reverse order */
       for (int i = fn->defers_count - 1; i >= 0; i--) {
-        println("  .L.defer.%s.%d:", fn->name, i);
+        println("  .L.defer.%s.%d:", symbol, i);
         gen_stmt(fn->defers[i]);
       }
       pop("%rax"); /* Recover the return value */

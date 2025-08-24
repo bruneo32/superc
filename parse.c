@@ -107,6 +107,7 @@ static Node *current_switch;
 static Obj *builtin_alloca;
 
 static bool is_typename(Token *tok);
+static bool is_identifier(Token *tok);
 static Type *declspec(Token **rest, Token *tok, VarAttr *attr);
 static Type *typename(Token **rest, Token *tok);
 static Type *enum_specifier(Token **rest, Token *tok);
@@ -144,6 +145,7 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok);
 static Node *new_sub(Node *lhs, Node *rhs, Token *tok);
 static Node *mul(Token **rest, Token *tok);
 static Node *cast(Token **rest, Token *tok);
+static Token *attribute_list(Token *tok, Type *ty, Obj *var);
 static Member *get_struct_member(Type *ty, Token *tok);
 static Type *struct_decl(Token **rest, Token *tok);
 static Type *union_decl(Token **rest, Token *tok);
@@ -157,7 +159,10 @@ static bool is_function(Token *tok);
 static bool is_type_method(Token *tok);
 static Token *function(Token *tok, Type *basety, VarAttr *attr);
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
-static Obj *find_func(char *name);
+static char *get_symbolname(Obj *var);
+static Obj *find_func(Identifier ident);
+static Identifier consume_ident(Token** rest, Token *tok);
+static char *ident_to_string(Identifier ident);
 
 static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
@@ -174,9 +179,40 @@ static void leave_scope(void) {
 }
 
 // Find a variable by name.
-static VarScope *find_var(Token *tok) {
+static VarScope *find_var(Identifier ident) {
+  if (ident.method_ty && ident.name) {
+    /* Isn't quick method, but is. */
+    for (Scope *sc = scope; sc; sc = sc->next) {
+      for (size_t i = 0; i < sc->vars.capacity; ++i) {
+        HashEntry *ent = &sc->vars.buckets[i];
+        if (!ent) continue;
+        VarScope *sc2 = ent->val;
+        if (!sc2 || !sc2->var ||
+            !sc2->var->recv.method_ty ||
+            !sc2->var->recv.name)
+          continue;
+
+        /* Check if it's the same method by value, not by pointer*/
+        char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
+        char *msg2 = type_to_asmident(ident.method_ty);
+        if (strcmp(msg1, msg2) != 0){
+          free(msg1);
+          free(msg2);
+          continue;
+        }
+        free(msg1);
+        free(msg2);
+
+        /* Check if it's the method we are searching for */
+        if (strcmp(sc2->var->recv.name, ident.name) == 0)
+          return sc2;
+      }
+    }
+    return NULL;
+  }
+
   for (Scope *sc = scope; sc; sc = sc->next) {
-    VarScope *sc2 = hashmap_get2(&sc->vars, tok->loc, tok->len);
+    VarScope *sc2 = hashmap_get(&sc->vars, ident.name);
     if (sc2)
       return sc2;
   }
@@ -301,25 +337,29 @@ static Initializer *new_initializer(Type *ty, bool is_flexible) {
   return init;
 }
 
-static Obj *new_var(char *name, Type *ty) {
+static Obj *new_var(char *name, Identifier *ident, Type *ty) {
   Obj *var = calloc(1, sizeof(Obj));
   var->name = name;
   var->ty = ty;
   var->align = ty->align;
+  if (ident && ident->method_ty)
+    var->recv = *ident;
+  else
+    var->recv = (Identifier){0, 0};
   push_scope(name)->var = var;
   return var;
 }
 
-static Obj *new_lvar(char *name, Type *ty) {
-  Obj *var = new_var(name, ty);
+static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
+  Obj *var = new_var(name, ident, ty);
   var->is_local = true;
   var->next = locals;
   locals = var;
   return var;
 }
 
-static Obj *new_gvar(char *name, Type *ty) {
-  Obj *var = new_var(name, ty);
+static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
+  Obj *var = new_var(name, ident, ty);
   var->next = globals;
   var->is_static = true;
   var->is_definition = true;
@@ -333,7 +373,7 @@ static char *new_unique_name(void) {
 }
 
 static Obj *new_anon_gvar(Type *ty) {
-  return new_gvar(new_unique_name(), ty);
+  return new_gvar(new_unique_name(), NULL, ty);
 }
 
 static Obj *new_string_literal(char *p, Type *ty) {
@@ -348,9 +388,62 @@ static char *get_ident(Token *tok) {
   return strndup(tok->loc, tok->len);
 }
 
+// ident = "(" typename ")" "." ident | ident
+static bool is_identifier(Token *tok) {
+  /* Select type methods as identifiers `(int).sum` */
+  if (equal(tok, "(") && is_typename(tok->next)) {
+    typename(&tok, tok->next);
+    tok = skip(tok, ")");
+    if (equal(tok, ".") && tok->next->kind == TK_IDENT)
+      return true;
+    return false;
+  }
+
+  return tok->kind == TK_IDENT;
+}
+
+static Identifier consume_ident(Token** rest, Token *tok) {
+  /* Select type methods as idenfiers `(int).sum` */
+  if (equal(tok, "(") && is_typename(tok->next)) {
+    /* Parse typename */
+    Type *ty = typename(&tok, tok->next);
+    tok = skip(tok, ")");
+
+    /* Parse after type */
+    if (equal(tok, ".") && tok->next->kind == TK_IDENT) {
+      char *namestr = get_ident(tok->next);
+      *rest = tok->next->next;
+      return (Identifier){
+        .name = namestr,
+        .method_ty = ty,
+      };
+    }
+
+    error_tok(tok, "expected an identifier, got type");
+  }
+
+  if (tok->kind == TK_IDENT) {
+    char *namestr = get_ident(tok);
+    *rest = tok->next;
+    return (Identifier){
+      .name = namestr,
+      .method_ty = NULL,
+    };
+  }
+
+  error_tok(tok, "expected an identifier");
+}
+
+static char *ident_to_string(Identifier ident) {
+  if (ident.method_ty)
+    return format("(%s).%s", type_to_string(ident.method_ty), ident.name);
+  return ident.name;
+}
+
 static Type *find_typedef(Token *tok) {
   if (tok->kind == TK_IDENT) {
-    VarScope *sc = find_var(tok);
+    Identifier ident = {.name = get_ident(tok), 0};
+    VarScope *sc = find_var(ident);
     if (sc)
       return sc->type_def;
   }
@@ -831,7 +924,7 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
   else
     base_sz = new_num(ty->base->size, tok);
 
-  ty->vla_size = new_lvar("", ty_ulong);
+  ty->vla_size = new_lvar("", NULL, ty_ulong);
   Node *expr = new_binary(ND_ASSIGN, new_var_node(ty->vla_size, tok),
                           new_binary(ND_MUL, ty->vla_len, base_sz, tok),
                           tok);
@@ -862,6 +955,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       error_tok(tok, "variable declared void");
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
+    tok = attribute_list(tok, ty, NULL);
 
     if (attr && attr->is_static) {
       // static local variable
@@ -884,7 +978,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       // Variable length arrays (VLAs) are translated to alloca() calls.
       // For example, `int x[n+2]` is translated to `tmp = n + 2,
       // x = alloca(tmp)`.
-      Obj *var = new_lvar(get_ident(ty->name), ty);
+      Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
       Token *tok = ty->name;
       Node *expr = new_binary(ND_ASSIGN, new_vla_ptr(var, tok),
                               new_alloca(new_var_node(ty->vla_size, tok)),
@@ -894,7 +988,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       continue;
     }
 
-    Obj *var = new_lvar(get_ident(ty->name), ty);
+    Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
     if (attr && attr->align)
       var->align = attr->align;
 
@@ -1277,7 +1371,7 @@ static void initializer2(Token **rest, Token *tok, Initializer *init) {
     // An initializer for a scalar variable can be surrounded by
     // braces. E.g. `int x = {3};`. Handle that case.
     initializer2(&tok, tok->next, init);
-    *rest = skip(tok, "}");
+    *rest = skip(tok, "}"); /* FIXME: (1) backtrace from here */
     return;
   }
 
@@ -1533,6 +1627,9 @@ static Node *asm_stmt(Token **rest, Token *tok) {
     error_tok(tok, "expected string literal");
   node->asm_str = tok->str;
   *rest = skip(tok->next, ")");
+
+  node->ty = array_of(ty_char, strlen(node->asm_str) + 1);
+
   return node;
 }
 
@@ -2066,7 +2163,7 @@ static Node *to_assign(Node *binary) {
 
   // Convert `A.x op= C` to `tmp = &A, (*tmp).x = (*tmp).x op C`.
   if (binary->lhs->kind == ND_MEMBER) {
-    Obj *var = new_lvar("", pointer_to(binary->lhs->lhs->ty));
+    Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->lhs->ty));
 
     Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                              new_unary(ND_ADDR, binary->lhs->lhs, tok), tok);
@@ -2101,10 +2198,10 @@ static Node *to_assign(Node *binary) {
     Node head = {};
     Node *cur = &head;
 
-    Obj *addr = new_lvar("", pointer_to(binary->lhs->ty));
-    Obj *val = new_lvar("", binary->rhs->ty);
-    Obj *old = new_lvar("", binary->lhs->ty);
-    Obj *new = new_lvar("", binary->lhs->ty);
+    Obj *addr = new_lvar("", NULL, pointer_to(binary->lhs->ty));
+    Obj *val = new_lvar("", NULL, binary->rhs->ty);
+    Obj *old = new_lvar("", NULL, binary->lhs->ty);
+    Obj *new = new_lvar("", NULL, binary->lhs->ty);
 
     cur = cur->next =
       new_unary(ND_EXPR_STMT,
@@ -2151,7 +2248,7 @@ static Node *to_assign(Node *binary) {
   }
 
   // Convert `A op= B` to ``tmp = &A, *tmp = *tmp op B`.
-  Obj *var = new_lvar("", pointer_to(binary->lhs->ty));
+  Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->ty));
 
   Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                            new_unary(ND_ADDR, binary->lhs, tok), tok);
@@ -2223,7 +2320,7 @@ static Node *conditional(Token **rest, Token *tok) {
   if (equal(tok->next, ":")) {
     // [GNU] Compile `a ?: b` as `tmp = a, tmp ? tmp : b`.
     add_type(cond);
-    Obj *var = new_lvar("", cond->ty);
+    Obj *var = new_lvar("", NULL, cond->ty);
     Node *lhs = new_binary(ND_ASSIGN, new_var_node(var, tok), cond, tok);
     Node *rhs = new_node(ND_COND, tok);
     rhs->cond = new_var_node(var, tok);
@@ -2493,7 +2590,7 @@ static Node *mul(Token **rest, Token *tok) {
 
 // cast = "(" type-name ")" cast | unary
 static Node *cast(Token **rest, Token *tok) {
-  if (equal(tok, "(") && is_typename(tok->next)) {
+  if (equal(tok, "(") && is_typename(tok->next) && !is_identifier(tok)) {
     Token *start = tok;
     Type *ty = typename(&tok, tok->next);
     tok = skip(tok, ")");
@@ -2625,7 +2722,7 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
 }
 
 // attribute = ("__attribute__" "(" "(" "packed" ")" ")")*
-static Token *attribute_list(Token *tok, Type *ty) {
+static Token *attribute_list(Token *tok, Type *ty, Obj *var) {
   while (consume(&tok, tok, "__attribute__")) {
     tok = skip(tok, "(");
     tok = skip(tok, "(");
@@ -2638,14 +2735,33 @@ static Token *attribute_list(Token *tok, Type *ty) {
       first = false;
 
       if (consume(&tok, tok, "packed")) {
+        if (!ty)
+          error_tok(tok, "packed attribute can only be applied to types");
         ty->is_packed = true;
         continue;
       }
 
       if (consume(&tok, tok, "aligned")) {
+        if (!ty)
+          error_tok(tok, "aligned attribute can only be applied to types");
         tok = skip(tok, "(");
         ty->align = const_expr(&tok, tok);
         tok = skip(tok, ")");
+        continue;
+      }
+
+      if (consume(&tok, tok, "symbol")) {
+        if (!var)
+          error_tok(tok, "symbol attribute can only be applied to declarations");
+
+        tok = skip(tok, "(");
+        if (tok->kind != TK_STR)
+          error_tok(tok, "expected string literal");
+
+        /* Remove quotes */
+        var->symbol = strndup(tok->loc + 1, tok->len - 2);
+
+        tok = skip(tok->next, ")");
         continue;
       }
 
@@ -2661,7 +2777,7 @@ static Token *attribute_list(Token *tok, Type *ty) {
 // struct-union-decl = attribute? ident? ("{" struct-members)?
 static Type *struct_union_decl(Token **rest, Token *tok) {
   Type *ty = struct_type();
-  tok = attribute_list(tok, ty);
+  tok = attribute_list(tok, ty, NULL);
 
   // Read a tag.
   Token *tag = NULL;
@@ -2687,7 +2803,7 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
 
   // Construct a struct object.
   struct_members(&tok, tok, ty);
-  *rest = attribute_list(tok, ty);
+  *rest = attribute_list(tok, ty, NULL);
 
   if (tag) {
     ty->tagname = tag;
@@ -2837,7 +2953,7 @@ static Node *new_inc_dec(Node *node, Token *tok, int addend) {
 //              | "++"
 //              | "--"
 static Node *postfix(Token **rest, Token *tok) {
-  if (equal(tok, "(") && is_typename(tok->next)) {
+  if (equal(tok, "(") && is_typename(tok->next) && !is_identifier(tok)) {
     // Compound literal
     Token *start = tok;
     Type *ty = typename(&tok, tok->next);
@@ -2849,8 +2965,8 @@ static Node *postfix(Token **rest, Token *tok) {
       return new_var_node(var, start);
     }
 
-    Obj *var = new_lvar("", ty);
-    Node *lhs = lvar_initializer(rest, tok, var);
+    Obj *var = new_lvar("", NULL, ty);
+    Node *lhs = lvar_initializer(rest, tok, var); /* FIXME: (2) backtrace from here */
     Node *rhs = new_var_node(var, tok);
     return new_binary(ND_COMMA, lhs, rhs, start);
   }
@@ -2951,6 +3067,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
     Node *arg = assign(&tok, tok);
     add_type(arg);
 
+    /* First argument if !recv */
     if (!param_ty && !ty->is_variadic)
       error_tok(tok, "too many arguments");
 
@@ -2981,7 +3098,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", node->ty);
+    node->ret_buffer = new_lvar("", NULL, node->ty);
   return node;
 }
 
@@ -3003,22 +3120,14 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
 
   char *name_str = get_ident(name_tok);
 
-  /* Rename symbol from `sum` to `sum$i` */
-  char *type_cname = type_to_cident(basety);
-  size_t newlen = strlen(name_str) + strlen(type_cname) + 2;
-  char *newname = malloc(newlen);
-  snprintf(newname, newlen, "%s$%s", name_str, type_cname);
-  free(name_str);
-  free(type_cname);
-  name_str = newname;
-
   /* Lookup method */
-  fnobj = find_func(name_str);
+  Identifier ident = {name_str, basety};
+  fnobj = find_func(ident);
   if (!fnobj)
     error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
 
   /* Check that is the type expected */
-  Type *impl_type = fnobj->method_ty;
+  Type *impl_type = fnobj->recv.method_ty;
   if (!same_type(basety, impl_type))
     error_tok(name_tok, "expected a method of type '%s'", basety_str);
 
@@ -3080,6 +3189,7 @@ static Node *generic_selection(Token **rest, Token *tok) {
 //         | "(" expr ")"
 //         | "sizeof" "(" type-name ")"
 //         | "sizeof" unary
+//         | "symbolof" "(" ident ")"
 //         | "_Alignof" "(" type-name ")"
 //         | "_Alignof" unary
 //         | "_Generic" generic-selection
@@ -3099,7 +3209,7 @@ static Node *primary(Token **rest, Token *tok) {
     return node;
   }
 
-  if (equal(tok, "(")) {
+  if (equal(tok, "(") && !is_identifier(tok)) {
     Node *node = expr(&tok, tok->next);
     *rest = skip(tok, ")");
     return node;
@@ -3127,6 +3237,21 @@ static Node *primary(Token **rest, Token *tok) {
     if (node->ty->kind == TY_VLA)
       return new_var_node(node->ty->vla_size, tok);
     return new_ulong(node->ty->size, tok);
+  }
+
+  if (equal(tok, "symbolof") && equal(tok->next, "(")) {
+    Identifier ident = consume_ident(&tok, tok->next->next);
+    VarScope *sc = find_var(ident);
+    *rest = skip(tok, ")");
+
+    if (!sc)
+      error_tok(tok, "cannot find symbol of %s", ident_to_string(ident));
+
+    char *symbolname = get_symbolname(sc->var);
+    Type *symbol_ty = stringlit_of(symbolname);
+
+    Obj *var = new_string_literal(symbolname, symbol_ty);
+    return new_var_node(var, tok);
   }
 
   if (equal(tok, "_Alignof") && equal(tok->next, "(") && is_typename(tok->next->next)) {
@@ -3187,10 +3312,12 @@ static Node *primary(Token **rest, Token *tok) {
     return node;
   }
 
-  if (tok->kind == TK_IDENT) {
+  if (is_identifier(tok)) {
+    Identifier ident = consume_ident(&tok, tok);
+    *rest = tok;
+
     // Variable or enum constant
-    VarScope *sc = find_var(tok);
-    *rest = tok->next;
+    VarScope *sc = find_var(ident);
 
     // For "static inline" function
     if (sc && sc->var && sc->var->is_function) {
@@ -3209,7 +3336,7 @@ static Node *primary(Token **rest, Token *tok) {
 
     if (equal(tok->next, "("))
       error_tok(tok, "implicit declaration of a function");
-    error_tok(tok, "undefined variable '%s'", get_ident(tok));
+    error_tok(tok, "undefined variable '%s'", ident_to_string(ident));
   }
 
   if (tok->kind == TK_STR) {
@@ -3256,7 +3383,7 @@ static void create_param_lvars(Type *param) {
     create_param_lvars(param->next);
     if (!param->name)
       error_tok(param->name_pos, "parameter name omitted");
-    new_lvar(get_ident(param->name), param);
+    new_lvar(get_ident(param->name), NULL, param);
   }
 }
 
@@ -3281,15 +3408,53 @@ static void resolve_goto_labels(void) {
   gotos = labels = NULL;
 }
 
-static Obj *find_func(char *name) {
+static Obj *find_func(Identifier ident) {
+  /* Find the global scope */
   Scope *sc = scope;
   while (sc->next)
     sc = sc->next;
 
-  VarScope *sc2 = hashmap_get(&sc->vars, name);
+  /* If method_ty, search for its overload */
+  if (ident.method_ty && ident.name) {
+    /* Isn't quick method, but is */
+    for (size_t i = 0; i < sc->vars.capacity; ++i) {
+      HashEntry *ent = &sc->vars.buckets[i];
+      if (!ent) continue;
+      VarScope *sc2 = ent->val;
+
+      if (!sc2 || !sc2->var || !sc2->var->is_function ||
+          !sc2->var->recv.method_ty ||
+          !sc2->var->recv.name)
+        continue;
+
+      /* Check if it's the same method by value, not by pointer*/
+      char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
+      char *msg2 = type_to_asmident(ident.method_ty);
+      if (strcmp(msg1, msg2) != 0){
+        free(msg1);
+        free(msg2);
+        continue;
+      }
+      free(msg1);
+      free(msg2);
+
+      /* Check if it's the method we are searching for */
+      if (strcmp(sc2->var->recv.name, ident.name) == 0)
+          return sc2->var;
+    }
+    return NULL;
+  }
+
+  VarScope *sc2 = hashmap_get(&sc->vars, ident.name);
   if (sc2 && sc2->var && sc2->var->is_function)
     return sc2->var;
   return NULL;
+}
+
+static char *get_symbolname(Obj *var) {
+  if (var->symbol)
+    return var->symbol;
+  return var->name;
 }
 
 static void mark_live(Obj *var) {
@@ -3298,7 +3463,8 @@ static void mark_live(Obj *var) {
   var->is_live = true;
 
   for (int i = 0; i < var->refs.len; i++) {
-    Obj *fn = find_func(var->refs.data[i]);
+    Identifier ident = {var->refs.data[i], var->recv.method_ty};
+    Obj *fn = find_func(ident);
     if (fn)
       mark_live(fn);
   }
@@ -3312,12 +3478,12 @@ static bool is_type_method(Token *tok) {
 
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if it's a type method */
-  Type* impl_type = NULL;
+  Type *impl_type = NULL;
 
   if (is_type_method(tok)) {
     tok = tok->next;
 
-    Type* impl_base = declspec(&tok, tok, NULL);
+    Type *impl_base = declspec(&tok, tok, NULL);
     impl_type = declarator(&tok, tok, impl_base);
 
     if (!impl_type->name)
@@ -3335,45 +3501,45 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
 
-  if (impl_type) {
-    /* Rename symbol from `sum` to `sum$i` */
-    char *type_cname = type_to_cident(impl_type);
-    size_t newlen = strlen(name_str) + strlen(type_cname) + 2;
-    char *newname = malloc(newlen);
-    snprintf(newname, newlen, "%s$%s", name_str, type_cname);
-    free(name_str);
-    free(type_cname);
+  /* Save the method type and name */
+  Identifier ident = {name_str, impl_type};
 
-    name_str = newname;
-  }
+  /* Underlying identifier for methods is not the method name, it's uid */
+  if (impl_type)
+    name_str = new_unique_name();
 
-  Obj *fn = find_func(name_str);
+  const bool is_def = equal(tok, "{");
+
+  Obj *fn = find_func(ident);
   if (fn) {
     // Redeclaration
     if (!fn->is_function)
       error_tok(tok, "redeclared as a different kind of symbol");
-    if (fn->is_definition && equal(tok, "{"))
-      error_tok(tok, "redefinition of %s", name_str);
+    if (fn->is_definition && is_def)
+      error_tok(tok, "redefinition of %s", ident_to_string(ident));
     if (!fn->is_static && attr->is_static)
       error_tok(tok, "static declaration follows a non-static declaration");
-    fn->is_definition = fn->is_definition || equal(tok, "{");
+    fn->is_definition = fn->is_definition || is_def;
   } else {
-    fn = new_gvar(name_str, ty);
+    fn = new_gvar(name_str, &ident, ty);
     fn->is_function = true;
-    fn->is_definition = equal(tok, "{");
+    fn->is_definition = is_def;
     fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
     fn->is_inline = attr->is_inline;
   }
 
+  if (impl_type) {
+    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
+    char *type_cname = type_to_asmident(impl_type);
+    size_t newlen = strlen(fn->recv.name) + strlen(type_cname) + 2;
+    fn->symbol = malloc(newlen);
+    snprintf(fn->symbol, newlen, "%s$%s", fn->recv.name, type_cname);
+    free(type_cname);
+  }
+
+  tok = attribute_list(tok, NULL, fn);
+
   fn->is_root = !(fn->is_static && fn->is_inline);
-  fn->method_ty = impl_type;
-
-  if (consume(&tok, tok, ";"))
-    return tok;
-
-  current_fn = fn;
-  locals = NULL;
-  enter_scope();
 
   /* If there is an method implicit receiver, prepend it to param list */
   if (impl_type) {
@@ -3381,31 +3547,38 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     ty->params = impl_type;
   }
 
+  /* Not a function definition, exit */
+  if (consume(&tok, tok, ";"))
+    return tok;
+
+  current_fn = fn;
+  locals = NULL;
+  enter_scope();
+
   create_param_lvars(ty->params);
 
   // A buffer for a struct/union return value is passed
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("", pointer_to(rty));
+    new_lvar("", NULL, pointer_to(rty));
 
   fn->params = locals;
 
   if (ty->is_variadic)
-    fn->va_area = new_lvar("__va_area__", array_of(ty_char, 136));
-  fn->alloca_bottom = new_lvar("__alloca_size__", pointer_to(ty_char));
+    fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));
+  fn->alloca_bottom = new_lvar("__alloca_size__", NULL, pointer_to(ty_char));
 
   tok = skip(tok, "{");
 
   // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
   // automatically defined as a local variable containing the
   // current function name.
-  push_scope("__func__")->var =
-    new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  Obj *__fnname__ = new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  push_scope("__func__")->var = __fnname__;
 
   // [GNU] __FUNCTION__ is yet another name of __func__.
-  push_scope("__FUNCTION__")->var =
-    new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  push_scope("__FUNCTION__")->var = __fnname__;
 
   fn->body = compound_stmt(&tok, tok);
   fn->locals = locals;
@@ -3426,12 +3599,14 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
 
-    Obj *var = new_gvar(get_ident(ty->name), ty);
+    Obj *var = new_gvar(get_ident(ty->name), NULL, ty);
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
     if (attr->align)
       var->align = attr->align;
+
+    tok = attribute_list(tok, NULL, var);
 
     if (equal(tok, "="))
       gvar_initializer(&tok, tok->next, var);
@@ -3496,16 +3671,27 @@ static void scan_globals(void) {
 static void declare_builtin_functions(void) {
   Type *ty = func_type(pointer_to(ty_void));
   ty->params = copy_type(ty_int);
-  builtin_alloca = new_gvar("alloca", ty);
+  builtin_alloca = new_gvar("alloca", NULL, ty);
   builtin_alloca->is_definition = false;
 }
 
-// program = (typedef | function-definition | global-variable)*
+// program = ("asm" asm-stmt | typedef | function-definition | global-variable)*
 Obj *parse(Token *tok) {
   declare_builtin_functions();
   globals = NULL;
 
   while (tok->kind != TK_EOF) {
+    // global asm statement
+    if (equal(tok, "asm")) {
+      Node *node = asm_stmt(&tok, tok);
+      tok = skip(tok, ";");
+      Obj *var = new_anon_gvar(node->ty);
+      var->is_live = true;
+      var->body = node;
+      globals = var;
+      continue;
+    }
+
     VarAttr attr = {};
     Type *basety = declspec(&tok, tok, &attr);
 

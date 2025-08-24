@@ -169,7 +169,7 @@ static bool is_keyword(Token *tok) {
       "typeof", "asm", "_Thread_local", "__thread", "_Atomic",
       "__attribute__",
       /* SuperC */
-      "defer",
+      "defer", "symbolof",
     };
 
     for (int i = 0; i < sizeof(kw) / sizeof(*kw); i++)

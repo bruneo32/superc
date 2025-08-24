@@ -1,14 +1,18 @@
 # First: new complete syntax
-- Symbol renaming
+- Symbol alias
 - Defer statements for loops
 - Defer statements for blocks
+- break N
 - Lambdas
 - Namespaces?
 - Operators?
+- Errors?
 
 # SuperC lib
 - String builder
+- Multithreading
 - ArrayList?
+- Date?
 - ...
 
 # After lib

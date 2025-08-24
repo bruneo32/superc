@@ -98,6 +98,12 @@ struct Token {
   Token *origin;    // If this is expanded from a macro, the original token
 };
 
+typedef struct Identifier Identifier;
+struct Identifier {
+  char *name;
+  Type *method_ty;
+};
+
 noreturn void error(char *fmt, ...) __attribute__((format(printf, 1, 2)));
 noreturn void error_at(char *loc, char *fmt, ...) __attribute__((format(printf, 2, 3)));
 noreturn void error_tok(Token *tok, char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -138,6 +144,7 @@ struct Obj {
   Token *tok;    // representative token
   bool is_local; // local or global/function
   int align;     // alignment
+  char *symbol;  // symbol
 
   // Local variable
   int offset;
@@ -155,7 +162,7 @@ struct Obj {
 
   // Function
   bool is_inline;
-  Type *method_ty;
+  Identifier recv;
   Obj *params;
   Node *body;
   Obj *locals;
@@ -413,13 +420,14 @@ Type *copy_type(Type *ty);
 Type *pointer_to(Type *base);
 Type *func_type(Type *return_ty);
 Type *array_of(Type *base, int size);
+Type *stringlit_of(char *str);
 Type *vla_of(Type *base, Node *expr);
 Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
 bool same_type(Type *a, Type *b);
 char *type_to_string(Type *ty);
-char *type_to_cident(Type *ty);
+char *type_to_asmident(Type *ty);
 
 //
 // codegen.c

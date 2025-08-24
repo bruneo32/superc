@@ -116,6 +116,14 @@ Type *array_of(Type *base, int len) {
   return ty;
 }
 
+Type *stringlit_of(char *str) {
+  size_t len = strlen(str) + 1;
+  Type *ty = new_type(TY_ARRAY, ty_char->size * len, ty_char->align);
+  ty->base = ty_char;
+  ty->array_len = len;
+  return ty;
+}
+
 Type *vla_of(Type *base, Node *len) {
   Type *ty = new_type(TY_VLA, 8, 8);
   ty->base = base;
@@ -351,6 +359,9 @@ char *type_to_string(Type *ty) {
   char *s = buf;
   #define BUFSIZE (sizeof(buf) - (s - buf))
 
+  if (ty->is_unsigned)
+    s += snprintf(s, BUFSIZE, "unsigned ");
+
   switch (ty->kind) {
   case TY_VOID:
     s += snprintf(s, BUFSIZE, "void");
@@ -453,10 +464,13 @@ char *type_to_string(Type *ty) {
 
 /* return a string that can be used as an safe C identifier */
 /* TODO: handle depth-nesting */
-char *type_to_cident(Type *ty) {
+char *type_to_asmident(Type *ty) {
   char buf[512];
   char *s = buf;
   #define BUFSIZE (sizeof(buf) - (s - buf))
+
+  if (ty->is_unsigned)
+    s += snprintf(s, BUFSIZE, "u");
 
   switch (ty->kind) {
   case TY_VOID:
@@ -488,19 +502,19 @@ char *type_to_cident(Type *ty) {
     break;
 
   case TY_PTR: {
-    char *base = type_to_cident(ty->base);
+    char *base = type_to_asmident(ty->base);
     s += snprintf(s, BUFSIZE, "%s_P", base);
     free(base);
   } break;
 
   case TY_ARRAY: {
-    char *base = type_to_cident(ty->base);
+    char *base = type_to_asmident(ty->base);
     s += snprintf(s, BUFSIZE, "%s_A%d", base, ty->array_len);
     free(base);
   } break;
 
   case TY_VLA: {
-    char *base = type_to_cident(ty->base);
+    char *base = type_to_asmident(ty->base);
     s += snprintf(s, BUFSIZE, "%s_V", base);
     free(base);
   } break;
@@ -536,12 +550,12 @@ char *type_to_cident(Type *ty) {
   } break;
 
   case TY_FUNC: {
-    char *ret = type_to_cident(ty->return_ty);
+    char *ret = type_to_asmident(ty->return_ty);
     s += snprintf(s, BUFSIZE, "%s_F", ret);
     free(ret);
     for (Type *p = ty->params; p; p = p->next) {
       if (p != ty->params) s += snprintf(s, BUFSIZE, "_");
-      char *pt = type_to_cident(p);
+      char *pt = type_to_asmident(p);
       s += snprintf(s, BUFSIZE, "%s", pt);
       free(pt);
     }
@@ -549,7 +563,7 @@ char *type_to_cident(Type *ty) {
   } break;
 
   default:
-    s += snprintf(s, BUFSIZE, "u");
+    s += snprintf(s, BUFSIZE, "K");
   }
 
   #undef BUFSIZE
