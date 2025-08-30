@@ -1,4 +1,4 @@
-# First: new complete syntax
+### First: new complete syntax
 - Symbol alias
 - Defer statements for loops
 - Defer statements for blocks
@@ -8,14 +8,16 @@
 - Operators?
 - Errors?
 
-# SuperC lib
+### SuperC lib
 - String builder
 - Multithreading
 - ArrayList?
 - Date?
 - ...
 
-# After lib
+### After lib
 - Complete C11 and C23
 - LLVM backend
+- Compiler for windows
 - Improve --help
+- Package manager

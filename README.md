@@ -6,6 +6,7 @@
   - [Type methods](#type-methods)
   - [Symbol mangling](#symbol-mangling)
 - [Current planned features](#current-planned-features)
+  - [Aliases](#aliases)
   - [break N](#break-n)
   - [Lambdas](#lambdas)
 
@@ -160,7 +161,7 @@ int main(void) {
 # Current planned features
 > Please note that the **syntax** of all the planned features is **subject to change**.
 
-## Symbol aliases
+## Aliases
 Register a declaration as an alias of another symbol. Very useful for [type methods](#type-methods).
 
 ### Examples
@@ -236,6 +237,7 @@ int main() {
   // -- End --
   return 0;
 }
+```
 
 ## Lambdas
 Lambdas are anonymous functions that can be assigned to variables, or used immediately.
