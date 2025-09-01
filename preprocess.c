@@ -68,7 +68,7 @@ struct Hideset {
 static HashMap macros;
 static CondIncl *cond_incl;
 static HashMap pragma_once;
-static int include_next_idx;
+static count_t include_next_idx;
 
 static Token *preprocess2(Token *tok);
 static Macro *find_macro(Token *tok);
@@ -238,8 +238,8 @@ static Token *copy_line(Token **rest, Token *tok) {
   return head.next;
 }
 
-static Token *new_num_token(int val, Token *tmpl) {
-  char *buf = format("%d\n", val);
+static Token *new_num_token(count_t val, Token *tmpl) {
+  char *buf = format("%lu\n", val);
   return tokenize(new_file(tmpl->file->name, tmpl->file->file_no, buf));
 }
 
@@ -1014,13 +1014,13 @@ static Token *file_macro(Token *tmpl) {
 static Token *line_macro(Token *tmpl) {
   while (tmpl->origin)
     tmpl = tmpl->origin;
-  int i = tmpl->line_no + tmpl->file->line_delta;
+  count_t i = tmpl->line_no + tmpl->file->line_delta;
   return new_num_token(i, tmpl);
 }
 
 // __COUNTER__ is expanded to serial values starting from 0.
 static Token *counter_macro(Token *tmpl) {
-  static int i = 0;
+  static count_t i = 0;
   return new_num_token(i++, tmpl);
 }
 

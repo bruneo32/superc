@@ -1,7 +1,5 @@
 ### First: new complete syntax
 - Symbol alias
-- Defer statements for loops
-- Defer statements for blocks
 - break N
 - Lambdas
 - Namespaces?
@@ -20,4 +18,5 @@
 - LLVM backend
 - Compiler for windows
 - Improve --help
+- Better errors and warnings
 - Package manager

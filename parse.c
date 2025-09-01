@@ -31,6 +31,7 @@ typedef struct {
 typedef struct Scope Scope;
 struct Scope {
   Scope *next;
+  Node  *block;
 
   // C has two block scopes; one is for variables/typedefs and
   // the other is for struct/union/enum tags.
@@ -168,8 +169,9 @@ static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
 }
 
-static void enter_scope(void) {
+static void enter_scope(Node *block) {
   Scope *sc = calloc(1, sizeof(Scope));
+  sc->block = block;
   sc->next = scope;
   scope = sc;
 }
@@ -368,8 +370,8 @@ static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
 }
 
 static char *new_unique_name(void) {
-  static int id = 0;
-  return format(".L..%d", id++);
+  static count_t id = 0;
+  return format(".L..%lu", id++);
 }
 
 static Obj *new_anon_gvar(Type *ty) {
@@ -1371,7 +1373,7 @@ static void initializer2(Token **rest, Token *tok, Initializer *init) {
     // An initializer for a scalar variable can be surrounded by
     // braces. E.g. `int x = {3};`. Handle that case.
     initializer2(&tok, tok->next, init);
-    *rest = skip(tok, "}"); /* FIXME: (1) backtrace from here */
+    *rest = skip(tok, "}");
     return;
   }
 
@@ -1645,7 +1647,7 @@ static Node *asm_stmt(Token **rest, Token *tok) {
 //      | "goto" (ident | "*" expr) ";"
 //      | "break" ";"
 //      | "continue" ";"
-//      | "defer" compound_stmt
+//      | "defer" ("break" | "continue")? stmt
 //      | ident ":" stmt
 //      | "{" compound-stmt
 //      | expr-stmt
@@ -1741,7 +1743,9 @@ static Node *stmt(Token **rest, Token *tok) {
     Node *node = new_node(ND_FOR, tok);
     tok = skip(tok->next, "(");
 
-    enter_scope();
+    enter_scope(node);
+    node->brk_defers  = NULL;
+    node->cont_defers = NULL;
 
     char *brk = brk_label;
     char *cont = cont_label;
@@ -1773,9 +1777,14 @@ static Node *stmt(Token **rest, Token *tok) {
 
   if (equal(tok, "while")) {
     Node *node = new_node(ND_FOR, tok);
+
     tok = skip(tok->next, "(");
     node->cond = expr(&tok, tok);
     tok = skip(tok, ")");
+
+    enter_scope(node);
+    node->brk_defers  = NULL;
+    node->cont_defers = NULL;
 
     char *brk = brk_label;
     char *cont = cont_label;
@@ -1784,6 +1793,7 @@ static Node *stmt(Token **rest, Token *tok) {
 
     node->then = stmt(rest, tok);
 
+    leave_scope();
     brk_label = brk;
     cont_label = cont;
     return node;
@@ -1792,6 +1802,10 @@ static Node *stmt(Token **rest, Token *tok) {
   if (equal(tok, "do")) {
     Node *node = new_node(ND_DO, tok);
 
+    enter_scope(node);
+    node->brk_defers  = NULL;
+    node->cont_defers = NULL;
+
     char *brk = brk_label;
     char *cont = cont_label;
     brk_label = node->brk_label = new_unique_name();
@@ -1799,6 +1813,7 @@ static Node *stmt(Token **rest, Token *tok) {
 
     node->then = stmt(&tok, tok->next);
 
+    leave_scope();
     brk_label = brk;
     cont_label = cont;
 
@@ -1833,7 +1848,7 @@ static Node *stmt(Token **rest, Token *tok) {
   if (equal(tok, "break")) {
     if (!brk_label)
       error_tok(tok, "stray break");
-    Node *node = new_node(ND_GOTO, tok);
+    Node *node = new_node(ND_BREAK, tok);
     node->unique_label = brk_label;
     *rest = skip(tok->next, ";");
     return node;
@@ -1842,7 +1857,7 @@ static Node *stmt(Token **rest, Token *tok) {
   if (equal(tok, "continue")) {
     if (!cont_label)
       error_tok(tok, "stray continue");
-    Node *node = new_node(ND_GOTO, tok);
+    Node *node = new_node(ND_CONTINUE, tok);
     node->unique_label = cont_label;
     *rest = skip(tok->next, ";");
     return node;
@@ -1852,21 +1867,43 @@ static Node *stmt(Token **rest, Token *tok) {
     if (!current_fn)
       error_tok(tok, "stray defer");
 
-    if(current_fn->defers_count < MAX_DEFERS)
-      current_fn->defers_count++;
-    else
-      error_tok(tok, "too many defers");
-
-    Node* node;
-
     tok = tok->next;
-    if (equal(tok, "{"))
-      node = compound_stmt(rest, tok->next);
-    else
-      error_tok(tok, "expected expression statement after 'defer'");
 
-    current_fn->defers[current_fn->defers_count - 1] = node;
-    return new_node(ND_BLOCK, tok); /* NOP */
+    uint64_t loop_kind = DK_FUNCTION;
+    if (equal(tok, "break")) {
+      if (!scope->block)
+        error_tok(tok, "not inside a loop");
+      loop_kind = DK_BREAK;
+      tok = tok->next;
+    } else if (equal(tok, "continue")) {
+      if (!scope->block)
+        error_tok(tok, "not inside a loop");
+      loop_kind = DK_CONTINUE;
+      tok = tok->next;
+    }
+
+    Node *body = stmt(rest, tok);
+    add_type(body);
+
+    /* Prepend to the list of defers */
+    switch (loop_kind) {
+    case DK_FUNCTION:
+      body->next = current_fn->defers;
+      current_fn->defers = body;
+      break;
+    case DK_BREAK:
+      body->next = scope->block->brk_defers;
+      scope->block->brk_defers = body;
+      break;
+    case DK_CONTINUE:
+      body->next = scope->block->cont_defers;
+      scope->block->cont_defers = body;
+      break;
+    }
+
+    Node *node = new_node(ND_DEFER, tok);
+    node->val = loop_kind; // leverage node->val for loop type
+    return node;
   }
 
   if (tok->kind == TK_IDENT && equal(tok->next, ":")) {
@@ -1891,7 +1928,7 @@ static Node *compound_stmt(Token **rest, Token *tok) {
   Node head = {};
   Node *cur = &head;
 
-  enter_scope();
+  enter_scope(scope->block); // Don't lose scope block
 
   while (!equal(tok, "}")) {
     if (is_typename(tok) && !equal(tok->next, ":")) {
@@ -2966,7 +3003,7 @@ static Node *postfix(Token **rest, Token *tok) {
     }
 
     Obj *var = new_lvar("", NULL, ty);
-    Node *lhs = lvar_initializer(rest, tok, var); /* FIXME: (2) backtrace from here */
+    Node *lhs = lvar_initializer(rest, tok, var);
     Node *rhs = new_var_node(var, tok);
     return new_binary(ND_COMMA, lhs, rhs, start);
   }
@@ -3553,7 +3590,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
 
   current_fn = fn;
   locals = NULL;
-  enter_scope();
+  enter_scope(scope->block); // Don't lose scope block
 
   create_param_lvars(ty->params);
 
@@ -3580,7 +3617,9 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // [GNU] __FUNCTION__ is yet another name of __func__.
   push_scope("__FUNCTION__")->var = __fnname__;
 
+  fn->defers = NULL;
   fn->body = compound_stmt(&tok, tok);
+
   fn->locals = locals;
   leave_scope();
   resolve_goto_labels();

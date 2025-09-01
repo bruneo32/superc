@@ -4,15 +4,22 @@
 #define FP_MAX 8
 
 static FILE *output_file;
-static int depth;
+static count_t depth;
 static char *argreg8[] = {"%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"};
 static char *argreg16[] = {"%di", "%si", "%dx", "%cx", "%r8w", "%r9w"};
 static char *argreg32[] = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
 static char *argreg64[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
 static Obj *current_fn;
+static Node *current_loop;
+
+#define NO_DEFER ((count_t)-1)
+static count_t current_defer_fn = NO_DEFER;
 
 static void gen_expr(Node *node);
 static void gen_stmt(Node *node);
+
+static void gen_defers_brk(void);
+static void gen_defers_cont(void);
 
 __attribute__((format(printf, 1, 2)))
 static void println(char *fmt, ...) {
@@ -23,8 +30,8 @@ static void println(char *fmt, ...) {
   fprintf(output_file, "\n");
 }
 
-static int count(void) {
-  static int i = 1;
+static count_t count(void) {
+  static count_t i = 1;
   return i++;
 }
 
@@ -234,6 +241,8 @@ static void load(Type *ty) {
 
 // Store %rax to an address that the stack top is pointing to.
 static void store(Type *ty) {
+  assert(ty != NULL);
+
   pop("%rdi");
 
   switch (ty->kind) {
@@ -829,15 +838,15 @@ static void gen_expr(Node *node) {
     println("  rep stosb");
     return;
   case ND_COND: {
-    int c = count();
+    count_t c = count();
     gen_expr(node->cond);
     cmp_zero(node->cond->ty);
-    println("  je .L.else.%d", c);
+    println("  je .L.else.%lu", c);
     gen_expr(node->then);
-    println("  jmp .L.end.%d", c);
-    println(".L.else.%d:", c);
+    println("  jmp .L.end.%lu", c);
+    println(".L.else.%lu:", c);
     gen_expr(node->els);
-    println(".L.end.%d:", c);
+    println(".L.end.%lu:", c);
     return;
   }
   case ND_NOT:
@@ -851,33 +860,33 @@ static void gen_expr(Node *node) {
     println("  not %%rax");
     return;
   case ND_LOGAND: {
-    int c = count();
+    count_t c = count();
     gen_expr(node->lhs);
     cmp_zero(node->lhs->ty);
-    println("  je .L.false.%d", c);
+    println("  je .L.false.%lu", c);
     gen_expr(node->rhs);
     cmp_zero(node->rhs->ty);
-    println("  je .L.false.%d", c);
+    println("  je .L.false.%lu", c);
     println("  mov $1, %%rax");
-    println("  jmp .L.end.%d", c);
-    println(".L.false.%d:", c);
+    println("  jmp .L.end.%lu", c);
+    println(".L.false.%lu:", c);
     println("  mov $0, %%rax");
-    println(".L.end.%d:", c);
+    println(".L.end.%lu:", c);
     return;
   }
   case ND_LOGOR: {
-    int c = count();
+    count_t c = count();
     gen_expr(node->lhs);
     cmp_zero(node->lhs->ty);
-    println("  jne .L.true.%d", c);
+    println("  jne .L.true.%lu", c);
     gen_expr(node->rhs);
     cmp_zero(node->rhs->ty);
-    println("  jne .L.true.%d", c);
+    println("  jne .L.true.%lu", c);
     println("  mov $0, %%rax");
-    println("  jmp .L.end.%d", c);
-    println(".L.true.%d:", c);
+    println("  jmp .L.end.%lu", c);
+    println(".L.true.%lu:", c);
     println("  mov $1, %%rax");
-    println(".L.end.%d:", c);
+    println(".L.end.%lu:", c);
     return;
   }
   case ND_FUNCALL: {
@@ -1196,24 +1205,35 @@ static void gen_stmt(Node *node) {
   println("  .loc %d %d", node->tok->file->file_no, node->tok->line_no);
 
   switch (node->kind) {
+  case ND_NOP:
+    return;
   case ND_IF: {
-    int c = count();
+    count_t c = count();
     gen_expr(node->cond);
     cmp_zero(node->cond->ty);
-    println("  je  .L.else.%d", c);
+    println("  je  .L.else.%lu", c);
     gen_stmt(node->then);
-    println("  jmp .L.end.%d", c);
-    println(".L.else.%d:", c);
+    println("  jmp .L.end.%lu", c);
+    println(".L.else.%lu:", c);
     if (node->els)
       gen_stmt(node->els);
-    println(".L.end.%d:", c);
+    println(".L.end.%lu:", c);
     return;
   }
   case ND_FOR: {
-    int c = count();
+    count_t c = count();
+
+    /* Dive into the loop */
+    Node *prev_loop = current_loop;
+    current_loop = node;
+
+    // Reset defers
+    node->brk_defers_count  = NO_DEFER;
+    node->cont_defers_count = NO_DEFER;
+
     if (node->init)
       gen_stmt(node->init);
-    println(".L.begin.%d:", c);
+    println(".L.begin.%lu:", c);
     if (node->cond) {
       gen_expr(node->cond);
       cmp_zero(node->cond->ty);
@@ -1221,21 +1241,36 @@ static void gen_stmt(Node *node) {
     }
     gen_stmt(node->then);
     println("%s:", node->cont_label);
+    gen_defers_cont();
     if (node->inc)
       gen_expr(node->inc);
-    println("  jmp .L.begin.%d", c);
+    println("  jmp .L.begin.%lu", c);
     println("%s:", node->brk_label);
+    gen_defers_brk();
+    current_loop = prev_loop;
     return;
   }
   case ND_DO: {
-    int c = count();
-    println(".L.begin.%d:", c);
+    count_t c = count();
+
+    /* Dive into the loop */
+    Node *prev_loop = current_loop;
+    current_loop = node;
+
+    // Reset defers
+    node->brk_defers_count  = NO_DEFER;
+    node->cont_defers_count = NO_DEFER;
+
+    println(".L.begin.%lu:", c);
     gen_stmt(node->then);
     println("%s:", node->cont_label);
+    gen_defers_cont();
     gen_expr(node->cond);
     cmp_zero(node->cond->ty);
-    println("  jne .L.begin.%d", c);
+    println("  jne .L.begin.%lu", c);
     println("%s:", node->brk_label);
+    gen_defers_brk();
+    current_loop = prev_loop;
     return;
   }
   case ND_SWITCH:
@@ -1276,6 +1311,19 @@ static void gen_stmt(Node *node) {
   case ND_GOTO:
     println("  jmp %s", node->unique_label);
     return;
+  case ND_BREAK:
+    /* It can be a switch statement */
+    if (!current_loop || current_loop->brk_defers_count == NO_DEFER)
+      println("  jmp %s", node->unique_label);
+    else
+      println("  jmp %s.defer$brk.%lu", node->unique_label, current_loop->brk_defers_count);
+    return;
+  case ND_CONTINUE:
+    if (!current_loop || current_loop->cont_defers_count == NO_DEFER)
+      println("  jmp %s", node->unique_label);
+    else
+      println("  jmp %s.defer$cont.%lu", node->unique_label, current_loop->cont_defers_count);
+    return;
   case ND_GOTO_EXPR:
     gen_expr(node->lhs);
     println("  jmp *%%rax");
@@ -1300,7 +1348,12 @@ static void gen_stmt(Node *node) {
       }
     }
 
-    println("  jmp .L.return.%s", get_symbol(current_fn));
+    /* Jump to return label, this might be a defer statement to run before return */
+    char *symbol = get_symbol(current_fn);
+    if (current_defer_fn == NO_DEFER)
+      println("  jmp .L.return.%s", symbol);
+    else
+      println("  jmp .L.defer.%s.%lu", symbol, current_defer_fn);
     return;
   case ND_EXPR_STMT:
     gen_expr(node->lhs);
@@ -1310,11 +1363,39 @@ static void gen_stmt(Node *node) {
     return;
   /* SuperC */
   case ND_DEFER:
-    /* NOTHING */
+    switch (node->val) {
+    case DK_FUNCTION:
+      current_defer_fn++;
+      break;
+    case DK_BREAK:
+      current_loop->brk_defers_count++;
+      break;
+    case DK_CONTINUE:
+      current_loop->cont_defers_count++;
+      break;
+    }
     return;
   }
 
   error_tok(node->tok, "invalid statement");
+}
+
+static void gen_defers_brk() {
+  for (Node *defer_node = current_loop->brk_defers; defer_node; defer_node = defer_node->next) {
+    count_t saved_depth = depth; /* Prevent stack overflow */
+    println("%s.defer$brk.%lu:", current_loop->brk_label, current_loop->brk_defers_count--);
+    gen_stmt(defer_node);
+    depth = saved_depth;
+  }
+}
+
+static void gen_defers_cont() {
+  for (Node *defer_node = current_loop->cont_defers; defer_node; defer_node = defer_node->next) {
+    count_t saved_depth = depth; /* Prevent stack overflow */
+    println("%s.defer$cont.%lu:", current_loop->cont_label, current_loop->cont_defers_count--);
+    gen_stmt(defer_node);
+    depth = saved_depth;
+  }
 }
 
 // Assign offsets to local variables.
@@ -1492,6 +1573,7 @@ static void emit_text(Obj *prog) {
       continue;
 
     const char *symbol = get_symbol(fn);
+    current_defer_fn = NO_DEFER; // Reset defers
 
     // No code is emitted for "static inline" functions
     // if no one is referencing them.
@@ -1596,18 +1678,22 @@ static void emit_text(Obj *prog) {
       println("  mov $0, %%rax");
 
     // Epilogue
-    println(".L.return.%s:", symbol);
 
-    if (fn->defers_count > 0) {
+    if (fn->defers){
       push(); /* Save the return value (for if it's destroyed) */
-      /* Emit deferred statements in reverse order */
-      for (int i = fn->defers_count - 1; i >= 0; i--) {
-        println("  .L.defer.%s.%d:", symbol, i);
-        gen_stmt(fn->defers[i]);
+
+      /* Emit deferred statements */
+      for (Node *defer_node = fn->defers; defer_node; defer_node = defer_node->next) {
+        count_t save_depth = depth; /* Prevent stack overflow */
+        println(".L.defer.%s.%lu:", symbol, current_defer_fn--);
+        gen_stmt(defer_node);
+        depth = save_depth;
       }
+
       pop("%rax"); /* Recover the return value */
     }
 
+    println(".L.return.%s:", symbol);
     println("  mov %%rbp, %%rsp");
     println("  pop %%rbp");
     println("  ret");

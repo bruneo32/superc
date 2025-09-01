@@ -23,14 +23,14 @@
 #define PROJECT_VERSION_PATCH    0
 #define PROJECT_VERSION_REVISION 0
 
-#define MAX_DEFERS 100
-
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 #ifndef __GNUC__
 # define __attribute__(x)
 #endif
+
+typedef uint64_t count_t;
 
 typedef struct Type Type;
 typedef struct Node Node;
@@ -169,8 +169,7 @@ struct Obj {
   Obj *va_area;
   Obj *alloca_bottom;
   int stack_size;
-  Node *defers[MAX_DEFERS];
-  int defers_count;
+  Node *defers;
 
   // Static inline function
   bool is_live;
@@ -189,9 +188,17 @@ struct Relocation {
   long addend;
 };
 
+// Defer kinds
+typedef enum {
+  DK_FUNCTION = 0, // Function
+  DK_BREAK,        // Break loop
+  DK_CONTINUE,     // Continue loop
+} DeferKind;
+
 // AST node
 typedef enum {
-  ND_NULL_EXPR, // Do nothing
+  ND_NOP       = -1, // Do nothing (pass)
+  ND_NULL_EXPR = 0, // Do nothing (error)
   ND_ADD,       // +
   ND_SUB,       // -
   ND_MUL,       // *
@@ -225,6 +232,8 @@ typedef enum {
   ND_CASE,      // "case"
   ND_BLOCK,     // { ... }
   ND_GOTO,      // "goto"
+  ND_BREAK,     // "break"
+  ND_CONTINUE,  // "continue"
   ND_GOTO_EXPR, // "goto" labels-as-values
   ND_LABEL,     // Labeled statement
   ND_LABEL_VAL, // [GNU] Labels-as-values
@@ -263,6 +272,10 @@ struct Node {
   // "break" and "continue" labels
   char *brk_label;
   char *cont_label;
+  count_t brk_defers_count;
+  count_t cont_defers_count;
+  Node *brk_defers;
+  Node *cont_defers;
 
   // Block or statement expression
   Node *body;
