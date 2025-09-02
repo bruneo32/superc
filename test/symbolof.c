@@ -7,10 +7,10 @@ int (int a) sum(int b) __attribute__((symbol("def")));
 int (int a) add(int b) /* Symbol defaults to `add$i` */;
 int sum(int a, int b) __attribute__((symbol("abc")));
 
-asm(".section .data\n"
-    ".global __asm_var__\n"
-    "__asm_var__: .long 32\n"
-    ".section .text\n");
+asm(".global __asm_var__\n"
+    ".data\n.type __asm_var__, @object\n"
+    ".size __asm_var__, 8\n.align 8\n"
+    "__asm_var__: .long 32\n");
 extern long ext1 __attribute__((symbol("__asm_var__")));
 
 int main(void) {

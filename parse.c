@@ -409,6 +409,18 @@ static Identifier consume_ident(Token** rest, Token *tok) {
   if (equal(tok, "(") && is_typename(tok->next)) {
     /* Parse typename */
     Type *ty = typename(&tok, tok->next);
+
+    /* Convert array and function types to pointers */
+    if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
+      // "array of T" is converted to "pointer to T" only in the receiver
+      // context. For example, *argv[] is converted to **argv by this.
+      ty = pointer_to(ty->base);
+    } else if (ty->kind == TY_FUNC) {
+      // Likewise, a function is converted to a pointer to a function
+      // only in the receiver context.
+      ty = pointer_to(ty);
+    }
+
     tok = skip(tok, ")");
 
     /* Parse after type */
@@ -705,7 +717,7 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
 
     Token *name = ty2->name;
 
-    if (ty2->kind == TY_ARRAY) {
+    if (ty2->kind == TY_ARRAY || ty2->kind == TY_VLA) {
       // "array of T" is converted to "pointer to T" only in the parameter
       // context. For example, *argv[] is converted to **argv by this.
       ty2 = pointer_to(ty2->base);
@@ -2772,31 +2784,31 @@ static Token *attribute_list(Token *tok, Type *ty, Obj *var) {
       first = false;
 
       if (consume(&tok, tok, "packed")) {
-        if (!ty)
-          error_tok(tok, "packed attribute can only be applied to types");
-        ty->is_packed = true;
+        if (ty)
+          ty->is_packed = true;
         continue;
       }
 
       if (consume(&tok, tok, "aligned")) {
-        if (!ty)
-          error_tok(tok, "aligned attribute can only be applied to types");
         tok = skip(tok, "(");
-        ty->align = const_expr(&tok, tok);
+        uint64_t cexpr = const_expr(&tok, tok);
+        if (ty)
+          ty->align = cexpr;
         tok = skip(tok, ")");
         continue;
       }
 
       if (consume(&tok, tok, "symbol")) {
-        if (!var)
-          error_tok(tok, "symbol attribute can only be applied to declarations");
+        if (var && var->is_local)
+          error_tok(tok, "symbol attribute can only be applied to global declarations");
 
         tok = skip(tok, "(");
         if (tok->kind != TK_STR)
           error_tok(tok, "expected string literal");
 
         /* Remove quotes */
-        var->symbol = strndup(tok->loc + 1, tok->len - 2);
+        if (var)
+          var->symbol = strndup(tok->loc + 1, tok->len - 2);
 
         tok = skip(tok->next, ")");
         continue;
@@ -3149,6 +3161,18 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   add_type(recv);
 
   Type *basety = recv->ty;
+
+  /* Convert array and function types to pointers */
+  if (basety->kind == TY_ARRAY) {
+    // "array of T" is converted to "pointer to T" only in the receiver
+    // context. For example, *argv[] is converted to **argv by this.
+    basety = pointer_to(basety->base);
+  } else if (basety->kind == TY_FUNC) {
+    // Likewise, a function is converted to a pointer to a function
+    // only in the receiver context.
+    basety = pointer_to(basety);
+  }
+
   char *basety_str = type_to_string(basety);
 
   Obj *fnobj = NULL;
@@ -3515,20 +3539,28 @@ static bool is_type_method(Token *tok) {
 
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if it's a type method */
-  Type *impl_type = NULL;
+  Type *recv = NULL;
 
   if (is_type_method(tok)) {
     tok = tok->next;
 
     Type *impl_base = declspec(&tok, tok, NULL);
-    impl_type = declarator(&tok, tok, impl_base);
+    recv = declarator(&tok, tok, impl_base);
 
-    if (!impl_type->name)
-      error_tok(impl_type->name_pos, "expected an identifier");
+    /* Convert array and function types to pointers */
+    if (recv->kind == TY_ARRAY || recv->kind == TY_VLA) {
+      // "array of T" is converted to "pointer to T" only in the receiver
+      // context. For example, *argv[] is converted to **argv by this.
+      recv = pointer_to(recv->base);
+    } else if (recv->kind == TY_FUNC) {
+      // Likewise, a function is converted to a pointer to a function
+      // only in the receiver context.
+      recv = pointer_to(recv);
+    }
 
     /* This is not arbitrary, the next declarator function
-     * would destroy the impl_type references. So copy to save. */
-    impl_type = copy_type(impl_type);
+     * would destroy the recv references. So copy to save. */
+    recv = copy_type(recv);
 
     tok = skip(tok, ")");
   }
@@ -3539,12 +3571,18 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   char *name_str = get_ident(ty->name);
 
   /* Save the method type and name */
-  Identifier ident = {name_str, impl_type};
+  Identifier ident = {name_str, recv};
 
   /* Underlying identifier for methods is not the method name, it's uid */
-  if (impl_type)
+  if (recv)
     name_str = new_unique_name();
 
+  /* Check if its definition or declaration */
+  Token *tok_attr = tok;
+  if (equal(tok, "__attribute__")) {
+    // Skip attributes to read the following '{'
+    tok = attribute_list(tok, NULL, NULL); // Pass NULL to just advance the token
+  }
   const bool is_def = equal(tok, "{");
 
   Obj *fn = find_func(ident);
@@ -3565,23 +3603,23 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     fn->is_inline = attr->is_inline;
   }
 
-  if (impl_type) {
+  if (recv) {
     /* Calculate default symbol as 'id$type_asm' 'sum$int' */
-    char *type_cname = type_to_asmident(impl_type);
+    char *type_cname = type_to_asmident(recv);
     size_t newlen = strlen(fn->recv.name) + strlen(type_cname) + 2;
     fn->symbol = malloc(newlen);
     snprintf(fn->symbol, newlen, "%s$%s", fn->recv.name, type_cname);
     free(type_cname);
   }
 
-  tok = attribute_list(tok, NULL, fn);
+  tok = attribute_list(tok_attr, NULL, fn);
 
   fn->is_root = !(fn->is_static && fn->is_inline);
 
   /* If there is an method implicit receiver, prepend it to param list */
-  if (impl_type) {
-    impl_type->next = ty->params;
-    ty->params = impl_type;
+  if (recv) {
+    recv->next = ty->params;
+    ty->params = recv;
   }
 
   /* Not a function definition, exit */
@@ -3664,13 +3702,25 @@ static bool is_function(Token *tok) {
   /* Check if it's type method */
   if (is_type_method(tok)) {
     tok = tok->next;
+    Token *start = tok;
 
     /* Skip type specifiers */
     Type *bt = declspec(&tok, tok, NULL);
     Type *ty = declarator(&tok, tok, bt);
 
+    switch (ty->kind) {
+    case TY_ENUM:
+    case TY_UNION:
+    case TY_STRUCT:
+    case TY_FUNC:
+      if (!ty->tagname)
+        error_tok(start,
+          "Method call for anonymous enum/union/struct/function receiver not allowed");
+      break;
+    }
+
     if (!ty->name)
-      error_tok(ty->name_pos, "expected an identifier");
+      error_tok(ty->name_pos, "expected an identifier for receiver");
 
     tok = skip(tok, ")");
   }

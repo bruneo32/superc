@@ -61,22 +61,22 @@ static SDL_Renderer *game_renderer;
 
 int main() {
   /* Init SDL */
-	if (SDL_Init(SDL_INIT_VIDEO) != 0)
+  if (SDL_Init(SDL_INIT_VIDEO) != 0)
     return 1;
   defer SDL_Quit();
 
   /* Create window */
-	game_window = SDL_CreateWindow("Defer test",
+  game_window = SDL_CreateWindow("Defer test",
                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-								    640, 480, SDL_WINDOW_SHOWN);
-	if (!game_window)
+                    640, 480, SDL_WINDOW_SHOWN);
+  if (!game_window)
     return 2;
   defer SDL_DestroyWindow(game_window);
 
   /* Create renderer */
-	game_renderer = SDL_CreateRenderer(game_window, -1,
+  game_renderer = SDL_CreateRenderer(game_window, -1,
                     SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
-	if (!game_renderer)
+  if (!game_renderer)
     return 3;
   defer SDL_DestroyRenderer(game_renderer);
 
@@ -211,16 +211,16 @@ int bar2 = 456; // No symbol change.
 int sum(int a, int b) __attribute__((symbol("abc")));
 int (int a) sum(int b) __attribute__((symbol("def"))); // was "sum$i"
 
-// void abc(); // Error: redefinition of 'abc'
+// void abc(); // Link error: redefinition of symbol 'abc'
 
-asm(".section .data\n"
-    ".global __asm_var__\n"
-    "__asm_var__: .long 32\n"
-    ".section .text\n");
+asm(".global __asm_var__\n"
+    ".data\n.type __asm_var__, @object\n"
+    ".size __asm_var__, 8\n.align 8\n"
+    "__asm_var__: .long 32\n");
 extern long ext1 __attribute__((symbol("__asm_var__")));
 
 void test_symbol(char *a, char *b) {
-  printf("%s == %s -> %d", a, b, strcmp(a, b) == 0);
+  printf("%s == %s -> %d\n", a, b, strcmp(a, b) == 0);
 }
 
 int main(void) {
@@ -255,7 +255,7 @@ Register a declaration as an alias of another symbol. Very useful for [type meth
 #include <stdio.h>
 
 void foo() {
-	printf("foo\n");
+  printf("foo\n");
 }
 
 void bar() __attribute__((alias(foo)));

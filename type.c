@@ -391,7 +391,8 @@ char *type_to_string(Type *ty) {
     s += snprintf(s, BUFSIZE, "long double");
     break;
 
-  case TY_PTR: {
+  case TY_PTR:
+  case TY_VLA: {
     char *base = type_to_string(ty->base);
     s += snprintf(s, BUFSIZE, "%s*", base);
     free(base);
@@ -399,13 +400,10 @@ char *type_to_string(Type *ty) {
 
   case TY_ARRAY: {
     char *base = type_to_string(ty->base);
-    s += snprintf(s, BUFSIZE, "%s[%d]", base, ty->array_len);
-    free(base);
-  } break;
-
-  case TY_VLA: {
-    char *base = type_to_string(ty->base);
-    s += snprintf(s, BUFSIZE, "%s[]", base);
+    if (ty->array_len == -1)
+      s += snprintf(s, BUFSIZE, "%s[]", base);
+    else
+      s += snprintf(s, BUFSIZE, "%s[%d]", base, ty->array_len);
     free(base);
   } break;
 
@@ -462,111 +460,102 @@ char *type_to_string(Type *ty) {
   return strdup(buf);
 }
 
-/* return a string that can be used as an safe C identifier */
-/* TODO: handle depth-nesting */
-char *type_to_asmident(Type *ty) {
-  char buf[512];
-  char *s = buf;
-  #define BUFSIZE (sizeof(buf) - (s - buf))
+//
+// assembly symbol mangle
+//
 
-  if (ty->is_unsigned)
-    s += snprintf(s, BUFSIZE, "u");
+static void append_name_mangle(Token *tok, StringBuilder *sb) {
+  char *name = strndup(tok->loc, tok->len);
+  sb_appendf(sb, "%d%s", tok->len, name);
+  free(name);
+}
 
+static void append_type_mangle(Type *ty, StringBuilder *sb) {
   switch (ty->kind) {
   case TY_VOID:
-    s += snprintf(s, BUFSIZE, "v");
+    sb_append(sb, "v");
     break;
   case TY_BOOL:
-    s += snprintf(s, BUFSIZE, "b");
+    sb_append(sb, "b");
     break;
   case TY_CHAR:
-    s += snprintf(s, BUFSIZE, "c");
+    sb_appendf(sb, "%c", !ty->is_unsigned ? 'c' : 'h');
     break;
   case TY_SHORT:
-    s += snprintf(s, BUFSIZE, "s");
+    sb_appendf(sb, "%c", 's' + ty->is_unsigned);
     break;
   case TY_INT:
-    s += snprintf(s, BUFSIZE, "i");
+    sb_appendf(sb, "%c", 'i' + ty->is_unsigned);
     break;
   case TY_LONG:
-    s += snprintf(s, BUFSIZE, "l");
+    sb_appendf(sb, "%c", 'l' + ty->is_unsigned);
     break;
   case TY_FLOAT:
-    s += snprintf(s, BUFSIZE, "f");
+    sb_append(sb, "f");
     break;
   case TY_DOUBLE:
-    s += snprintf(s, BUFSIZE, "d");
+    sb_append(sb, "d");
     break;
   case TY_LDOUBLE:
-    s += snprintf(s, BUFSIZE, "ld");
+    sb_append(sb, "e");
     break;
 
-  case TY_PTR: {
-    char *base = type_to_asmident(ty->base);
-    s += snprintf(s, BUFSIZE, "%s_P", base);
-    free(base);
-  } break;
+  case TY_PTR:
+  case TY_VLA:
+    sb_append(sb, "P");
+    append_type_mangle(ty->base, sb);
+    break;
 
-  case TY_ARRAY: {
-    char *base = type_to_asmident(ty->base);
-    s += snprintf(s, BUFSIZE, "%s_A%d", base, ty->array_len);
-    free(base);
-  } break;
+  case TY_ARRAY:
+    sb_appendf(sb, "A%d", ty->array_len);
+    append_type_mangle(ty->base, sb);
+    break;
 
-  case TY_VLA: {
-    char *base = type_to_asmident(ty->base);
-    s += snprintf(s, BUFSIZE, "%s_V", base);
-    free(base);
-  } break;
+  case TY_ENUM:
+    sb_append(sb, "E");
+    if (!ty->tagname)
+      error_tok(ty->tagname, "Unnamed enums are not supported");
+    append_name_mangle(ty->tagname, sb);
+    break;
 
-  case TY_ENUM: {
-    s += snprintf(s, BUFSIZE, "E");
-    if (ty->tagname) {
-      char name[ty->tagname->len + 1];
-      strncpy(name, ty->tagname->loc, ty->tagname->len);
-      name[ty->tagname->len] = '\0';
-      s += snprintf(s, BUFSIZE, "%s", name);
+  case TY_UNION:
+    sb_append(sb, "U");
+    if (!ty->tagname)
+      error_tok(ty->tagname, "Unnamed unions are not supported");
+    append_name_mangle(ty->tagname, sb);
+    break;
+
+  case TY_STRUCT:
+    sb_append(sb, "S");
+    if (!ty->tagname)
+      error_tok(ty->tagname, "Unnamed structs are not supported");
+    append_name_mangle(ty->tagname, sb);
+    break;
+
+  case TY_FUNC:
+    sb_append(sb, "F");
+    if (ty->tagname)
+      // error_tok(ty->tagname, "Unnamed functions are not supported");
+      append_name_mangle(ty->tagname, sb);
+    else {
+      for (Type *p = ty->params; p; p = p->next)
+        append_type_mangle(p, sb);
+      if (ty->is_variadic) sb_append(sb, "Q");
+      append_type_mangle(ty->return_ty, sb);
     }
-  } break;
-
-  case TY_STRUCT: {
-    s += snprintf(s, BUFSIZE, "S");
-    if (ty->tagname) {
-      char name[ty->tagname->len + 1];
-      strncpy(name, ty->tagname->loc, ty->tagname->len);
-      name[ty->tagname->len] = '\0';
-      s += snprintf(s, BUFSIZE, "%s", name);
-    }
-  } break;
-
-  case TY_UNION: {
-    s += snprintf(s, BUFSIZE, "U");
-    if (ty->tagname) {
-      char name[ty->tagname->len + 1];
-      strncpy(name, ty->tagname->loc, ty->tagname->len);
-      name[ty->tagname->len] = '\0';
-      s += snprintf(s, BUFSIZE, "%s", name);
-    }
-  } break;
-
-  case TY_FUNC: {
-    char *ret = type_to_asmident(ty->return_ty);
-    s += snprintf(s, BUFSIZE, "%s_F", ret);
-    free(ret);
-    for (Type *p = ty->params; p; p = p->next) {
-      if (p != ty->params) s += snprintf(s, BUFSIZE, "_");
-      char *pt = type_to_asmident(p);
-      s += snprintf(s, BUFSIZE, "%s", pt);
-      free(pt);
-    }
-    if (ty->is_variadic) s += snprintf(s, BUFSIZE, "_VARIADIC");
-  } break;
+    break;
 
   default:
-    s += snprintf(s, BUFSIZE, "K");
+    unreachable();
   }
+}
 
-  #undef BUFSIZE
-
-  return strdup(buf);
+/* return a string that can be used as an safe C identifier */
+char *type_to_asmident(Type *ty) {
+  StringBuilder sb;
+  sb_init(&sb);
+  append_type_mangle(ty, &sb);
+  char *res = strndup(sb.buf, sb.len);
+  sb_free(&sb);
+  return res;
 }

@@ -484,6 +484,22 @@ void hashmap_delete2(HashMap *map, char *key, int keylen);
 void hashmap_test(void);
 
 //
+// string_builder.c
+//
+
+typedef struct {
+  char  *buf;
+  size_t len;
+  size_t cap;
+} StringBuilder;
+
+void sb_init(StringBuilder *sb);
+void sb_free(StringBuilder *sb);
+void sb_grow(StringBuilder *sb, size_t more);
+void sb_append(StringBuilder *sb, const char *s);
+void sb_appendf(StringBuilder *sb, const char *fmt, ...);
+
+//
 // main.c
 //
 
