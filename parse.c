@@ -187,13 +187,6 @@ static void leave_scope(void) {
   scope = scope->next;
 }
 
-static char *pop_brk_label(void) {
-  if (!brk_label_array) return NULL;
-  char *label = brk_label_array->str;
-  brk_label_array = brk_label_array->next;
-  return label;
-}
-
 static char *push_brk_label(char *label) {
   StrArray *new_label = calloc(1, sizeof(StrArray));
   new_label->str = strdup(label);
@@ -1906,7 +1899,7 @@ static Node *stmt(Token **rest, Token *tok) {
       if (!node->unique_label)
         error_tok(tok, "invalid break label");
     } else {
-      node->unique_label = pop_brk_label();
+      node->unique_label = brk_label_array->str;
     }
 
     *rest = skip(tok->next, ";");
