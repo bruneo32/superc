@@ -16,6 +16,7 @@
 ### After lib
 - Complete C11 and C23
 - LLVM backend
+- VSCode extension
 - Compiler for windows
 - Improve --help
 - Better errors and warnings

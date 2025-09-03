@@ -81,6 +81,13 @@ struct InitDesg {
   Obj *var;
 };
 
+// String array iterator
+typedef struct StrArray StrArray;
+struct StrArray {
+  char *str;
+  StrArray *next;
+};
+
 // All local variable instances created during parsing are
 // accumulated to this list.
 static Obj *locals;
@@ -98,7 +105,7 @@ static Node *gotos;
 static Node *labels;
 
 // Current "goto" and "continue" jump targets.
-static char *brk_label;
+static StrArray *brk_label_array = &(StrArray){};
 static char *cont_label;
 
 // Points to a node representing a switch if we are parsing
@@ -178,6 +185,31 @@ static void enter_scope(Node *block) {
 
 static void leave_scope(void) {
   scope = scope->next;
+}
+
+static char *pop_brk_label(void) {
+  if (!brk_label_array) return NULL;
+  char *label = brk_label_array->str;
+  brk_label_array = brk_label_array->next;
+  return label;
+}
+
+static char *push_brk_label(char *label) {
+  StrArray *new_label = calloc(1, sizeof(StrArray));
+  new_label->str = strdup(label);
+  new_label->next = brk_label_array;
+  brk_label_array = new_label;
+  return brk_label_array->str;
+}
+
+static char *find_brk_label(size_t depth) {
+  StrArray *search = brk_label_array;
+
+  /* Dive in N levels */
+  while (search && --depth > 0)
+    search = search->next;
+
+  return (!search) ? NULL : search->str;
 }
 
 // Find a variable by name.
@@ -1702,13 +1734,13 @@ static Node *stmt(Token **rest, Token *tok) {
     Node *sw = current_switch;
     current_switch = node;
 
-    char *brk = brk_label;
-    brk_label = node->brk_label = new_unique_name();
+    StrArray *brk = brk_label_array;
+    node->brk_label = push_brk_label(new_unique_name());
 
     node->then = stmt(rest, tok);
 
     current_switch = sw;
-    brk_label = brk;
+    brk_label_array = brk;
     return node;
   }
 
@@ -1759,9 +1791,10 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    char *brk = brk_label;
+    StrArray *brk  = brk_label_array;
+    node->brk_label = push_brk_label(new_unique_name());
+
     char *cont = cont_label;
-    brk_label = node->brk_label = new_unique_name();
     cont_label = node->cont_label = new_unique_name();
 
     if (is_typename(tok)) {
@@ -1782,7 +1815,7 @@ static Node *stmt(Token **rest, Token *tok) {
     node->then = stmt(rest, tok);
 
     leave_scope();
-    brk_label = brk;
+    brk_label_array = brk;
     cont_label = cont;
     return node;
   }
@@ -1798,15 +1831,16 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    char *brk = brk_label;
+    StrArray *brk  = brk_label_array;
+    node->brk_label = push_brk_label(new_unique_name());
+
     char *cont = cont_label;
-    brk_label = node->brk_label = new_unique_name();
     cont_label = node->cont_label = new_unique_name();
 
     node->then = stmt(rest, tok);
 
     leave_scope();
-    brk_label = brk;
+    brk_label_array = brk;
     cont_label = cont;
     return node;
   }
@@ -1818,15 +1852,16 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    char *brk = brk_label;
+    StrArray *brk  = brk_label_array;
+    node->brk_label = push_brk_label(new_unique_name());
+
     char *cont = cont_label;
-    brk_label = node->brk_label = new_unique_name();
     cont_label = node->cont_label = new_unique_name();
 
     node->then = stmt(&tok, tok->next);
 
     leave_scope();
-    brk_label = brk;
+    brk_label_array = brk;
     cont_label = cont;
 
     tok = skip(tok, "while");
@@ -1858,10 +1893,22 @@ static Node *stmt(Token **rest, Token *tok) {
   }
 
   if (equal(tok, "break")) {
-    if (!brk_label)
+    if (!brk_label_array || !brk_label_array->str)
       error_tok(tok, "stray break");
+
     Node *node = new_node(ND_BREAK, tok);
-    node->unique_label = brk_label;
+
+    if (tok->next->kind == TK_NUM) {
+      tok = tok->next;
+      if (is_flonum(tok->ty))
+        error_tok(tok, "break number must be integer");
+      node->unique_label = find_brk_label(tok->val);
+      if (!node->unique_label)
+        error_tok(tok, "invalid break label");
+    } else {
+      node->unique_label = pop_brk_label();
+    }
+
     *rest = skip(tok->next, ";");
     return node;
   }

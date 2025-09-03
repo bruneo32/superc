@@ -5,10 +5,10 @@
   - [Defer](#defer)
   - [Defer in loops](#defer-in-loops)
   - [Type methods](#type-methods)
+  - [break N](#break-n)
   - [Symbol mangling](#symbol-mangling)
 - [Current planned features](#current-planned-features)
   - [Aliases](#aliases)
-  - [break N](#break-n)
   - [Lambdas](#lambdas)
 
 # Current developed features
@@ -194,6 +194,31 @@ int main() {
 }
 ```
 
+## break N
+Will break out of a loop or switch N levels up.
+
+### Examples
+```c
+#include <stdio.h>
+
+int main() {
+  for (int j = 0; j < 10; j++) {
+    for (int i = 0; i < 10; i++) {
+      if (i == 5 && j == 2)
+        break 2; /* Break both for loops */
+      printf(" %d\n", i);
+    }
+    putchar('\n');
+  }
+  printf("\n -- End --\n");
+  // 0 1 2 3 4 5 6 7 8 9
+  // 0 1 2 3 4 5 6 7 8 9
+  // 0 1 2 3 4
+  // -- End --
+  return 0;
+}
+```
+
 ## Symbol mangling
 Allows the user to change the output symbol of a variable or function.
 - New attribute `__attribute__((symbol("new_symbol_name")))` -> changes the output symbol at assembly level of the variable or function.
@@ -294,31 +319,6 @@ int main() {
 
   // 8.0, 1.0
   printf("%f, %f\n", r.x, r.y);
-  return 0;
-}
-```
-
-## break N
-Will break out of a scope N levels up.
-
-### Examples
-```c
-#include <stdio.h>
-
-int main() {
-  for (int j = 0; j < 10; j++) {
-    for (int i = 0; i < 10; i++) {
-      if (i == 5 && j == 2)
-        break 2; /* Break both for loops */
-      printf(" %d\n", i);
-    }
-    putchar('\n');
-  }
-  printf("\n -- End --\n");
-  // 0 1 2 3 4 5 6 7 8 9
-  // 0 1 2 3 4 5 6 7 8 9
-  // 0 1 2 3 4
-  // -- End --
   return 0;
 }
 ```
