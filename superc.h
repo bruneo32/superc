@@ -48,8 +48,20 @@ typedef struct {
   int len;
 } StringArray;
 
+typedef struct {
+  char  *buf;
+  size_t len;
+  size_t cap;
+} StringBuilder;
+
 void strarray_push(StringArray *arr, char *s);
 char *format(char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+void sb_init(StringBuilder *sb);
+void sb_free(StringBuilder *sb);
+void sb_grow(StringBuilder *sb, size_t more);
+void sb_append(StringBuilder *sb, const char *s);
+void sb_appendf(StringBuilder *sb, const char *fmt, ...);
 
 //
 // tokenize.c
@@ -483,21 +495,6 @@ void hashmap_delete(HashMap *map, char *key);
 void hashmap_delete2(HashMap *map, char *key, int keylen);
 void hashmap_test(void);
 
-//
-// string_builder.c
-//
-
-typedef struct {
-  char  *buf;
-  size_t len;
-  size_t cap;
-} StringBuilder;
-
-void sb_init(StringBuilder *sb);
-void sb_free(StringBuilder *sb);
-void sb_grow(StringBuilder *sb, size_t more);
-void sb_append(StringBuilder *sb, const char *s);
-void sb_appendf(StringBuilder *sb, const char *fmt, ...);
 
 //
 // main.c
