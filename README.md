@@ -13,7 +13,7 @@
 
 # Current developed features
 ## Defer
-Will execute the code stated right before exiting a block of code.
+Will execute the code stated right before exiting a function
 ### Examples
 ```c
 #include <stdio.h>
@@ -85,10 +85,9 @@ int main() {
    * If function returns early, it will execute the defer statements before
    * exiting the function.
    * I.E.:
-   *   - If game_window is NULL, SDL_DestroyWindow and SDL_Quit will be called
-   *     (in that order, reverse to declaration).
-   *     But SDL_DestroyRenderer will not be called, because the return happens
-   *     before the defer is declared.
+   *   - If game_renderer is NULL, SDL_DestroyWindow and SDL_Quit will be called
+   *     (in that order, reverse to declaration), but SDL_DestroyRenderer won't.
+   *     Because the return happens before the defer is declared.
    *
    * [!!!]
    * Beware that defer statements are related to the function, not the block of code.
@@ -108,8 +107,7 @@ int main() {
 
 ## Defer in loops
 Will execute the code stated right before the break/continue label of a for/while/do loop.
-At first glance it can look totally unnecessary,
-but for memory management escenarios can be very useful.
+At first glance it can look totally unnecessary, but for memory management escenarios can be very useful.
 
 ### Examples
 ```c
@@ -150,8 +148,8 @@ int (int a) sum(int b) {
 int main() {
   // = 15
   printf("= %d\n", ((int)10).sum(5));
-  // = 3
-  printf("= %d\n", (int).sum(1, 2));
+  // = 15
+  printf("= %d\n", (int).sum(10, 5));
   return 0;
 }
 ```
@@ -198,7 +196,7 @@ int main() {
 
 ## Symbol mangling
 Allows the user to change the output symbol of a variable or function.
-- New attribute `__attribute((symbol("new_symbol_name")))` -> changes the output symbol at assembly level of the variable or function.
+- New attribute `__attribute__((symbol("new_symbol_name")))` -> changes the output symbol at assembly level of the variable or function.
 - New keyword `symbolof(identifier)` -> returns the expected symbol name of the variable or function as a string literal.
 
 ### Examples
