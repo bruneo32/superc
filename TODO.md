@@ -1,7 +1,8 @@
 ### First: new complete syntax
 - Symbol alias
-- break N
 - Lambdas
+- HolyC switch ranges
+- HolyC sub switch
 - Namespaces?
 - Operators?
 - Errors?

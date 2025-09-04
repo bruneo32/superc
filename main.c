@@ -1,5 +1,7 @@
 #include "superc.h"
 
+#include "version.h"
+
 typedef enum {
   FILE_NONE, FILE_C, FILE_ASM, FILE_OBJ, FILE_AR, FILE_DSO,
 } FileType;
@@ -40,9 +42,11 @@ static void print_usage_exit(int status, const char* progname) {
 }
 
 static void print_version_exit(int status) {
-  fprintf(stderr, "%d.%d.%d.%d\n",
-        PROJECT_VERSION_MAJOR, PROJECT_VERSION_MINOR,
-        PROJECT_VERSION_PATCH, PROJECT_VERSION_REVISION);
+#ifdef PROJECT_GIT_VERSION_DESCRIBE
+  fprintf(stderr, "%s\n", PROJECT_GIT_VERSION_DESCRIBE);
+#else
+  fprintf(stderr, "<unknown>\n");
+#endif
   exit(status);
 }
 

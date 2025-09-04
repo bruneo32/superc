@@ -1,5 +1,7 @@
 CFLAGS=-std=c11 -g -fno-common -Wall -Wno-switch
 
+GIT_VERSION=$(shell git describe --tags --always --dirty)
+
 SRCS=$(wildcard *.c)
 OBJS=$(SRCS:.c=.o)
 
@@ -11,7 +13,13 @@ TESTS=$(TEST_SRCS:.c=.exe)
 superc: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(OBJS): superc.h
+$(OBJS): superc.h version.h
+
+version.h:
+	echo "#ifndef _VERSION_H_IN" > version.h
+	echo "#define _VERSION_H_IN" >> version.h
+	echo "#define PROJECT_GIT_VERSION_DESCRIBE \"$(GIT_VERSION)\"" >> version.h
+	echo "#endif // _VERSION_H_IN" >> version.h
 
 test/%.exe: superc test/%.c
 	./superc -Iinclude -Itest -c -o test/$*.o test/$*.c

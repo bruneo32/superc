@@ -6,5 +6,6 @@
 /tmp*
 /thirdparty
 /superc
+/version.h
 /test/*.exe
 /stage2

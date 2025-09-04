@@ -18,11 +18,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define PROJECT_VERSION_MAJOR    0
-#define PROJECT_VERSION_MINOR    1
-#define PROJECT_VERSION_PATCH    0
-#define PROJECT_VERSION_REVISION 0
-
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
