@@ -15,7 +15,8 @@ superc: $(OBJS)
 
 $(OBJS): superc.h version.h
 
-version.h:
+# Make version.h update when git HEAD changes
+version.h: .git/HEAD $(shell git rev-parse --git-dir)/refs/heads/$(shell git branch --show-current)
 	echo "#ifndef _VERSION_H_IN" > version.h
 	echo "#define _VERSION_H_IN" >> version.h
 	echo "#define PROJECT_GIT_VERSION_DESCRIBE \"$(GIT_VERSION)\"" >> version.h
