@@ -27,6 +27,7 @@ static char *opt_MF;
 static char *opt_MT;
 static char *opt_o;
 
+static StringArray as_extra_args;
 static StringArray ld_extra_args;
 static StringArray std_include_paths;
 
@@ -329,9 +330,20 @@ static void parse_args(int argc, char **argv) {
       exit(0);
     }
 
+    // Options to pass to LLVM assembler
+    if (!strcmp(argv[i], "-O")) {
+      strarray_push(&as_extra_args, "-O");
+      strarray_push(&as_extra_args, argv[++i]);
+      continue;
+    }
+    if (!strncmp(argv[i], "-O", 2)) {
+      strarray_push(&as_extra_args, "-O");
+      strarray_push(&as_extra_args, argv[i] + 2);
+      continue;
+    }
+
     // These options are ignored for now.
-    if (!strncmp(argv[i], "-O", 2) ||
-        !strncmp(argv[i], "-W", 2) ||
+    if (!strncmp(argv[i], "-W", 2) ||
         !strncmp(argv[i], "-g", 2) ||
         !strncmp(argv[i], "-std=", 5) ||
         !strcmp(argv[i], "-ffreestanding") ||
@@ -582,8 +594,20 @@ static void cc1(void) {
 }
 
 static void assemble(char *input, char *output) {
-  char *cmd[] = {"as", "-c", input, "-o", output, NULL};
-  run_subprocess(cmd);
+  StringArray arr = {};
+
+  strarray_push(&arr, "llc");
+  strarray_push(&arr, "-o");
+  strarray_push(&arr, output);
+  strarray_push(&arr, "-mtriple=x86_64-pc-linux-gnu");
+  strarray_push(&arr, "--filetype=obj");
+
+  for (int i = 0; i < as_extra_args.len; i++)
+    strarray_push(&arr, as_extra_args.data[i]);
+
+  strarray_push(&arr, input);
+
+  run_subprocess(arr.data);
 }
 
 static char *find_file(char *pattern) {
@@ -629,7 +653,8 @@ static char *find_gcc_libpath(void) {
 static void run_linker(StringArray *inputs, char *output) {
   StringArray arr = {};
 
-  strarray_push(&arr, "ld");
+  /* Use LLVM linker*/
+  strarray_push(&arr, "ld.lld");
   strarray_push(&arr, "-o");
   strarray_push(&arr, output);
   strarray_push(&arr, "-m");

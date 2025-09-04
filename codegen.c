@@ -1703,15 +1703,28 @@ static void emit_text(Obj *prog) {
 void codegen(Obj *prog, FILE *out) {
   output_file = out;
 
+  /* LLVM TEST */
   File **files = get_input_files();
-  for (int i = 0; files[i]; i++)
-    println("  .file %d \"%s\"", files[i]->file_no, files[i]->name);
+  assert(files[0]); // Must have at least one input file
+  char *filename = files[0]->name;
+  println("; ModuleID = '%s'", filename);
+  println("source_filename = \"%s\"", filename);
+  println("");
 
-  assign_lvar_offsets(prog);
-  emit_data(prog);
-  emit_text(prog);
+  println("@.str = private unnamed_addr constant [15 x i8] c\"Hello, world!\\0A\\00\", align 1");
+  println("define dso_local i32 @main() #0 {");
+  println("  %%1 = getelementptr inbounds [15 x i8], [15 x i8]* @.str, i64 0, i64 0");
+  println("  %%2 = call i32 (i8*, ...) @printf(i8* noundef %%1)");
+  println("  call void asm sideeffect \"incl %%eax\", \"~{rax}\"()");
+  println("  ret i32 0");
+  println("}");
+  println("declare i32 @printf(i8* noundef, ...) #1");
 
-  /* Mark stack as non-executable to prevent LD warning:
-   * `missing .note.GNU-stack section implies executable stack` */
-  println(".section .note.GNU-stack,\"\",@progbits");
+  // assign_lvar_offsets(prog);
+  // emit_data(prog);
+  // emit_text(prog);
+
+  // /* Mark stack as non-executable to prevent LD warning:
+  //  * `missing .note.GNU-stack section implies executable stack` */
+  // println(".section .note.GNU-stack,\"\",@progbits");
 }
