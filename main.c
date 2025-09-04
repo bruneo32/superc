@@ -730,7 +730,7 @@ static FileType get_file_type(char *filename) {
     return FILE_OBJ;
   if (endswith(filename, ".c"))
     return FILE_C;
-  if (endswith(filename, ".s"))
+  if (endswith(filename, ".ll"))
     return FILE_ASM;
 
   error("<command line>: unknown file extension: %s", filename);
@@ -774,7 +774,7 @@ int main(int argc, char **argv) {
     if (opt_o)
       output = opt_o;
     else if (opt_S)
-      output = replace_extn(input, ".s");
+      output = replace_extn(input, ".ll");
     else
       output = replace_extn(input, ".o");
 
@@ -786,7 +786,7 @@ int main(int argc, char **argv) {
       continue;
     }
 
-    // Handle .s
+    // Handle .ll
     if (type == FILE_ASM) {
       if (!opt_S)
         assemble(input, output);

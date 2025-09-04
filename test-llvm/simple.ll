@@ -1,10 +1,208 @@
-@.str = private unnamed_addr constant [15 x i8] c"Hello, world!\0A\00", align 1
+; ModuleID = 'simple.c'
+source_filename = "simple.c"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
 
-define dso_local i32 @main() #0 {
-  %1 = getelementptr inbounds [15 x i8], [15 x i8]* @.str, i64 0, i64 0
-  %2 = call i32 (i8*, ...) @printf(i8* noundef %1)
-  call void asm sideeffect "incl %eax", "~{rax}"()
-  ret i32 42
+%struct.Car = type { i8*, %struct.color, i32 }
+%struct.color = type { i8, i8, i8, i8 }
+%struct.ByteField = type { i8 }
+%struct.mypack = type <{ i8, i64 }>
+%struct.ShortField = type { i16 }
+%struct.ComplexField = type { i16, i16, i32, i8 }
+%union.number = type { i32 }
+%union.only_floats = type { double, [504 x i8] }
+%union.idk_big = type { i64, [504 x i8] }
+%struct.inside = type { i32, i32 }
+
+@.str = private unnamed_addr constant [7 x i8] c"public\00", align 1
+@public_string = dso_local global i8* getelementptr inbounds ([7 x i8], [7 x i8]* @.str, i32 0, i32 0), align 8, !dbg !0
+@mycar = dso_local global %struct.Car zeroinitializer, align 8, !dbg !5
+@bytefield = dso_local global %struct.ByteField { i8 1 }, align 1, !dbg !22
+@.str.1 = private unnamed_addr constant [11 x i8] c"anonymous\0A\00", align 1
+@g0 = dso_local global i8 0, align 1, !dbg !39
+@g01 = dso_local global i16 0, align 2, !dbg !42
+@g02 = dso_local global i64 0, align 8, !dbg !45
+@g03 = dso_local global float 0.000000e+00, align 4, !dbg !48
+@g04 = dso_local global double 0.000000e+00, align 8, !dbg !51
+@g05 = dso_local global x86_fp80 0xK00000000000000000000, align 16, !dbg !54
+@g08 = dso_local global i64 0, align 8, !dbg !57
+@g09 = dso_local global i64 0, align 8, !dbg !61
+@g10 = dso_local global i8* null, align 8, !dbg !65
+@g1 = dso_local global i32 0, align 512, !dbg !68
+@mypacked = dso_local global %struct.mypack zeroinitializer, align 1, !dbg !70
+@shortfield = dso_local global %struct.ShortField zeroinitializer, align 1, !dbg !76
+@complexfield = dso_local global %struct.ComplexField zeroinitializer, align 4, !dbg !90
+@mynumber = dso_local global %union.number zeroinitializer, align 4, !dbg !105
+@myfloat = dso_local global %union.only_floats zeroinitializer, align 512, !dbg !112
+@mybig = dso_local global %union.idk_big zeroinitializer, align 512, !dbg !118
+
+; Function Attrs: noinline nounwind optnone uwtable
+define dso_local i32 @main() #0 !dbg !135 {
+  %1 = alloca i32, align 4
+  %2 = alloca %struct.inside, align 1
+  store i32 0, i32* %1, align 4
+  call void @llvm.dbg.declare(metadata %struct.inside* %2, metadata !139, metadata !DIExpression()), !dbg !144
+  %3 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([11 x i8], [11 x i8]* @.str.1, i64 0, i64 0)), !dbg !145
+  ret i32 0, !dbg !146
 }
 
-declare i32 @printf(i8* noundef, ...) #1
+; Function Attrs: nofree nosync nounwind readnone speculatable willreturn
+declare void @llvm.dbg.declare(metadata, metadata, metadata) #1
+
+declare i32 @printf(i8* noundef, ...) #2
+
+attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+attributes #1 = { nofree nosync nounwind readnone speculatable willreturn }
+attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+
+!llvm.dbg.cu = !{!2}
+!llvm.module.flags = !{!127, !128, !129, !130, !131, !132, !133}
+!llvm.ident = !{!134}
+
+!0 = !DIGlobalVariableExpression(var: !1, expr: !DIExpression())
+!1 = distinct !DIGlobalVariable(name: "public_string", scope: !2, file: !3, line: 29, type: !10, isLocal: false, isDefinition: true)
+!2 = distinct !DICompileUnit(language: DW_LANG_C99, file: !3, producer: "Debian clang version 14.0.6", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, globals: !4, splitDebugInlining: false, nameTableKind: None)
+!3 = !DIFile(filename: "simple.c", directory: "/home/bruneo/g/superc/test-llvm", checksumkind: CSK_MD5, checksum: "bdfeefdc6e07f5099f30af1b49704cea")
+!4 = !{!0, !5, !22, !39, !42, !45, !48, !51, !54, !57, !61, !65, !68, !70, !76, !90, !105, !112, !118}
+!5 = !DIGlobalVariableExpression(var: !6, expr: !DIExpression())
+!6 = distinct !DIGlobalVariable(name: "mycar", scope: !2, file: !3, line: 41, type: !7, isLocal: false, isDefinition: true)
+!7 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "Car", file: !3, line: 37, size: 128, elements: !8)
+!8 = !{!9, !12, !20}
+!9 = !DIDerivedType(tag: DW_TAG_member, name: "name", scope: !7, file: !3, line: 38, baseType: !10, size: 64)
+!10 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !11, size: 64)
+!11 = !DIBasicType(name: "char", size: 8, encoding: DW_ATE_signed_char)
+!12 = !DIDerivedType(tag: DW_TAG_member, name: "col", scope: !7, file: !3, line: 39, baseType: !13, size: 32, offset: 64)
+!13 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "color", file: !3, line: 32, size: 32, elements: !14)
+!14 = !{!15, !17, !18, !19}
+!15 = !DIDerivedType(tag: DW_TAG_member, name: "r", scope: !13, file: !3, line: 33, baseType: !16, size: 8)
+!16 = !DIBasicType(name: "unsigned char", size: 8, encoding: DW_ATE_unsigned_char)
+!17 = !DIDerivedType(tag: DW_TAG_member, name: "g", scope: !13, file: !3, line: 33, baseType: !16, size: 8, offset: 8)
+!18 = !DIDerivedType(tag: DW_TAG_member, name: "b", scope: !13, file: !3, line: 33, baseType: !16, size: 8, offset: 16)
+!19 = !DIDerivedType(tag: DW_TAG_member, name: "a", scope: !13, file: !3, line: 33, baseType: !16, size: 8, offset: 24)
+!20 = !DIDerivedType(tag: DW_TAG_member, name: "kms", scope: !7, file: !3, line: 40, baseType: !21, size: 32, offset: 96)
+!21 = !DIBasicType(name: "int", size: 32, encoding: DW_ATE_signed)
+!22 = !DIGlobalVariableExpression(var: !23, expr: !DIExpression())
+!23 = distinct !DIGlobalVariable(name: "bytefield", scope: !2, file: !3, line: 59, type: !24, isLocal: false, isDefinition: true)
+!24 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "ByteField", file: !3, line: 50, size: 8, elements: !25)
+!25 = !{!26, !32, !33, !34, !35, !36, !37, !38}
+!26 = !DIDerivedType(tag: DW_TAG_member, name: "_8", scope: !24, file: !3, line: 51, baseType: !27, size: 1, flags: DIFlagBitField, extraData: i64 0)
+!27 = !DIDerivedType(tag: DW_TAG_typedef, name: "bit", file: !3, line: 48, baseType: !28)
+!28 = !DIDerivedType(tag: DW_TAG_typedef, name: "uint8_t", file: !29, line: 24, baseType: !30)
+!29 = !DIFile(filename: "/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h", directory: "", checksumkind: CSK_MD5, checksum: "2bf2ae53c58c01b1a1b9383b5195125c")
+!30 = !DIDerivedType(tag: DW_TAG_typedef, name: "__uint8_t", file: !31, line: 38, baseType: !16)
+!31 = !DIFile(filename: "/usr/include/x86_64-linux-gnu/bits/types.h", directory: "", checksumkind: CSK_MD5, checksum: "d108b5f93a74c50510d7d9bc0ab36df9")
+!32 = !DIDerivedType(tag: DW_TAG_member, name: "_7", scope: !24, file: !3, line: 52, baseType: !27, size: 1, offset: 1, flags: DIFlagBitField, extraData: i64 0)
+!33 = !DIDerivedType(tag: DW_TAG_member, name: "_6", scope: !24, file: !3, line: 53, baseType: !27, size: 1, offset: 2, flags: DIFlagBitField, extraData: i64 0)
+!34 = !DIDerivedType(tag: DW_TAG_member, name: "_5", scope: !24, file: !3, line: 54, baseType: !27, size: 1, offset: 3, flags: DIFlagBitField, extraData: i64 0)
+!35 = !DIDerivedType(tag: DW_TAG_member, name: "_4", scope: !24, file: !3, line: 55, baseType: !27, size: 1, offset: 4, flags: DIFlagBitField, extraData: i64 0)
+!36 = !DIDerivedType(tag: DW_TAG_member, name: "_3", scope: !24, file: !3, line: 56, baseType: !27, size: 1, offset: 5, flags: DIFlagBitField, extraData: i64 0)
+!37 = !DIDerivedType(tag: DW_TAG_member, name: "_2", scope: !24, file: !3, line: 57, baseType: !27, size: 1, offset: 6, flags: DIFlagBitField, extraData: i64 0)
+!38 = !DIDerivedType(tag: DW_TAG_member, name: "_1", scope: !24, file: !3, line: 58, baseType: !27, size: 1, offset: 7, flags: DIFlagBitField, extraData: i64 0)
+!39 = !DIGlobalVariableExpression(var: !40, expr: !DIExpression())
+!40 = distinct !DIGlobalVariable(name: "g0", scope: !2, file: !3, line: 8, type: !41, isLocal: false, isDefinition: true)
+!41 = !DIBasicType(name: "_Bool", size: 8, encoding: DW_ATE_boolean)
+!42 = !DIGlobalVariableExpression(var: !43, expr: !DIExpression())
+!43 = distinct !DIGlobalVariable(name: "g01", scope: !2, file: !3, line: 9, type: !44, isLocal: false, isDefinition: true)
+!44 = !DIBasicType(name: "unsigned short", size: 16, encoding: DW_ATE_unsigned)
+!45 = !DIGlobalVariableExpression(var: !46, expr: !DIExpression())
+!46 = distinct !DIGlobalVariable(name: "g02", scope: !2, file: !3, line: 10, type: !47, isLocal: false, isDefinition: true)
+!47 = !DIBasicType(name: "unsigned long", size: 64, encoding: DW_ATE_unsigned)
+!48 = !DIGlobalVariableExpression(var: !49, expr: !DIExpression())
+!49 = distinct !DIGlobalVariable(name: "g03", scope: !2, file: !3, line: 11, type: !50, isLocal: false, isDefinition: true)
+!50 = !DIBasicType(name: "float", size: 32, encoding: DW_ATE_float)
+!51 = !DIGlobalVariableExpression(var: !52, expr: !DIExpression())
+!52 = distinct !DIGlobalVariable(name: "g04", scope: !2, file: !3, line: 12, type: !53, isLocal: false, isDefinition: true)
+!53 = !DIBasicType(name: "double", size: 64, encoding: DW_ATE_float)
+!54 = !DIGlobalVariableExpression(var: !55, expr: !DIExpression())
+!55 = distinct !DIGlobalVariable(name: "g05", scope: !2, file: !3, line: 13, type: !56, isLocal: false, isDefinition: true)
+!56 = !DIBasicType(name: "long double", size: 128, encoding: DW_ATE_float)
+!57 = !DIGlobalVariableExpression(var: !58, expr: !DIExpression())
+!58 = distinct !DIGlobalVariable(name: "g08", scope: !2, file: !3, line: 21, type: !59, isLocal: false, isDefinition: true)
+!59 = !DIDerivedType(tag: DW_TAG_typedef, name: "size_t", file: !60, line: 46, baseType: !47)
+!60 = !DIFile(filename: "/usr/lib/llvm-14/lib/clang/14.0.6/include/stddef.h", directory: "", checksumkind: CSK_MD5, checksum: "2499dd2361b915724b073282bea3a7bc")
+!61 = !DIGlobalVariableExpression(var: !62, expr: !DIExpression())
+!62 = distinct !DIGlobalVariable(name: "g09", scope: !2, file: !3, line: 22, type: !63, isLocal: false, isDefinition: true)
+!63 = !DIDerivedType(tag: DW_TAG_typedef, name: "ptrdiff_t", file: !60, line: 35, baseType: !64)
+!64 = !DIBasicType(name: "long", size: 64, encoding: DW_ATE_signed)
+!65 = !DIGlobalVariableExpression(var: !66, expr: !DIExpression())
+!66 = distinct !DIGlobalVariable(name: "g10", scope: !2, file: !3, line: 24, type: !67, isLocal: false, isDefinition: true)
+!67 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: null, size: 64)
+!68 = !DIGlobalVariableExpression(var: !69, expr: !DIExpression())
+!69 = distinct !DIGlobalVariable(name: "g1", scope: !2, file: !3, line: 26, type: !21, isLocal: false, isDefinition: true, align: 4096)
+!70 = !DIGlobalVariableExpression(var: !71, expr: !DIExpression())
+!71 = distinct !DIGlobalVariable(name: "mypacked", scope: !2, file: !3, line: 46, type: !72, isLocal: false, isDefinition: true)
+!72 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "mypack", file: !3, line: 43, size: 72, elements: !73)
+!73 = !{!74, !75}
+!74 = !DIDerivedType(tag: DW_TAG_member, name: "a", scope: !72, file: !3, line: 44, baseType: !11, size: 8)
+!75 = !DIDerivedType(tag: DW_TAG_member, name: "b", scope: !72, file: !3, line: 45, baseType: !64, size: 64, offset: 8)
+!76 = !DIGlobalVariableExpression(var: !77, expr: !DIExpression())
+!77 = distinct !DIGlobalVariable(name: "shortfield", scope: !2, file: !3, line: 73, type: !78, isLocal: false, isDefinition: true)
+!78 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "ShortField", file: !3, line: 61, size: 16, elements: !79)
+!79 = !{!80, !81, !82, !83, !84, !85, !86, !87, !88, !89}
+!80 = !DIDerivedType(tag: DW_TAG_member, name: "_padding0", scope: !78, file: !3, line: 62, baseType: !27, size: 7, flags: DIFlagBitField, extraData: i64 0)
+!81 = !DIDerivedType(tag: DW_TAG_member, name: "_9", scope: !78, file: !3, line: 63, baseType: !27, size: 1, offset: 7, flags: DIFlagBitField, extraData: i64 0)
+!82 = !DIDerivedType(tag: DW_TAG_member, name: "_8", scope: !78, file: !3, line: 65, baseType: !27, size: 1, offset: 8, flags: DIFlagBitField, extraData: i64 0)
+!83 = !DIDerivedType(tag: DW_TAG_member, name: "_7", scope: !78, file: !3, line: 66, baseType: !27, size: 1, offset: 9, flags: DIFlagBitField, extraData: i64 0)
+!84 = !DIDerivedType(tag: DW_TAG_member, name: "_6", scope: !78, file: !3, line: 67, baseType: !27, size: 1, offset: 10, flags: DIFlagBitField, extraData: i64 0)
+!85 = !DIDerivedType(tag: DW_TAG_member, name: "_5", scope: !78, file: !3, line: 68, baseType: !27, size: 1, offset: 11, flags: DIFlagBitField, extraData: i64 0)
+!86 = !DIDerivedType(tag: DW_TAG_member, name: "_4", scope: !78, file: !3, line: 69, baseType: !27, size: 1, offset: 12, flags: DIFlagBitField, extraData: i64 0)
+!87 = !DIDerivedType(tag: DW_TAG_member, name: "_3", scope: !78, file: !3, line: 70, baseType: !27, size: 1, offset: 13, flags: DIFlagBitField, extraData: i64 0)
+!88 = !DIDerivedType(tag: DW_TAG_member, name: "_2", scope: !78, file: !3, line: 71, baseType: !27, size: 1, offset: 14, flags: DIFlagBitField, extraData: i64 0)
+!89 = !DIDerivedType(tag: DW_TAG_member, name: "_1", scope: !78, file: !3, line: 72, baseType: !27, size: 1, offset: 15, flags: DIFlagBitField, extraData: i64 0)
+!90 = !DIGlobalVariableExpression(var: !91, expr: !DIExpression())
+!91 = distinct !DIGlobalVariable(name: "complexfield", scope: !2, file: !3, line: 82, type: !92, isLocal: false, isDefinition: true)
+!92 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "ComplexField", file: !3, line: 75, size: 96, elements: !93)
+!93 = !{!94, !95, !96, !97, !100, !104}
+!94 = !DIDerivedType(tag: DW_TAG_member, name: "_padding0", scope: !92, file: !3, line: 76, baseType: !27, size: 7, flags: DIFlagBitField, extraData: i64 0)
+!95 = !DIDerivedType(tag: DW_TAG_member, name: "_1", scope: !92, file: !3, line: 77, baseType: !27, size: 1, offset: 7, flags: DIFlagBitField, extraData: i64 0)
+!96 = !DIDerivedType(tag: DW_TAG_member, name: "_2", scope: !92, file: !3, line: 78, baseType: !27, size: 1, offset: 8, flags: DIFlagBitField, extraData: i64 0)
+!97 = !DIDerivedType(tag: DW_TAG_member, name: "s", scope: !92, file: !3, line: 79, baseType: !98, size: 16, offset: 16)
+!98 = !DIDerivedType(tag: DW_TAG_typedef, name: "uint16_t", file: !29, line: 25, baseType: !99)
+!99 = !DIDerivedType(tag: DW_TAG_typedef, name: "__uint16_t", file: !31, line: 40, baseType: !44)
+!100 = !DIDerivedType(tag: DW_TAG_member, name: "i", scope: !92, file: !3, line: 80, baseType: !101, size: 32, offset: 32)
+!101 = !DIDerivedType(tag: DW_TAG_typedef, name: "uint32_t", file: !29, line: 26, baseType: !102)
+!102 = !DIDerivedType(tag: DW_TAG_typedef, name: "__uint32_t", file: !31, line: 42, baseType: !103)
+!103 = !DIBasicType(name: "unsigned int", size: 32, encoding: DW_ATE_unsigned)
+!104 = !DIDerivedType(tag: DW_TAG_member, name: "_3", scope: !92, file: !3, line: 81, baseType: !27, size: 7, offset: 64, flags: DIFlagBitField, extraData: i64 64)
+!105 = !DIGlobalVariableExpression(var: !106, expr: !DIExpression())
+!106 = distinct !DIGlobalVariable(name: "mynumber", scope: !2, file: !3, line: 89, type: !107, isLocal: false, isDefinition: true)
+!107 = distinct !DICompositeType(tag: DW_TAG_union_type, name: "number", file: !3, line: 85, size: 32, elements: !108)
+!108 = !{!109, !110, !111}
+!109 = !DIDerivedType(tag: DW_TAG_member, name: "b", scope: !107, file: !3, line: 86, baseType: !41, size: 8)
+!110 = !DIDerivedType(tag: DW_TAG_member, name: "i", scope: !107, file: !3, line: 87, baseType: !21, size: 32)
+!111 = !DIDerivedType(tag: DW_TAG_member, name: "f", scope: !107, file: !3, line: 88, baseType: !50, size: 32)
+!112 = !DIGlobalVariableExpression(var: !113, expr: !DIExpression())
+!113 = distinct !DIGlobalVariable(name: "myfloat", scope: !2, file: !3, line: 94, type: !114, isLocal: false, isDefinition: true)
+!114 = distinct !DICompositeType(tag: DW_TAG_union_type, name: "only_floats", file: !3, line: 91, size: 4096, elements: !115)
+!115 = !{!116, !117}
+!116 = !DIDerivedType(tag: DW_TAG_member, name: "f", scope: !114, file: !3, line: 92, baseType: !50, size: 32)
+!117 = !DIDerivedType(tag: DW_TAG_member, name: "d", scope: !114, file: !3, line: 93, baseType: !53, size: 64, align: 4096)
+!118 = !DIGlobalVariableExpression(var: !119, expr: !DIExpression())
+!119 = distinct !DIGlobalVariable(name: "mybig", scope: !2, file: !3, line: 101, type: !120, isLocal: false, isDefinition: true)
+!120 = distinct !DICompositeType(tag: DW_TAG_union_type, name: "idk_big", file: !3, line: 96, size: 4096, elements: !121)
+!121 = !{!122, !123, !124, !126}
+!122 = !DIDerivedType(tag: DW_TAG_member, name: "a", scope: !120, file: !3, line: 97, baseType: !21, size: 32)
+!123 = !DIDerivedType(tag: DW_TAG_member, name: "b", scope: !120, file: !3, line: 98, baseType: !64, size: 64)
+!124 = !DIDerivedType(tag: DW_TAG_member, name: "c", scope: !120, file: !3, line: 99, baseType: !125, size: 16, align: 4096)
+!125 = !DIBasicType(name: "short", size: 16, encoding: DW_ATE_signed)
+!126 = !DIDerivedType(tag: DW_TAG_member, name: "d", scope: !120, file: !3, line: 100, baseType: !53, size: 64, align: 4096)
+!127 = !{i32 7, !"Dwarf Version", i32 5}
+!128 = !{i32 2, !"Debug Info Version", i32 3}
+!129 = !{i32 1, !"wchar_size", i32 4}
+!130 = !{i32 7, !"PIC Level", i32 2}
+!131 = !{i32 7, !"PIE Level", i32 2}
+!132 = !{i32 7, !"uwtable", i32 1}
+!133 = !{i32 7, !"frame-pointer", i32 2}
+!134 = !{!"Debian clang version 14.0.6"}
+!135 = distinct !DISubprogram(name: "main", scope: !3, file: !3, line: 103, type: !136, scopeLine: 103, spFlags: DISPFlagDefinition, unit: !2, retainedNodes: !138)
+!136 = !DISubroutineType(types: !137)
+!137 = !{!21}
+!138 = !{}
+!139 = !DILocalVariable(name: "abc", scope: !135, file: !3, line: 107, type: !140)
+!140 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "inside", scope: !135, file: !3, line: 104, size: 64, elements: !141)
+!141 = !{!142, !143}
+!142 = !DIDerivedType(tag: DW_TAG_member, name: "a", scope: !140, file: !3, line: 105, baseType: !21, size: 32)
+!143 = !DIDerivedType(tag: DW_TAG_member, name: "b", scope: !140, file: !3, line: 106, baseType: !21, size: 32, offset: 32)
+!144 = !DILocation(line: 107, column: 28, scope: !135)
+!145 = !DILocation(line: 109, column: 2, scope: !135)
+!146 = !DILocation(line: 110, column: 2, scope: !135)

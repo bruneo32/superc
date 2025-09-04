@@ -1,4 +1,4 @@
-LLCFLAGS=-O0 -g -mtriple=x86_64-pc-linux-gnu
+LLCFLAGS=-O0 -mtriple=x86_64-pc-linux-gnu
 
 simple.exe: simple.o
 	ld.lld -o $@ -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
@@ -14,6 +14,9 @@ simple.o: simple.ll
 
 simple.s: simple.ll
 	llc --filetype=asm $(LLCFLAGS) $< -o $@
+
+simple.ll: simple.c
+	clang -O0 -g -S -emit-llvm $< -o $@
 
 .PHONY: clean
 

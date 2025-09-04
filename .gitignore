@@ -2,6 +2,7 @@
 **/\#*
 **/*.o
 **/*.s
+**/*.ll
 **/a.out
 /tmp*
 /thirdparty
