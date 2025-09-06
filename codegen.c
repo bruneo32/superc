@@ -737,7 +737,7 @@ static void gen_expr(Node *node) {
       return;
     }
     case TY_LDOUBLE: {
-      union { long double f80; uint64_t u64[2]; } u;
+      union { flt_number f80; uint64_t u64[2]; } u;
       memset(&u, 0, sizeof(u));
       u.f80 = node->fval;
       emitfln("  mov $%lu, %%rax  # long double %Lf", u.u64[0], node->fval);
@@ -1417,38 +1417,6 @@ static const char *llvm_type_for_size(int bytes, bool is_flo) {
   else return format("[%d x i8]", bytes);
 }
 
-static const char *llvm_type(Type *ty) {
-  switch (ty->kind) {
-  case TY_BOOL:    return "i1";
-  case TY_CHAR:    return "i8";
-  case TY_SHORT:   return "i16";
-  case TY_INT:     return "i32";
-  case TY_LONG:    return "i64";
-  case TY_FLOAT:   return "float";
-  case TY_DOUBLE:  return "double";
-  case TY_LDOUBLE: return "x86_fp80";
-  // Arrays become [n x element_ty]
-  case TY_ARRAY:
-    return format("[%d x %s]", ty->array_len, llvm_type(ty->base));
-  case TY_PTR:
-    return format("%s*", llvm_type(ty->base));
-  case TY_STRUCT: {
-    char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
-    char *res = format("%%struct.%s", tagname);
-    free(tagname);
-    return res;
-  }
-  case TY_UNION: {
-    char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
-    char *res = format("%%union.%s", tagname);
-    free(tagname);
-    return res;
-  }
-  default:
-    unreachable();
-  }
-}
-
 static Type *list_structs = &(Type){0};
 
 #define _push_struct(ty) ({  \
@@ -1568,6 +1536,139 @@ static void emit_member_types() {
   }
 }
 
+static void emit_float_lit(TypeKind kind, flt_number fval) {
+  switch(kind) {
+    case TY_FLOAT:
+    case TY_DOUBLE:
+      emitf("%.6e", (double)fval);
+      break;
+    case TY_LDOUBLE: {
+      /* FIXME: x86_fp80 is not well emitted */
+      unsigned char bytes[10];
+      memcpy(bytes, &fval, 10);
+      emitf("0xK");
+      for (int i = 9; i >= 0; i--)
+        emitf("%02X", bytes[i]);
+    } break;
+  }
+}
+
+static void emit_gep(char *symbol, bool is_sym_global, Type *lty,
+                     size_t indices_len, int64_t *indices) {
+  emitf("getelementptr%s (%s, %s* %c%s",
+    indices ? " inbounds" : "",
+    llvm_type(lty), llvm_type(lty),
+    is_sym_global ? '@' : '%', symbol);
+
+  for (size_t i = 0; i < indices_len; i++)
+    emitf(", i32 %ld", indices[i]);
+
+  emitc(')');
+}
+
+static void emit_initializer(Initializer *init) {
+  if (!init) {
+    /* Zero initializer (BSS) */
+    emitf("zeroinitializer");
+    return;
+  }
+
+  /* Basic initializer */
+  switch (init->ty->kind) {
+    case TY_BOOL:
+    case TY_CHAR:
+    case TY_SHORT:
+    case TY_INT:
+    case TY_LONG: {
+      emitf("%ld", init->expr->val);
+    } break;
+
+    case TY_FLOAT:
+    case TY_DOUBLE:
+    case TY_LDOUBLE: {
+      emit_float_lit(init->ty->kind, init->expr->fval);
+    } break;
+
+    case TY_PTR: {
+      switch (init->expr->kind) {
+        case ND_ADDR: {
+          /* Resolve pointer */
+          Obj *rel = init->expr->lhs->var;
+          emitf("bitcast (%s @%s to %s)", llvm_type(init->expr->ty), get_symbol(rel), llvm_type(init->ty));
+        } break;
+
+        case ND_VAR: {
+          char *symbol = get_symbol(init->expr->var);
+          int64_t indices[] = { 0, 0 };
+          emit_gep(symbol, true, init->expr->ty, 2, indices);
+        } break;
+
+        case ND_DEREF: {
+          char **label;
+          uint64_t val = eval2(init->expr, &label);
+
+          // FIXME: Get real value
+          int64_t indices[] = { 0, val };
+
+          emit_gep(label[0], true, init->expr->ty, 2, indices);
+        } break;
+      }
+    } break;
+
+    case TY_ARRAY: {
+      /* Special case for strings */
+      if (init->ty->base->kind == TY_CHAR &&
+          init->ty->base->size == 1 &&
+          init->ty->base->align == 1) {
+        emitc('c');
+        emitc('"');
+
+        for (size_t i = 0; i < init->ty->array_len; ++i) {
+          Initializer *child = init->children[i];
+          unsigned char ch = child->expr->val;
+
+          /* Emit normal letter character */
+          if (ch >= ' ' && ch < 127)
+            emitf("%c", ch);
+          else
+            emitf("\\%02X", ch);
+        }
+
+        emitc('"');
+        break;
+      }
+
+      emitc('[');
+      bool first = true;
+      for (size_t i = 0; i < init->ty->array_len; ++i) {
+        Initializer *child = init->children[i];
+        if (!first) emitf(", ");
+        first = false;
+        emitf("%s ", llvm_type(child->ty));
+        emit_initializer(child);
+      }
+      emitf("]");
+    } break;
+
+    case TY_STRUCT: {
+      emitc('{');
+      bool first = true;
+      for (Member *mem = init->ty->members; mem; mem = mem->next) {
+        Initializer *child = init->children[mem->idx];
+
+        /* Bitfields can be merged previously, so skip */
+        if (!child->expr && !child->children) continue;
+
+        if (!first) emitc(',');
+        first = false;
+        emitf(" %s ", llvm_type(child->ty));
+        emit_initializer(child);
+      }
+      emitf(" }");
+    } break;
+  }
+}
+
 static void emit_data(Obj *prog) {
   for (Obj *var = prog; var; var = var->next) {
     if (var->is_function || !var->is_definition)
@@ -1580,61 +1681,28 @@ static void emit_data(Obj *prog) {
     }
 
     const char *symbol = get_symbol(var);
+    const char *llty = llvm_type(var->ty);
 
-    StringBuilder sb;
-    sb_init(&sb);
+    emitf("@%s = ", symbol);
 
-    sb_appendf(&sb, "@%s = ", symbol);
+    if (var->is_puc_addr) {
+      emitf("private unnamed_addr constant ");
+    } else {
+      if (var->is_static)
+        emitf("internal ");
+      else
+        emitf("dso_local ");
+      emitf("global ");
+    }
 
-    if (var->is_static)
-      emitfln("  .local %s", symbol);
-    else
-      emitfln("  .globl %s", symbol);
+    emitf("%s ", llty);
+    emit_initializer(var->init);
 
     int align = (var->ty->kind == TY_ARRAY && var->ty->size >= 16)
       ? MAX(16, var->align) : var->align;
 
-    // Common symbol
-    if (opt_fcommon && var->is_tentative) {
-      emitfln("  .comm %s, %d, %d", symbol, var->ty->size, align);
-      continue;
-    }
-
-    // .data or .tdata
-    if (var->init_data) {
-      if (var->is_tls)
-        emitfln("  .section .tdata,\"awT\",@progbits");
-      else
-        emitfln("  .data");
-
-      emitfln("  .type %s, @object", symbol);
-      emitfln("  .size %s, %d", symbol, var->ty->size);
-      emitfln("  .align %d", align);
-      emitfln("%s:", symbol);
-
-      Relocation *rel = var->rel;
-      int pos = 0;
-      while (pos < var->ty->size) {
-        if (rel && rel->offset == pos) {
-          emitfln("  .quad %s%+ld", *rel->label, rel->addend);
-          rel = rel->next;
-          pos += 8;
-        } else {
-          emitfln("  .byte %d", var->init_data[pos++]);
-        }
-      }
-      continue;
-    }
-
-    // .bss or .tbss
-    if (var->is_tls)
-      emitfln("  .section .tbss,\"awT\",@nobits");
-    else
-      emitfln("  .bss");
-
-    emitfln("  .align %d", align);
-    emitfln("%s:", symbol);
-    emitfln("  .zero %d", var->ty->size);
+    emitf(", align %d", align);
+    emitln;
   }
 }
 
@@ -1809,16 +1877,26 @@ static void emit_text(Obj *prog) {
 void codegen(Obj *prog, FILE *out) {
   output_file = out;
 
+  char *mtriple = "x86_64-pc-linux-gnu";
+  char *dlayout_mangle = "m:e";
+  char *dlayout_processor = "p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128";
+
   /* LLVM TEST */
   File **files = get_input_files();
   assert(files[0]); // Must have at least one input file
   char *filename = files[0]->name;
   emitfln("; ModuleID = '%s'", filename);
   emitfln("source_filename = \"%s\"", filename);
+  emitfln("target datalayout = \"e-%s-%s\"", dlayout_mangle, dlayout_processor);
+  emitfln("target triple = \"%s\"", mtriple);
   emitln;
 
   detect_member_types(prog);
   emit_member_types();
-  // emit_data(prog);
+  emitln;
+
+  emit_data(prog);
+  emitln;
+
   // emit_text(prog);
 }

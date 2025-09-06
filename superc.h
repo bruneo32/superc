@@ -26,11 +26,12 @@
 #endif
 
 typedef uint64_t count_t;
+typedef long double flt_number;
 
 typedef struct Type Type;
 typedef struct Node Node;
 typedef struct Member Member;
-typedef struct Relocation Relocation;
+typedef struct LLVMInitializer LLVMInitializer;
 typedef struct Hideset Hideset;
 
 //
@@ -89,7 +90,7 @@ struct Token {
   TokenKind kind;   // Token kind
   Token *next;      // Next token
   int64_t val;      // If kind is TK_NUM, its value
-  long double fval; // If kind is TK_NUM, its value
+  flt_number fval; // If kind is TK_NUM, its value
   char *loc;        // Token location
   int len;          // Token length
   Type *ty;         // Used if TK_NUM or TK_STR
@@ -142,6 +143,29 @@ Token *preprocess(Token *tok);
 // parse.c
 //
 
+// This struct represents a variable initializer. Since initializers
+// can be nested (e.g. `int x[2][2] = {{1, 2}, {3, 4}}`), this struct
+// is a tree data structure.
+typedef struct Initializer Initializer;
+struct Initializer {
+  Initializer *next;
+  Type *ty;
+  Token *tok;
+  bool is_flexible;
+
+  // If it's not an aggregate type and has an initializer,
+  // `expr` has an initialization expression.
+  Node *expr;
+
+  // If it's an initializer for an aggregate type (e.g. array or struct),
+  // `children` has initializers for its children.
+  Initializer **children;
+
+  // Only one member can be initialized for a union.
+  // `mem` is used to clarify which member is initialized.
+  Member *mem;
+};
+
 // Variable or function
 typedef struct Obj Obj;
 struct Obj {
@@ -164,8 +188,10 @@ struct Obj {
   // Global variable
   bool is_tentative;
   bool is_tls;
-  char *init_data;
-  Relocation *rel;
+
+  /** Private Unnamed Constant Address */
+  bool is_puc_addr;
+  Initializer *init;
 
   // Function
   bool is_inline;
@@ -182,17 +208,6 @@ struct Obj {
   bool is_live;
   bool is_root;
   StringArray refs;
-};
-
-// Global variable can be initialized either by a constant expression
-// or a pointer to another global variable. This struct represents the
-// latter.
-typedef struct Relocation Relocation;
-struct Relocation {
-  Relocation *next;
-  int offset;
-  char **label;
-  long addend;
 };
 
 // Defer kinds
@@ -327,11 +342,12 @@ struct Node {
 
   // Numeric literal
   int64_t val;
-  long double fval;
+  flt_number fval;
 };
 
 Node *new_cast(Node *expr, Type *ty);
 int64_t const_expr(Token **rest, Token *tok);
+int64_t eval2(Node *node, char ***label);
 Obj *parse(Token *tok);
 
 //
@@ -448,6 +464,7 @@ void add_type(Node *node);
 bool same_type(Type *a, Type *b);
 char *type_to_string(Type *ty);
 char *type_to_asmident(Type *ty);
+const char *llvm_type(Type *ty);
 
 //
 // codegen.c

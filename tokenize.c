@@ -179,7 +179,7 @@ static bool is_keyword(Token *tok) {
   return hashmap_get2(&map, tok->loc, tok->len);
 }
 
-static int read_escaped_char(char **new_pos, char *p) {
+static int32_t read_escaped_char(char **new_pos, char *p) {
   if ('0' <= *p && *p <= '7') {
     // Read an octal number.
     int c = *p++ - '0';
@@ -271,7 +271,7 @@ static Token *read_string_literal(char *start, char *quote) {
 // is called a "surrogate pair".
 static Token *read_utf16_string_literal(char *start, char *quote) {
   char *end = string_literal_end(quote + 1);
-  uint16_t *buf = calloc(2, end - start);
+  int16_t *buf = calloc(2, end - start);
   int len = 0;
 
   for (char *p = quote + 1; p < end;) {
@@ -280,7 +280,7 @@ static Token *read_utf16_string_literal(char *start, char *quote) {
       continue;
     }
 
-    uint32_t c = decode_utf8(&p, p);
+    int32_t c = decode_utf8(&p, p);
     if (c < 0x10000) {
       // Encode a code point in 2 bytes.
       buf[len++] = c;
@@ -304,7 +304,7 @@ static Token *read_utf16_string_literal(char *start, char *quote) {
 // encoded in 4 bytes.
 static Token *read_utf32_string_literal(char *start, char *quote, Type *ty) {
   char *end = string_literal_end(quote + 1);
-  uint32_t *buf = calloc(4, end - quote);
+  int32_t *buf = calloc(4, end - quote);
   int len = 0;
 
   for (char *p = quote + 1; p < end;) {
@@ -433,7 +433,7 @@ static void convert_pp_number(Token *tok) {
 
   // If it's not an integer, it must be a floating point constant.
   char *end;
-  long double val = strtold(tok->loc, &end);
+  flt_number val = strtold(tok->loc, &end);
 
   Type *ty;
   if (*end == 'f' || *end == 'F') {

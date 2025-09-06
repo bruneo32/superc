@@ -1,6 +1,8 @@
 LLCFLAGS=-O0 -mtriple=x86_64-pc-linux-gnu
 
-simple.exe: simple.o
+all: simple.exe simple.s
+
+%.exe: %.o
 	ld.lld -o $@ -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
 		-L/usr/lib/x86_64-linux-gnu \
 		/usr/lib/x86_64-linux-gnu/crt1.o \
@@ -9,16 +11,16 @@ simple.exe: simple.o
 		-lc \
 		/usr/lib/x86_64-linux-gnu/crtn.o
 
-simple.o: simple.ll
+%.o: %.ll
 	llc --filetype=obj $(LLCFLAGS) $< -o $@
 
-simple.s: simple.ll
+%.s: %.ll
 	llc --filetype=asm $(LLCFLAGS) $< -o $@
 
-simple.ll: simple.c
+%.ll: %.c
 	clang -O0 -g -S -emit-llvm $< -o $@
 
-.PHONY: clean
+.PHONY: all clean
 
 clean:
 	rm -rf *.o *.exe *.s

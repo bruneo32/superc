@@ -2,16 +2,22 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <float.h>
 
+// asm("movl $0, %eax");
+
 _Bool g0;
+bool g001 = true;
 unsigned short g01;
 unsigned long g02;
 float g03;
-double g04;
-long double g05;
+double g04 = 0.0;
+long double g05 = 1.23456789;
 
-// __int128 g06;
+#ifdef __SIZEOF_INT128__
+__int128 g06;
+#endif
 
 #ifdef FLT16_MAX
 _Float16 g07;
@@ -20,13 +26,31 @@ _Float16 g07;
 size_t g08;
 ptrdiff_t g09;
 
-void* g10;
+void* g10 = &g01;
 
 int _Alignas(512) g1;
-static int _Alignas(256) g2;
+static int _Alignas(256) __attribute__((used)) g2 = 5;
 
 char *public_string = "public";
-static char *private_string = "private";
+static char *__attribute__((used)) private_string = "private";
+
+static short __attribute__((used)) bidimensional[][3] = {{1, 2, 3}, {4, 5, 6}};
+// short *bidim_ptr = bidimensional[1];
+
+char l = "hello"[3];
+
+typedef unsigned short char16_t;
+typedef unsigned int char32_t;
+typedef int wchar_t;
+
+char16_t unich1 = u'日';
+char32_t unich2 = U'本';
+wchar_t  unich3 = L'語';
+
+char     *unicode1 =  "日本語"; // UTF-8
+char16_t *unicode2 = u"日本語"; // UTF-16
+char32_t *unicode3 = U"日本語"; // UTF-32
+wchar_t  *unicode4 = L"日本語"; // UTF-16 on Windows, UTF-32 on Linux
 
 struct color {
 	unsigned char r,g,b,a;
@@ -37,7 +61,7 @@ struct Car {
 	char *name;
 	struct color col;
 	int kms;
-} mycar = {0};
+} mycar = {"car", {255, 0, 0, 255}, 3};
 
 struct mypack {
 	char a;
@@ -99,6 +123,10 @@ union idk_big {
 	double _Alignas(512) d;
 } mybig;
 
+char semistr[4] = {48, 49, 50, 0};
+
+int autoarray[] = {1, 2, 3, 4, 5};
+
 int main() {
 	struct inside {
 		int a;
@@ -106,5 +134,10 @@ int main() {
 	} __attribute__((packed)) abc;
 
 	printf("anonymous\n");
+
+	int array_vla[g2];
+
+	// asm("movl $0, %eax");
+
 	return 0;
 }

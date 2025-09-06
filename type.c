@@ -559,3 +559,37 @@ char *type_to_asmident(Type *ty) {
   sb_free(&sb);
   return res;
 }
+
+const char *llvm_type(Type *ty) {
+  switch (ty->kind) {
+  case TY_BOOL:
+    return "i1";
+  case TY_VOID:
+  case TY_CHAR:    return "i8";
+  case TY_SHORT:   return "i16";
+  case TY_INT:     return "i32";
+  case TY_LONG:    return "i64";
+  case TY_FLOAT:   return "float";
+  case TY_DOUBLE:  return "double";
+  case TY_LDOUBLE: return "x86_fp80";
+  // Arrays become [n x element_ty]
+  case TY_ARRAY:
+    return format("[%d x %s]", ty->array_len, llvm_type(ty->base));
+  case TY_PTR:
+    return format("%s*", llvm_type(ty->base));
+  case TY_STRUCT: {
+    char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
+    char *res = format("%%struct.%s", tagname);
+    free(tagname);
+    return res;
+  }
+  case TY_UNION: {
+    char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
+    char *res = format("%%union.%s", tagname);
+    free(tagname);
+    return res;
+  }
+  default:
+    unreachable();
+  }
+}
