@@ -1675,7 +1675,7 @@ static void emit_initializer(Initializer *init) {
 
         case ND_DEREF: {
           char **label;
-          uint64_t val = eval2(init->expr, &label);
+          uint64_t val = eval2(init->expr->lhs, &label);
 
           // FIXME: Get real value
           int64_t indices[] = { 0, val };

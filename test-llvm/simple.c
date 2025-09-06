@@ -35,7 +35,7 @@ char *public_string = "public";
 static char *__attribute__((used)) private_string = "private";
 
 static short __attribute__((used)) bidimensional[][3] = {{1, 2, 3}, {4, 5, 6}};
-// short *bidim_ptr = bidimensional[1];
+short *bidim_ptr = bidimensional[1];
 
 char l = "hello"[3];
 

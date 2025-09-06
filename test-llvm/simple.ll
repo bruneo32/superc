@@ -24,6 +24,7 @@ target triple = "x86_64-pc-linux-gnu"
 @.str.1 = private unnamed_addr constant [8 x i8] c"private\00", align 1
 @private_string = internal global i8* getelementptr inbounds ([8 x i8], [8 x i8]* @.str.1, i32 0, i32 0), align 8
 @bidimensional = internal global [2 x [3 x i16]] [[3 x i16] [i16 1, i16 2, i16 3], [3 x i16] [i16 4, i16 5, i16 6]], align 2
+@bidim_ptr = dso_local global i16* bitcast (i8* getelementptr (i8, i8* bitcast ([2 x [3 x i16]]* @bidimensional to i8*), i64 6) to i16*), align 8
 @l = dso_local global i8 108, align 1
 @unich1 = dso_local global i16 26085, align 2
 @unich2 = dso_local global i32 26412, align 4
