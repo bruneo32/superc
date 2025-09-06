@@ -1340,29 +1340,6 @@ static void struct_initializer2(Token **rest, Token *tok, Initializer *init, Mem
   *rest = tok;
 }
 
-static void union_initializer(Token **rest, Token *tok, Initializer *init) {
-  // Unlike structs, union initializers take only one initializer,
-  // and that initializes the first union member by default.
-  // You can initialize other member using a designated initializer.
-  if (equal(tok, "{") && equal(tok->next, ".")) {
-    Member *mem = struct_designator(&tok, tok->next, init->ty);
-    init->mem = mem;
-    designation(&tok, tok, init->children[mem->idx]);
-    *rest = skip(tok, "}");
-    return;
-  }
-
-  init->mem = init->ty->members;
-
-  if (equal(tok, "{")) {
-    initializer2(&tok, tok->next, init->children[0]);
-    consume(&tok, tok, ",");
-    *rest = skip(tok, "}");
-  } else {
-    initializer2(rest, tok, init->children[0]);
-  }
-}
-
 // initializer = string-initializer | array-initializer
 //             | struct-initializer | union-initializer
 //             | assign
@@ -1380,7 +1357,7 @@ static void initializer2(Token **rest, Token *tok, Initializer *init) {
     return;
   }
 
-  if (init->ty->kind == TY_STRUCT) {
+  if (init->ty->kind == TY_STRUCT || init->ty->kind == TY_UNION) {
     if (equal(tok, "{")) {
       struct_initializer1(rest, tok, init);
       return;
@@ -1397,11 +1374,6 @@ static void initializer2(Token **rest, Token *tok, Initializer *init) {
     }
 
     struct_initializer2(rest, tok, init, init->ty->members);
-    return;
-  }
-
-  if (init->ty->kind == TY_UNION) {
-    union_initializer(rest, tok, init);
     return;
   }
 

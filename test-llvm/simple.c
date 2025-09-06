@@ -79,7 +79,17 @@ struct ByteField {
 	bit _3 : 1;
 	bit _2 : 1;
 	bit _1 : 1;
-} bytefield = {1};
+} bytefield = {
+	._8 = 1,
+	._7 = 0,
+	._6 = 0,
+	._5 = 0,
+	._4 = 0,
+	._3 = 0,
+	._2 = 1,
+	._1 = 0,
+};
+static char __attribute__((used)) _a = 'A';
 
 struct ShortField {
 	bit _padding0 : 7;
@@ -109,12 +119,12 @@ union number {
 	_Bool b;
 	int i;
 	float f;
-} mynumber;
+} mynumber = {.f = 3.14, .i = 3}; // last prevails
 
 union only_floats {
 	float  f;
 	double _Alignas(512) d;
-} myfloat;
+} myfloat = {.f = 2.71};
 
 union idk_big {
 	int  a;
@@ -133,7 +143,7 @@ int main() {
 		int b;
 	} __attribute__((packed)) abc;
 
-	printf("anonymous\n");
+	printf("anonymous, %c\n", '0' + g001);
 
 	int array_vla[g2];
 

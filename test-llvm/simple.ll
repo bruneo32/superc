@@ -6,11 +6,10 @@ target triple = "x86_64-pc-linux-gnu"
 %struct.Car = type { i8*, %struct.color, i32 }
 %struct.color = type { i8, i8, i8, i8 }
 %struct.ByteField = type { i8 }
+%union.number = type { i32 }
 %struct.mypack = type <{ i8, i64 }>
 %struct.ShortField = type { i16 }
 %struct.ComplexField = type { i16, i16, i32, i8 }
-%union.number = type { i32 }
-%union.only_floats = type { double, [504 x i8] }
 %union.idk_big = type { i64, [504 x i8] }
 %struct.inside = type { i32, i32 }
 
@@ -38,10 +37,13 @@ target triple = "x86_64-pc-linux-gnu"
 @unicode4 = dso_local global i32* getelementptr inbounds ([4 x i32], [4 x i32]* @.str.4, i32 0, i32 0), align 8
 @.str.5 = private unnamed_addr constant [4 x i8] c"car\00", align 1
 @mycar = dso_local global %struct.Car { i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.str.5, i32 0, i32 0), %struct.color { i8 -1, i8 0, i8 0, i8 -1 }, i32 3 }, align 8
-@bytefield = dso_local global %struct.ByteField { i8 1 }, align 1
+@bytefield = dso_local global %struct.ByteField { i8 65 }, align 1
+@_a = internal global i8 65, align 1
+@mynumber = dso_local global %union.number { i32 3 }, align 4
+@myfloat = dso_local global { float, [508 x i8] } { float 0x4005AE1480000000, [508 x i8] undef }, align 512
 @semistr = dso_local global [4 x i8] c"012\00", align 1
 @autoarray = dso_local global [5 x i32] [i32 1, i32 2, i32 3, i32 4, i32 5], align 16
-@.str.6 = private unnamed_addr constant [11 x i8] c"anonymous\0A\00", align 1
+@.str.6 = private unnamed_addr constant [15 x i8] c"anonymous, %c\0A\00", align 1
 @g0 = dso_local global i8 0, align 1
 @g02 = dso_local global i64 0, align 8
 @g03 = dso_local global float 0.000000e+00, align 4
@@ -52,10 +54,8 @@ target triple = "x86_64-pc-linux-gnu"
 @mypacked = dso_local global %struct.mypack zeroinitializer, align 1
 @shortfield = dso_local global %struct.ShortField zeroinitializer, align 1
 @complexfield = dso_local global %struct.ComplexField zeroinitializer, align 4
-@mynumber = dso_local global %union.number zeroinitializer, align 4
-@myfloat = dso_local global %union.only_floats zeroinitializer, align 512
 @mybig = dso_local global %union.idk_big zeroinitializer, align 512
-@llvm.compiler.used = appending global [3 x i8*] [i8* bitcast (i32* @g2 to i8*), i8* bitcast (i8** @private_string to i8*), i8* bitcast ([2 x [3 x i16]]* @bidimensional to i8*)], section "llvm.metadata"
+@llvm.compiler.used = appending global [4 x i8*] [i8* bitcast (i32* @g2 to i8*), i8* bitcast (i8** @private_string to i8*), i8* bitcast ([2 x [3 x i16]]* @bidimensional to i8*), i8* @_a], section "llvm.metadata"
 
 ; Function Attrs: noinline nounwind optnone uwtable
 define dso_local i32 @main() #0 {
@@ -64,18 +64,22 @@ define dso_local i32 @main() #0 {
   %3 = alloca i8*, align 8
   %4 = alloca i64, align 8
   store i32 0, i32* %1, align 4
-  %5 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([11 x i8], [11 x i8]* @.str.6, i64 0, i64 0))
-  %6 = load i32, i32* @g2, align 256
-  %7 = zext i32 %6 to i64
-  %8 = call i8* @llvm.stacksave()
-  store i8* %8, i8** %3, align 8
-  %9 = alloca i32, i64 %7, align 16
-  store i64 %7, i64* %4, align 8
+  %5 = load i8, i8* @g001, align 1
+  %6 = trunc i8 %5 to i1
+  %7 = zext i1 %6 to i32
+  %8 = add nsw i32 48, %7
+  %9 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([15 x i8], [15 x i8]* @.str.6, i64 0, i64 0), i32 noundef %8)
+  %10 = load i32, i32* @g2, align 256
+  %11 = zext i32 %10 to i64
+  %12 = call i8* @llvm.stacksave()
+  store i8* %12, i8** %3, align 8
+  %13 = alloca i32, i64 %11, align 16
+  store i64 %11, i64* %4, align 8
   store i32 0, i32* %1, align 4
-  %10 = load i8*, i8** %3, align 8
-  call void @llvm.stackrestore(i8* %10)
-  %11 = load i32, i32* %1, align 4
-  ret i32 %11
+  %14 = load i8*, i8** %3, align 8
+  call void @llvm.stackrestore(i8* %14)
+  %15 = load i32, i32* %1, align 4
+  ret i32 %15
 }
 
 declare i32 @printf(i8* noundef, ...) #1

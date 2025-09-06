@@ -1589,30 +1589,39 @@ static void emit_initializer(Initializer *init) {
       emit_float_lit(init->ty->kind, init->expr->fval);
     } break;
 
-    case TY_PTR: {
-      switch (init->expr->kind) {
-        case ND_ADDR: {
-          /* Resolve pointer */
-          Obj *rel = init->expr->lhs->var;
-          emitf("bitcast (%s @%s to %s)", llvm_type(init->expr->ty), get_symbol(rel), llvm_type(init->ty));
-        } break;
+    case TY_STRUCT: {
+      emitc('{');
+      bool first = true;
+      for (Member *mem = init->ty->members; mem; mem = mem->next) {
+        Initializer *child = init->children[mem->idx];
 
-        case ND_VAR: {
-          char *symbol = get_symbol(init->expr->var);
-          int64_t indices[] = { 0, 0 };
-          emit_gep(symbol, true, init->expr->ty, 2, indices);
-        } break;
+        /* Bitfields can be merged previously, so skip */
+        if (!child->expr && !child->children) continue;
 
-        case ND_DEREF: {
-          char **label;
-          uint64_t val = eval2(init->expr, &label);
-
-          // FIXME: Get real value
-          int64_t indices[] = { 0, val };
-
-          emit_gep(label[0], true, init->expr->ty, 2, indices);
-        } break;
+        if (!first) emitc(',');
+        first = false;
+        emitf(" %s ", llvm_type(child->ty));
+        emit_initializer(child);
       }
+      emitf(" }");
+    } break;
+
+    case TY_UNION: {
+      emitc('{');
+
+      /* Get the last initializer */
+      Initializer *valid;
+      for (Member *mem = init->ty->members; mem && mem->next; mem = mem->next) {
+        Initializer *child = init->children[mem->idx];
+        /* Skip invalid values */
+        if (child->expr || child->children)
+          valid = child;
+      }
+
+      emitf(" %s ", llvm_type(valid->ty));
+      emit_initializer(valid);
+
+      emitf(" }");
     } break;
 
     case TY_ARRAY: {
@@ -1650,21 +1659,30 @@ static void emit_initializer(Initializer *init) {
       emitf("]");
     } break;
 
-    case TY_STRUCT: {
-      emitc('{');
-      bool first = true;
-      for (Member *mem = init->ty->members; mem; mem = mem->next) {
-        Initializer *child = init->children[mem->idx];
+    case TY_PTR: {
+      switch (init->expr->kind) {
+        case ND_ADDR: {
+          /* Resolve pointer */
+          Obj *rel = init->expr->lhs->var;
+          emitf("bitcast (%s @%s to %s)", llvm_type(init->expr->ty), get_symbol(rel), llvm_type(init->ty));
+        } break;
 
-        /* Bitfields can be merged previously, so skip */
-        if (!child->expr && !child->children) continue;
+        case ND_VAR: {
+          char *symbol = get_symbol(init->expr->var);
+          int64_t indices[] = { 0, 0 };
+          emit_gep(symbol, true, init->expr->ty, 2, indices);
+        } break;
 
-        if (!first) emitc(',');
-        first = false;
-        emitf(" %s ", llvm_type(child->ty));
-        emit_initializer(child);
+        case ND_DEREF: {
+          char **label;
+          uint64_t val = eval2(init->expr, &label);
+
+          // FIXME: Get real value
+          int64_t indices[] = { 0, val };
+
+          emit_gep(label[0], true, init->expr->ty, 2, indices);
+        } break;
       }
-      emitf(" }");
     } break;
   }
 }

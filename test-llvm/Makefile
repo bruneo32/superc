@@ -18,7 +18,7 @@ all: simple.exe simple.s
 	llc --filetype=asm $(LLCFLAGS) $< -o $@
 
 %.ll: %.c
-	clang -O0 -g -S -emit-llvm $< -o $@
+	clang -O0 -S -emit-llvm $< -o $@
 
 .PHONY: all clean
 
