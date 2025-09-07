@@ -347,7 +347,7 @@ struct Node {
 
 Node *new_cast(Node *expr, Type *ty);
 int64_t const_expr(Token **rest, Token *tok);
-int64_t eval2(Node *node, char ***label);
+int64_t eval2(Node *node, Obj **label);
 Obj *parse(Token *tok);
 
 //

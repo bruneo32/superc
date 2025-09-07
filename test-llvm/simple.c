@@ -80,6 +80,7 @@ struct ByteField {
 	bit _2 : 1;
 	bit _1 : 1;
 } bytefield = {
+	// ASCII 'A' = 95
 	._8 = 1,
 	._7 = 0,
 	._6 = 0,
@@ -89,7 +90,8 @@ struct ByteField {
 	._2 = 1,
 	._1 = 0,
 };
-static char __attribute__((used)) _a = 'A';
+
+static char __attribute__((used)) _a = 'A'; // = 95
 
 struct ShortField {
 	bit _padding0 : 7;
@@ -143,7 +145,8 @@ int main() {
 		int b;
 	} __attribute__((packed)) abc;
 
-	printf("anonymous, %c\n", '0' + g001);
+	printf("anonymous\n");
+	printf("-> %c\n", l);
 
 	int array_vla[g2];
 

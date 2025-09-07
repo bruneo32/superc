@@ -44,7 +44,8 @@ target triple = "x86_64-pc-linux-gnu"
 @myfloat = dso_local global { float, [508 x i8] } { float 0x4005AE1480000000, [508 x i8] undef }, align 512
 @semistr = dso_local global [4 x i8] c"012\00", align 1
 @autoarray = dso_local global [5 x i32] [i32 1, i32 2, i32 3, i32 4, i32 5], align 16
-@.str.6 = private unnamed_addr constant [15 x i8] c"anonymous, %c\0A\00", align 1
+@.str.6 = private unnamed_addr constant [11 x i8] c"anonymous\0A\00", align 1
+@.str.7 = private unnamed_addr constant [7 x i8] c"-> %c\0A\00", align 1
 @g0 = dso_local global i8 0, align 1
 @g02 = dso_local global i64 0, align 8
 @g03 = dso_local global float 0.000000e+00, align 4
@@ -65,22 +66,21 @@ define dso_local i32 @main() #0 {
   %3 = alloca i8*, align 8
   %4 = alloca i64, align 8
   store i32 0, i32* %1, align 4
-  %5 = load i8, i8* @g001, align 1
-  %6 = trunc i8 %5 to i1
-  %7 = zext i1 %6 to i32
-  %8 = add nsw i32 48, %7
-  %9 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([15 x i8], [15 x i8]* @.str.6, i64 0, i64 0), i32 noundef %8)
-  %10 = load i32, i32* @g2, align 256
-  %11 = zext i32 %10 to i64
-  %12 = call i8* @llvm.stacksave()
-  store i8* %12, i8** %3, align 8
-  %13 = alloca i32, i64 %11, align 16
-  store i64 %11, i64* %4, align 8
+  %5 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([11 x i8], [11 x i8]* @.str.6, i64 0, i64 0))
+  %6 = load i8, i8* @l, align 1
+  %7 = sext i8 %6 to i32
+  %8 = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([7 x i8], [7 x i8]* @.str.7, i64 0, i64 0), i32 noundef %7)
+  %9 = load i32, i32* @g2, align 256
+  %10 = zext i32 %9 to i64
+  %11 = call i8* @llvm.stacksave()
+  store i8* %11, i8** %3, align 8
+  %12 = alloca i32, i64 %10, align 16
+  store i64 %10, i64* %4, align 8
   store i32 0, i32* %1, align 4
-  %14 = load i8*, i8** %3, align 8
-  call void @llvm.stackrestore(i8* %14)
-  %15 = load i32, i32* %1, align 4
-  ret i32 %15
+  %13 = load i8*, i8** %3, align 8
+  call void @llvm.stackrestore(i8* %13)
+  %14 = load i32, i32* %1, align 4
+  ret i32 %14
 }
 
 declare i32 @printf(i8* noundef, ...) #1

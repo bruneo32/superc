@@ -15,6 +15,8 @@ static Node *current_loop;
 #define NO_DEFER ((count_t)-1)
 static count_t current_defer_fn = NO_DEFER;
 
+static void emit_initializer(Initializer *init);
+
 static void gen_expr(Node *node);
 static void gen_stmt(Node *node);
 
@@ -1553,23 +1555,94 @@ static void emit_float_lit(TypeKind kind, flt_number fval) {
   }
 }
 
-static void emit_gep(char *symbol, bool is_sym_global, Type *lty,
-                     size_t indices_len, int64_t *indices) {
-  emitf("getelementptr%s (%s, %s* %c%s",
-    indices ? " inbounds" : "",
-    llvm_type(lty), llvm_type(lty),
-    is_sym_global ? '@' : '%', symbol);
+static inline bool ty_is_pointer(Type *ty) {
+  return ty->kind == TY_PTR || ty->kind == TY_ARRAY;
+}
 
-  for (size_t i = 0; i < indices_len; i++)
-    emitf(", i32 %ld", indices[i]);
+static void emit_gep(char *symbol, bool is_sym_global, Type *lty, Type *rty,
+                     bool is_puc_addr, int64_t index) {
+  /* Simplify pointers to base */
+  while (lty->kind == TY_PTR && lty->base)
+    lty = lty->base;
+  while (rty->kind == TY_PTR && rty->base)
+    rty = rty->base;
+
+  const char *ll_lty = llvm_type(lty);
+  const char *ll_rty = llvm_type(rty);
+
+  emitf("getelementptr%s (%s, %s* ",
+    is_puc_addr ? " inbounds" : "",
+    ll_lty, ll_lty);
+
+  bool do_bitcast = (!ty_is_pointer(lty) && ty_is_pointer(rty) && rty->base->kind != lty->kind) ||
+                    (!ty_is_pointer(rty) && ty_is_pointer(lty) && lty->base->kind != rty->kind);
+
+  /* Bitcast if necesary */
+  if (do_bitcast)
+    emitf("bitcast (%s* ", ll_rty);
+
+  emitf("%c%s", is_sym_global ? '@' : '%', symbol);
+
+  if (do_bitcast)
+    emitf(" to %s*)", ll_lty);
+
+  if (is_puc_addr)
+    emitf(", i32 0");
+  emitf(", i32 %ld", index);
 
   emitc(')');
+}
+
+static void emit_deref(Node *expr, Type *type_to) {
+  assert(expr->lhs);
+  Obj *var;
+  uint64_t val = eval2(expr->lhs, &var);
+
+  bool do_bitcast = type_to->kind != TY_PTR || type_to->base->kind != TY_CHAR;
+
+  if (do_bitcast)
+    emitf("bitcast (i8* ");
+
+  emit_gep(get_symbol(var), true, ty_char, var->ty, var->is_puc_addr, val);
+
+  if (do_bitcast)
+    emitf(" to %s)",
+          llvm_type(type_to));
+}
+
+static void emit_array_comptime_elem(Node *expr) {
+  /* Get index & symbol */
+  Obj *var;
+  uint64_t idx = eval2(expr->lhs, &var);
+
+  /* Get initializer */
+  Initializer *vinit = var->init;
+
+  if (!vinit || vinit->ty->kind != TY_ARRAY)
+    error_tok(expr->tok,
+      "invalid initializer for compile time dereferencing");
+
+  if (idx >= vinit->ty->array_len)
+    error_tok(expr->tok,
+      "index out of bounds for compile time dereferencing");
+
+  /* Emit initializer */
+  emit_initializer(vinit->children[idx]);
+  return;
 }
 
 static void emit_initializer(Initializer *init) {
   if (!init) {
     /* Zero initializer (BSS) */
     emitf("zeroinitializer");
+    return;
+  }
+
+  // Rare case like `char l = "hello"[3];`
+  // We cannot dereference the expression,
+  // so make a copy of the element
+  if (init->ty->kind != TY_PTR && init->expr && init->expr->kind == ND_DEREF) {
+    emit_array_comptime_elem(init->expr);
     return;
   }
 
@@ -1581,13 +1654,13 @@ static void emit_initializer(Initializer *init) {
     case TY_INT:
     case TY_LONG: {
       emitf("%ld", init->expr->val);
-    } break;
+    } return;
 
     case TY_FLOAT:
     case TY_DOUBLE:
     case TY_LDOUBLE: {
       emit_float_lit(init->ty->kind, init->expr->fval);
-    } break;
+    } return;
 
     case TY_STRUCT: {
       emitc('{');
@@ -1604,7 +1677,7 @@ static void emit_initializer(Initializer *init) {
         emit_initializer(child);
       }
       emitf(" }");
-    } break;
+    } return;
 
     case TY_UNION: {
       emitc('{');
@@ -1622,7 +1695,7 @@ static void emit_initializer(Initializer *init) {
       emit_initializer(valid);
 
       emitf(" }");
-    } break;
+    } return;
 
     case TY_ARRAY: {
       /* Special case for strings */
@@ -1644,7 +1717,7 @@ static void emit_initializer(Initializer *init) {
         }
 
         emitc('"');
-        break;
+        return;
       }
 
       emitc('[');
@@ -1657,34 +1730,32 @@ static void emit_initializer(Initializer *init) {
         emit_initializer(child);
       }
       emitf("]");
-    } break;
+    } return;
 
     case TY_PTR: {
       switch (init->expr->kind) {
         case ND_ADDR: {
           /* Resolve pointer */
           Obj *rel = init->expr->lhs->var;
-          emitf("bitcast (%s @%s to %s)", llvm_type(init->expr->ty), get_symbol(rel), llvm_type(init->ty));
-        } break;
+          emitf("bitcast (%s @%s to %s)",
+                llvm_type(init->expr->ty),
+                get_symbol(rel),
+                llvm_type(init->ty));
+        } return;
 
         case ND_VAR: {
           char *symbol = get_symbol(init->expr->var);
-          int64_t indices[] = { 0, 0 };
-          emit_gep(symbol, true, init->expr->ty, 2, indices);
-        } break;
+          emit_gep(symbol, true, init->expr->ty, init->expr->ty, init->expr->var->is_puc_addr, 0);
+        } return;
 
-        case ND_DEREF: {
-          char **label;
-          uint64_t val = eval2(init->expr->lhs, &label);
-
-          // FIXME: Get real value
-          int64_t indices[] = { 0, val };
-
-          emit_gep(label[0], true, init->expr->ty, 2, indices);
-        } break;
+        case ND_DEREF:
+          emit_deref(init->expr, init->ty);
+          return;
       }
     } break;
   }
+
+  unreachable();
 }
 
 static void emit_data(Obj *prog) {
