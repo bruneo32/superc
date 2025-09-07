@@ -1,0 +1,44 @@
+#include <stdio.h>
+#include <stdarg.h>
+
+struct nothing {} _nothing;
+
+/** This is a shame for C compilers,
+ * an inline function should be able
+ * to be inlined without enforcing */
+#define inline __attribute__((always_inline)) inline
+
+static void foo() {}
+
+inline int bar() {
+	return 1;
+}
+
+static inline int foobar() {
+	return 2;
+}
+
+inline static char *foobar2() {
+	return __func__;
+}
+
+// long sumall(int n, ...) {
+// 	va_list ap;
+// 	int sum = 0;
+// 	va_start(ap, n);
+// 	for (int i = 0; i < n; i++)
+// 		sum += va_arg(ap, int);
+// 	va_end(ap);
+// 	return sum;
+// }
+
+int main() {
+	foo();
+	int a = bar();
+	int b = foobar();
+	int c = foobar2();
+	// long d = sumall(3, 6, -5, 2);
+	long d = 4;
+	printf("OK, %d %d %d %ld\n", a, b, c, d);
+	return 0;
+}

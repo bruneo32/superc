@@ -562,9 +562,10 @@ char *type_to_asmident(Type *ty) {
 
 const char *llvm_type(Type *ty) {
   switch (ty->kind) {
+  case TY_VOID:
+    return "i8";
   case TY_BOOL:
     return "i1";
-  case TY_VOID:
   case TY_CHAR:    return "i8";
   case TY_SHORT:   return "i16";
   case TY_INT:     return "i32";
@@ -576,14 +577,19 @@ const char *llvm_type(Type *ty) {
   case TY_ARRAY:
     return format("[%d x %s]", ty->array_len, llvm_type(ty->base));
   case TY_PTR:
-    return format("%s*", llvm_type(ty->base));
+    return format("%s*",
+        ty->base->kind != TY_VOID
+        ? llvm_type(ty->base)
+        : "i8"); // void* is i8*
   case TY_STRUCT: {
+    assert(ty->tagname);
     char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
     char *res = format("%%struct.%s", tagname);
     free(tagname);
     return res;
   }
   case TY_UNION: {
+    assert(ty->tagname);
     char *tagname = strndup(ty->tagname->loc, ty->tagname->len);
     char *res = format("%%union.%s", tagname);
     free(tagname);

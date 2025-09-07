@@ -142,7 +142,6 @@ static bool is_function(Token *tok);
 static bool is_type_method(Token *tok);
 static Token *function(Token *tok, Type *basety, VarAttr *attr);
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
-static char *get_symbolname(Obj *var);
 static Obj *find_func(Identifier ident);
 static Identifier consume_ident(Token** rest, Token *tok);
 static char *ident_to_string(Identifier ident);
@@ -3223,7 +3222,7 @@ static Node *primary(Token **rest, Token *tok) {
     if (!sc)
       error_tok(tok, "cannot find symbol of %s", ident_to_string(ident));
 
-    char *symbolname = get_symbolname(sc->var);
+    char *symbolname = get_symbol(sc->var);
     Type *symbol_ty = stringlit_of(symbolname);
 
     Obj *var = new_string_literal(symbolname, symbol_ty);
@@ -3349,6 +3348,12 @@ static Token *parse_typedef(Token *tok, Type *basety) {
     Type *ty = declarator(&tok, tok, basety);
     if (!ty->name)
       error_tok(ty->name_pos, "typedef name omitted");
+
+    /* When typedef an anonymous struct, make sure that there is a tag name. */
+    if ((ty->kind == TY_STRUCT || ty->kind == TY_UNION) && !ty->tagname)
+      ty->tagname = ty->name;
+
+
     push_scope(get_ident(ty->name))->type_def = ty;
   }
   return tok;
@@ -3425,12 +3430,6 @@ static Obj *find_func(Identifier ident) {
   if (sc2 && sc2->var && sc2->var->is_function)
     return sc2->var;
   return NULL;
-}
-
-static char *get_symbolname(Obj *var) {
-  if (var->symbol)
-    return var->symbol;
-  return var->name;
 }
 
 static void mark_live(Obj *var) {
@@ -3551,13 +3550,12 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("", NULL, pointer_to(rty));
+    new_lvar("__struct_area__", NULL, pointer_to(rty));
 
   fn->params = locals;
 
   if (ty->is_variadic)
     fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));
-  fn->alloca_bottom = new_lvar("__alloca_size__", NULL, pointer_to(ty_char));
 
   tok = skip(tok, "{");
 

@@ -178,9 +178,10 @@ struct Obj {
   char *symbol;  // symbol
 
   // Local variable
-  int offset;
+  count_t instr_id;
 
   // Global variable or function
+  count_t references;
   bool is_function;
   bool is_definition;
   bool is_static;
@@ -200,7 +201,6 @@ struct Obj {
   Node *body;
   Obj *locals;
   Obj *va_area;
-  Obj *alloca_bottom;
   int stack_size;
   Node *defers;
 
@@ -472,6 +472,7 @@ const char *llvm_type(Type *ty);
 
 void codegen(Obj *prog, FILE *out);
 int align_to(int n, int align);
+char* get_symbol(Obj *var);
 
 //
 // unicode.c
