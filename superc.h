@@ -259,6 +259,7 @@ typedef enum {
   ND_GOTO_EXPR, // "goto" labels-as-values
   ND_LABEL,     // Labeled statement
   ND_LABEL_VAL, // [GNU] Labels-as-values
+  ND_ALLOCA,    // "alloca"
   ND_FUNCALL,   // Function call
   ND_EXPR_STMT, // Expression statement
   ND_STMT_EXPR, // Statement expression

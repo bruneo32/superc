@@ -89,8 +89,6 @@ static char *cont_label;
 // a switch statement. Otherwise, NULL.
 static Node *current_switch;
 
-static Obj *builtin_alloca;
-
 static bool is_typename(Token *tok);
 static bool is_identifier(Token *tok);
 static Type *declspec(Token **rest, Token *tok, VarAttr *attr);
@@ -990,9 +988,7 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
 }
 
 static Node *new_alloca(Node *sz) {
-  Node *node = new_unary(ND_FUNCALL, new_var_node(builtin_alloca, sz->tok), sz->tok);
-  node->func_ty = builtin_alloca->ty;
-  node->ty = builtin_alloca->ty->return_ty;
+  Node *node = new_node(ND_ALLOCA, sz->tok);
   node->args = sz;
   add_type(sz);
   return node;
@@ -3057,10 +3053,6 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   node->args = head.next;
   add_type(node);
 
-  // If a function returns a struct, it is caller's responsibility
-  // to allocate a space for the return value.
-  if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", NULL, node->ty);
   return node;
 }
 
@@ -3670,16 +3662,8 @@ static void scan_globals(void) {
   globals = head.next;
 }
 
-static void declare_builtin_functions(void) {
-  Type *ty = func_type(pointer_to(ty_void));
-  ty->params = copy_type(ty_int);
-  builtin_alloca = new_gvar("alloca", NULL, ty);
-  builtin_alloca->is_definition = false;
-}
-
 // program = ("asm" asm-stmt | typedef | function-definition | global-variable)*
 Obj *parse(Token *tok) {
-  declare_builtin_functions();
   globals = NULL;
 
   while (tok->kind != TK_EOF) {

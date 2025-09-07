@@ -108,7 +108,7 @@ static void detect_member_types(Obj *prog) {
       continue;
 
     /* Seek global variables */
-    if (var->ty->kind == TY_STRUCT || var->ty->kind == TY_UNION && var->ty->tagname) {
+    if ((var->ty->kind == TY_STRUCT || var->ty->kind == TY_UNION) && var->ty->tagname) {
       _push_struct(var->ty);
       for (Member *mem = var->ty->members; mem; mem = mem->next) {
         if (mem->ty->kind == TY_STRUCT || mem->ty->kind == TY_UNION)
@@ -470,8 +470,13 @@ static void emit_data(Obj *prog) {
   }
 }
 
-static void emit_stmt(Node *stmt) {
+static count_t emit_alloca(Obj *var) {
+  count_t id = instr_id++;
+  emitfln("  %%%ld = alloca %s, align %d", id, llvm_type(var->ty), var->align);
+  return id;
+}
 
+static void emit_stmt(Node *stmt) {
 }
 
 static void emit_text(Obj *prog) {
@@ -502,16 +507,12 @@ static void emit_text(Obj *prog) {
     count_t attr_num = 0;
     /* TODO: emit attributes */
 
-    emitfln(" %s @%s() #%d {", ll_ret_ty, symbol, attr_num);
+    emitfln(" %s @%s() #%ld {", ll_ret_ty, symbol, attr_num);
 
     // Prologue
     /* Allocate local variables */
-    for (Obj *local = fn->locals; local; local = local->next) {
-      count_t vid = instr_id++;
-      const char *llty = llvm_type(local->ty);
-      local->instr_id = vid;
-      emitfln("  %%%d = alloca %s, align %d", vid, llty, local->align);
-    }
+    for (Obj *local = fn->locals; local; local = local->next)
+      local->instr_id = emit_alloca(local);
     /* Initialize local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
     }

@@ -3,6 +3,11 @@
 
 struct nothing {} _nothing;
 
+struct ReturnVal {
+	int a;
+	int b;
+};
+
 /** This is a shame for C compilers,
  * an inline function should be able
  * to be inlined without enforcing */
@@ -22,6 +27,13 @@ inline static char *foobar2() {
 	return __func__;
 }
 
+static struct ReturnVal foobar3() {
+	struct ReturnVal rv;
+	rv.a = 5;
+	rv.b = 6;
+	return rv;
+}
+
 // long sumall(int n, ...) {
 // 	va_list ap;
 // 	int sum = 0;
@@ -39,6 +51,7 @@ int main() {
 	int c = foobar2();
 	// long d = sumall(3, 6, -5, 2);
 	long d = 4;
+	struct ReturnVal rv = foobar3();
 	printf("OK, %d %d %d %ld\n", a, b, c, d);
 	return 0;
 }
