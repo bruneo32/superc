@@ -11,7 +11,7 @@ typedef unsigned long u64;
 typedef long double x86_fp80;
 
 int main() {
-	i64 src = 123;
+	i8 src = 1231321431351153155;
 	u8 dst = src;
 	// char *test_alloca = __builtin_alloca(16);
 	return dst;

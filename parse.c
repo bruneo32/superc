@@ -557,7 +557,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     UNSIGNED = 1 << 18,
   };
 
-  Type *ty = ty_int;
+  Type *ty = ty_usize;
   int counter = 0;
   bool is_atomic = false;
 

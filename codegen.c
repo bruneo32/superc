@@ -53,6 +53,10 @@ static int getTypeId(Type *ty) {
   return USIZE;
 }
 
+static inline is_float_tid(int tid) {
+  return tid == F32 || tid == F64 || tid == F80;
+}
+
 static const char *llvm_type_for_size(int bytes, bool is_flo) {
   if (bytes <= 1)      return "i8";
   else if (bytes <= 2) return "i16";
@@ -129,7 +133,7 @@ static LLVM *gen_addr(Node *node) {
   return llvm;
 }
 
-static LLVM *gen_num(Type *ty, int64_t val) {
+static LLVM *gen_inum(Type *ty, int64_t val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUM;
   llvm->ty = ty;
@@ -137,12 +141,18 @@ static LLVM *gen_num(Type *ty, int64_t val) {
   return llvm;
 };
 
-static LLVM *gen_numf(Type *ty, flt_number val) {
+static LLVM *gen_fnum(Type *ty, flt_number val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUM;
   llvm->ty = ty;
   llvm->fval = val;
   return llvm;
+}
+
+static inline LLVM *gen_num(Type *ty, Node *node) {
+  if (is_flonum(ty))
+    return gen_fnum(ty, node->fval);
+  return gen_inum(ty, node->val);
 }
 
 static LLVM *gen_alloca(Type *ty) {
@@ -223,6 +233,9 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
     unreachable();
   }
 
+  if (llvm->kind == LL_NOOP)
+    return ref;
+
   llvm->ty = to;
   llvm->src = ref;
 
@@ -243,15 +256,23 @@ static LLVM *gen_expr(Node *node) {
         gen_stmt(n);
       return NULL;
     case ND_NUM: {
-      if (is_flonum(node->ty))
-        return gen_numf(node->ty, node->fval);
-      return gen_num(node->ty, node->val);
+      return gen_num(node->ty, node);
     }
     case ND_VAR: {
       // rvalue of a var = load from its address
       return gen_load(node->ty, gen_addr(node));
     }
     case ND_CAST: {
+      /* If lhs is a primitive, don't need to cast,
+       * just return it as the other kind */
+      if (node->lhs->kind == ND_NUM) {
+        int t1 = getTypeId(node->ty);
+        int t2 = getTypeId(node->lhs->ty);
+        /* But, if one is float and another is int, then we need to cast it */
+        if (t1 != I1 && t2 != I1 &&
+            is_float_tid(t1) == is_float_tid(t2))
+          return gen_num(node->ty, node->lhs);
+      }
       return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     }
     case ND_ASSIGN: {
@@ -296,7 +317,6 @@ static void gen_stmt(Node *node) {
     default:
       error_tok(node->tok, "unsupported stmt in minimal IR");
   }
-
 }
 
 #define emitc(ch) ({ putc((ch), output_file); })
@@ -439,7 +459,7 @@ static void emit_text(Obj *prog) {
     // main function is equivalent to returning 0, even though the
     // behavior is undefined for the other functions.
     if (strcmp(symbol, "main") == 0)
-      gen_store(ret_ty, gen_num(ret_ty, 0), fn_retval_ll);
+      gen_store(ret_ty, gen_inum(ret_ty, 0), fn_retval_ll);
 
     /* ==== BODY ==== */
 
