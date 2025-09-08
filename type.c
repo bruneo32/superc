@@ -116,7 +116,7 @@ Type *array_of(Type *base, int len) {
   return ty;
 }
 
-Type *stringlit_of(char *str) {
+Type *stringlit_of(const char *str) {
   size_t len = strlen(str) + 1;
   Type *ty = new_type(TY_ARRAY, ty_char->size * len, ty_char->align);
   ty->base = ty_char;
@@ -563,7 +563,7 @@ char *type_to_asmident(Type *ty) {
 const char *llvm_type(Type *ty) {
   switch (ty->kind) {
   case TY_VOID:
-    return "i8";
+    return "void";
   case TY_BOOL:
     return "i1";
   case TY_CHAR:    return "i8";

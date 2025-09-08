@@ -31,8 +31,13 @@ typedef long double flt_number;
 typedef struct Type Type;
 typedef struct Node Node;
 typedef struct Member Member;
-typedef struct LLVMInitializer LLVMInitializer;
+typedef struct Initializer Initializer;
+typedef struct Label Label;
+typedef struct Obj Obj;
 typedef struct Hideset Hideset;
+
+typedef enum LLKind LLKind;
+typedef struct LLVM LLVM;
 
 //
 // strings.c
@@ -146,7 +151,6 @@ Token *preprocess(Token *tok);
 // This struct represents a variable initializer. Since initializers
 // can be nested (e.g. `int x[2][2] = {{1, 2}, {3, 4}}`), this struct
 // is a tree data structure.
-typedef struct Initializer Initializer;
 struct Initializer {
   Initializer *next;
   Type *ty;
@@ -166,8 +170,13 @@ struct Initializer {
   Member *mem;
 };
 
+struct Label {
+  count_t ssa;
+  const char *name;
+  Label *next;
+};
+
 // Variable or function
-typedef struct Obj Obj;
 struct Obj {
   Obj *next;
   char *name;    // Variable name
@@ -178,7 +187,7 @@ struct Obj {
   char *symbol;  // symbol
 
   // Local variable
-  count_t instr_id;
+  LLVM *llvm;
 
   // Global variable or function
   count_t references;
@@ -259,7 +268,6 @@ typedef enum {
   ND_GOTO_EXPR, // "goto" labels-as-values
   ND_LABEL,     // Labeled statement
   ND_LABEL_VAL, // [GNU] Labels-as-values
-  ND_ALLOCA,    // "alloca"
   ND_FUNCALL,   // Function call
   ND_EXPR_STMT, // Expression statement
   ND_STMT_EXPR, // Statement expression
@@ -267,7 +275,6 @@ typedef enum {
   ND_VLA_PTR,   // VLA designator
   ND_NUM,       // Integer
   ND_CAST,      // Type cast
-  ND_MEMZERO,   // Zero-clear a stack variable
   ND_ASM,       // "asm"
   ND_CAS,       // Atomic compare-and-swap
   ND_EXCH,      // Atomic exchange
@@ -293,8 +300,8 @@ struct Node {
   Node *inc;
 
   // "break" and "continue" labels
-  char *brk_label;
-  char *cont_label;
+  Label *brk_label;
+  Label *cont_label;
   count_t brk_defers_count;
   count_t cont_defers_count;
   Node *brk_defers;
@@ -314,8 +321,8 @@ struct Node {
   Obj *ret_buffer;
 
   // Goto or labeled statement, or labels-as-values
-  char *label;
-  char *unique_label;
+  Label *label;
+  Label *unique_label;
   Node *goto_next;
 
   // Switch
@@ -445,6 +452,9 @@ extern Type *ty_ushort;
 extern Type *ty_uint;
 extern Type *ty_ulong;
 
+#define ty_ssize ty_long
+#define ty_usize ty_ulong
+
 extern Type *ty_float;
 extern Type *ty_double;
 extern Type *ty_ldouble;
@@ -457,7 +467,7 @@ Type *copy_type(Type *ty);
 Type *pointer_to(Type *base);
 Type *func_type(Type *return_ty);
 Type *array_of(Type *base, int size);
-Type *stringlit_of(char *str);
+Type *stringlit_of(const char *str);
 Type *vla_of(Type *base, Node *expr);
 Type *enum_type(void);
 Type *struct_type(void);
@@ -471,9 +481,57 @@ const char *llvm_type(Type *ty);
 // codegen.c
 //
 
+enum LLKind {
+  LL_NOOP = 0,
+  LL_LABEL,
+  LL_JMP,
+  LL_VAR,
+  LL_NUM,
+  LL_NUMF,
+  LL_ALLOCA,
+  LL_LOAD,
+  LL_STORE,
+  /* Cast PTR */
+  LL_BITCAST, // bitcast     (transform a kind of ptr to another)
+  /* Cast INT primitives */
+  LL_TRUN,    // truncate    (shrink an integer)
+  LL_ZEXT,    // zero-extend (extend an unsigned int)
+  LL_SEXT,    // sign-extend (extend a    signed int)
+  LL_SI_F,    // "sitofp"      signed int to float point
+  LL_UI_F,    // "uitofp"    unsigned int to float point
+  /* Cast FLOAT primitives */
+  LL_FTRN,    // "fptrunc"     (extend a primitive float point)
+  LL_FEXT,    // "fpext"     (extend a primitive float point)
+  LL_F_SI,    // "fptosi"    float point to   signed int
+  LL_F_UI,    // "fptoui"    float point to unsigned int
+};
+
+struct LLVM {
+  LLVM *next;
+  LLKind kind;
+  count_t ssa;
+
+  // Common
+  Type *ty;
+
+  // Load/Store
+  LLVM *src;
+  LLVM *dst;
+
+  // Unconditional jump
+  Label *label;
+
+  // Variable
+  Obj *var;
+
+  // Numeric literal
+  int64_t val;
+  flt_number fval;
+};
+
 void codegen(Obj *prog, FILE *out);
-int align_to(int n, int align);
-char* get_symbol(Obj *var);
+int  align_to(int n, int align);
+const char* get_symbol(Obj *var);
 
 //
 // unicode.c

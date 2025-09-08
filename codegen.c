@@ -1,29 +1,303 @@
 #include "superc.h"
 
-#define GP_MAX 6
-#define FP_MAX 8
-
 static FILE *output_file;
-static count_t depth;
-static char *argreg8[] = {"%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"};
-static char *argreg16[] = {"%di", "%si", "%dx", "%cx", "%r8w", "%r9w"};
-static char *argreg32[] = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
-static char *argreg64[] = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
-static Obj *current_fn;
+static Obj  *current_fn;
 static Node *current_loop;
 
-#define NO_DEFER ((count_t)-1)
-static count_t current_defer_fn = NO_DEFER;
+static LLVM   *gen_expr(Node *node);
+static void    gen_stmt(Node *node);
+static count_t emit_llvm(LLVM *llvm);
 
-static count_t instr_id = 1;
+LLVM *fn_retval_ll = NULL;
+Label fn_label_ret = {};
 
-static void emit_initializer(Initializer *init);
+static count_t ssa_id = 1;
+#define new_ssa ssa_id++
 
-static void gen_expr(Node *node);
-static void gen_stmt(Node *node);
+static LLVM *_emit_cur;
 
-static void gen_defers_brk(void);
-static void gen_defers_cont(void);
+// Round up `n` to the nearest multiple of `align`. For instance,
+// align_to(5, 8) returns 8 and align_to(11, 8) returns 16.
+int align_to(int n, int align) {
+  return (n + align - 1) / align * align;
+}
+
+const char *get_symbol(Obj *var) {
+  if (var->symbol)
+    return var->symbol;
+  return var->name;
+}
+
+enum { I1, I8, I16, I32, I64, U8, U16, U32, U64, F32, F64, F80 };
+#define USIZE U64
+
+static int getTypeId(Type *ty) {
+  switch (ty->kind) {
+  case TY_BOOL:
+    return I1;
+  case TY_CHAR:
+    return ty->is_unsigned ? U8 : I8;
+  case TY_SHORT:
+    return ty->is_unsigned ? U16 : I16;
+  case TY_INT:
+    return ty->is_unsigned ? U32 : I32;
+  case TY_LONG:
+    return ty->is_unsigned ? U64 : I64;
+  case TY_FLOAT:
+    return F32;
+  case TY_DOUBLE:
+    return F64;
+  case TY_LDOUBLE:
+    return F80;
+  }
+  return USIZE;
+}
+
+static const char *llvm_type_for_size(int bytes, bool is_flo) {
+  if (bytes <= 1)      return "i8";
+  else if (bytes <= 2) return "i16";
+  else if (bytes <= 4) return !is_flo ? "i32" : "float";
+  else if (bytes <= 8) return !is_flo ? "i64" : "double";
+  else return format("[%d x i8]", bytes);
+}
+
+static const char *get_float_lit(TypeKind kind, flt_number fval) {
+  switch(kind) {
+    case TY_FLOAT:
+    case TY_DOUBLE:
+      return format("%.6e", (double)fval);
+    case TY_LDOUBLE: {
+      /* FIXME: x86_fp80 is not well emitted */
+      unsigned char bytes[10];
+      memcpy(bytes, &fval, 10);
+      StringBuilder sb;
+      sb_init(&sb);
+      sb_append(&sb, "0xK");
+      for (int i = 9; i >= 0; i--)
+        sb_appendf(&sb, "%02X", bytes[i]);
+
+      const char *res = strndup(sb.buf, sb.len);
+      sb_free(&sb);
+      return res;
+    }
+  }
+  unreachable();
+}
+
+static const char *get_symvar(LLVM *llvm) {
+  switch (llvm->kind) {
+  case LL_NUM:
+    return format("%ld", llvm->val);
+  case LL_NUMF:
+    return get_float_lit(llvm->ty->kind, llvm->fval);
+  case LL_VAR:
+    Obj *var = llvm->var;
+    if (var->is_local)
+      return format("%%%ld", var->llvm->ssa);
+    else
+      return format("@%s", get_symbol(var));
+  default:
+    return format("%%%ld", llvm->ssa);
+  }
+}
+
+static inline bool is_assignable_ll(LLKind kind) {
+  switch (kind) {
+  /* List of instructions that don't emit an SSA */
+  case LL_JMP:
+  case LL_STORE:
+    return false;
+  default:
+    return true;
+  }
+}
+
+static LLVM *gen_jmp(Label *label) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_JMP;
+  llvm->label = label;
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLVM *gen_addr(Node *node) {
+  assert(node->kind == ND_VAR);
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_VAR;
+  llvm->ty = node->ty;
+  llvm->var = node->var;
+  return llvm;
+}
+
+static LLVM *gen_num(Type *ty, int64_t val) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_NUM;
+  llvm->ty = ty;
+  llvm->val = val;
+  return llvm;
+};
+
+static LLVM *gen_numf(Type *ty, flt_number val) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_NUM;
+  llvm->ty = ty;
+  llvm->fval = val;
+  return llvm;
+}
+
+static LLVM *gen_alloca(Type *ty) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_ALLOCA;
+  llvm->ty = ty;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLVM *builtint_alloca(count_t size) {
+  Type *ty = copy_type(ty_char);
+  ty->align = size;
+  return gen_alloca(ty);
+}
+
+static LLVM *gen_load(Type *ty, LLVM *src) {
+  // assert(src);
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_LOAD;
+  llvm->ty = ty;
+  llvm->src = src;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLVM *gen_store(Type *ty, LLVM *src, LLVM *dst) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_STORE;
+  llvm->ty = ty;
+  llvm->src = src;
+  llvm->dst = dst;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLKind cast_table[][12] = {
+// i1     i8       i16      i32      i64      u8       u16      u32      u64      f32      f64      f80
+{LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // i1
+{LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i8
+{LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i16
+{LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i32
+{LL_TRUN, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SI_F, LL_SI_F, LL_SI_F}, // i64
+{LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // u8
+{LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // u16
+{LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // u32
+{LL_TRUN, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SI_F, LL_SI_F, LL_SI_F}, // u64
+{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_NOOP, LL_FEXT, LL_FEXT}, // f32
+{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_NOOP, LL_FEXT}, // f64
+{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_FTRN, LL_NOOP}, // f80
+};
+
+static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+
+  switch (from->kind) {
+  case TY_PTR:
+    llvm->kind = LL_BITCAST;
+    break;
+  case TY_BOOL:
+  case TY_CHAR:
+  case TY_SHORT:
+  case TY_INT:
+  case TY_LONG:
+  case TY_FLOAT:
+  case TY_DOUBLE:
+  case TY_LDOUBLE:
+    // Use table lookup for now
+    int t1 = getTypeId(from);
+    int t2 = getTypeId(to);
+    llvm->kind = cast_table[t1][t2];
+    break;
+  default:
+    unreachable();
+  }
+
+  llvm->ty = to;
+  llvm->src = ref;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLVM *gen_expr(Node *node) {
+  switch (node->kind) {
+    case ND_NULL_EXPR:
+      return NULL;
+    case ND_COMMA:
+      gen_expr(node->lhs);
+      gen_expr(node->rhs);
+      return NULL;
+    case ND_STMT_EXPR:
+      for (Node *n = node->body; n; n = n->next)
+        gen_stmt(n);
+      return NULL;
+    case ND_NUM: {
+      if (is_flonum(node->ty))
+        return gen_numf(node->ty, node->fval);
+      return gen_num(node->ty, node->val);
+    }
+    case ND_VAR: {
+      // rvalue of a var = load from its address
+      return gen_load(node->ty, gen_addr(node));
+    }
+    case ND_CAST: {
+      return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
+    }
+    case ND_ASSIGN: {
+      // lhs must be an lvalue
+      LLVM *ptr = gen_addr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+      return gen_store(node->ty, rhs, ptr);
+    }
+    case ND_FUNCALL: {
+      if (node->lhs->kind == ND_VAR &&
+        !strcmp(get_symbol(node->lhs->var), "__builtin_alloca")) {
+        // gen_expr(node->args);
+        int64_t sz = eval2(node->args, NULL);
+        return builtint_alloca(sz);
+      }
+      error_tok(node->tok, "unsupported funcall");
+    }
+    default:
+      error_tok(node->tok, "unsupported rvalue kind in minimal IR");
+  }
+  unreachable();
+}
+
+static void gen_stmt(Node *node) {
+  switch (node->kind) {
+    case ND_BLOCK:
+      for (Node *m = node->body; m; m = m->next)
+        gen_stmt(m);
+      break;
+
+    case ND_EXPR_STMT:
+      gen_expr(node->lhs);
+      break;
+
+    case ND_RETURN: {
+      if (node->lhs)
+        gen_store(current_fn->ty->return_ty, gen_expr(node->lhs), fn_retval_ll);
+      gen_jmp(&fn_label_ret);
+      break;
+    }
+
+    default:
+      error_tok(node->tok, "unsupported stmt in minimal IR");
+  }
+
+}
 
 #define emitc(ch) ({ putc((ch), output_file); })
 #define emitln    emitc('\n')
@@ -45,438 +319,71 @@ static void emitfln(char *fmt, ...) {
   emitln; // same as emitf but a newline at the end
 }
 
-static count_t count(void) {
-  static count_t i = 1;
-  return i++;
+static count_t emit_alloca(count_t ssa, LLVM *ll) {
+  assert(ll);
+  if (!ssa) ssa = ll->ssa;
+  emitfln("  %%%ld = alloca %s, align %d", ssa, llvm_type(ll->ty), ll->ty->align);
+  return ssa;
 }
 
-// Round up `n` to the nearest multiple of `align`. For instance,
-// align_to(5, 8) returns 8 and align_to(11, 8) returns 16.
-int align_to(int n, int align) {
-  return (n + align - 1) / align * align;
+static count_t emit_load(count_t ssa, LLVM *ll) {
+  assert(ll);
+  assert(ll->src);
+
+  if (!ssa) ssa = ll->ssa;
+  const char *llty = llvm_type(ll->ty);
+  emitfln("  %%%ld = load %s, %s* %s, align %d", ssa,
+          llty, llty, get_symvar(ll->src), ll->ty->align);
+
+  return ssa;
 }
 
-char* get_symbol(Obj *var) {
-  if (var->symbol)
-    return var->symbol;
-  return var->name;
+static count_t emit_label(Label *label) {
+  assert(label);
+  emitfln("%ld:", label->ssa);
+  return label->ssa;
 }
 
-enum { I1, I8, I16, I32, I64, U8, U16, U32, U64, F32, F64, F80 };
+static count_t emit_store(LLVM *src, LLVM *dst) {
+  assert(src);
+  assert(dst);
+  emitfln("  store %s %s, %s* %s, align %d",
+          llvm_type(src->ty), get_symvar(src),
+          llvm_type(dst->ty), get_symvar(dst),
+          dst->ty->align);
+  return 0;
+}
 
-static int getTypeId(Type *ty) {
-  switch (ty->kind) {
-  case TY_BOOL:
-    return I1;
-  case TY_CHAR:
-    return ty->is_unsigned ? U8 : I8;
-  case TY_SHORT:
-    return ty->is_unsigned ? U16 : I16;
-  case TY_INT:
-    return ty->is_unsigned ? U32 : I32;
-  case TY_LONG:
-    return ty->is_unsigned ? U64 : I64;
-  case TY_FLOAT:
-    return F32;
-  case TY_DOUBLE:
-    return F64;
-  case TY_LDOUBLE:
-    return F80;
+static count_t emit_llvm(LLVM *llvm) {
+  switch (llvm->kind) {
+  case LL_JMP:
+    emitfln("  br label %%%ld", llvm->label->ssa);
+    return llvm->ssa;
+  case LL_ALLOCA:
+    return emit_alloca(0, llvm);
+  case LL_LOAD:
+    return emit_load(0, llvm);
+  case LL_STORE:
+    return emit_store(llvm->src, llvm->dst);
+  case LL_LABEL:
+    return emit_label(llvm->label);
+  case LL_TRUN:
+    emitfln("  %%%ld = trunc %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty), get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_ZEXT:
+    emitfln("  %%%ld = zext %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty), get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_SEXT:
+    emitfln("  %%%ld = sext %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty), get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
   }
-  return U64;
-}
-
-static const char *llvm_type_for_size(int bytes, bool is_flo) {
-  if (bytes <= 1)      return "i8";
-  else if (bytes <= 2) return "i16";
-  else if (bytes <= 4) return !is_flo ? "i32" : "float";
-  else if (bytes <= 8) return !is_flo ? "i64" : "double";
-  else return format("[%d x i8]", bytes);
-}
-
-static Type *list_structs = &(Type){0};
-
-#define _push_struct(ty) ({    \
-  Type *ty_ = copy_type((ty)); \
-  ty_->next = list_structs;    \
-  list_structs = ty_;          \
-})
-
-static void detect_member_types(Obj *prog) {
-  for (Obj *var = prog; var; var = var->next) {
-    if (!var->is_definition)
-      continue;
-
-    /* Seek global variables */
-    if ((var->ty->kind == TY_STRUCT || var->ty->kind == TY_UNION) && var->ty->tagname) {
-      _push_struct(var->ty);
-      for (Member *mem = var->ty->members; mem; mem = mem->next) {
-        if (mem->ty->kind == TY_STRUCT || mem->ty->kind == TY_UNION)
-          _push_struct(mem->ty);
-      }
-      continue;
-    }
-
-    if (!var->is_function)
-      continue;
-
-    /* Seek function parameters */
-    for (Obj *param = var->params; param; param = param->next) {
-      if (param->ty->kind == TY_STRUCT || param->ty->kind == TY_UNION)
-        _push_struct(param->ty);
-    }
-
-    if (var->is_definition) {
-      /* Seek function local variables */
-      for (Obj *local = var->locals; local; local = local->next) {
-        if (local->ty->kind == TY_STRUCT || local->ty->kind == TY_UNION)
-          _push_struct(local->ty);
-      }
-    }
-  }
-}
-
-#undef _push_struct
-
-static void emit_member_types() {
-  for (Type *ty = list_structs; ty; ty = ty->next) {
-    emitf("%s = type ", llvm_type(ty));
-
-    /* == Unions == */
-    if (ty->kind == TY_UNION) {
-      // %union.numbers = type { i64 }
-      // %union.idk_bigf = type { double, [504 x i8] } ; _Alignas(512)
-      Member *mem = ty->members;
-      int max_size = mem->align;
-      bool is_flo = is_flonum(mem->ty);
-
-      while (mem->next) {
-        Member *mem_next = mem->next;
-        if (mem_next->align > max_size) {
-          max_size = mem_next->align;
-          is_flo = is_flonum(mem_next->ty);
-        }
-        mem = mem_next;
-      }
-
-      if (max_size <= 8)
-        emitfln("{ %s }", llvm_type_for_size(max_size, is_flo));
-      else
-        emitfln("{ %s, %s }", !is_flo ? "i64" : "double", llvm_type_for_size(max_size - 8, is_flo));
-      continue;
-    }
-
-    /* == Structs == */
-
-    // %struct.color = type { i8, i8, i8, i8 }
-    // %struct.Car = type { i8*, %struct.color, i32 }
-    // %struct.mypacked = type <{ i8, i64 }>
-
-    if (ty->is_packed)
-      emitc('<');
-    emitc('{');
-
-    bool first = true;
-    for (Member *mem = ty->members; mem; mem = mem->next) {
-      if (!first)
-        emitc(',');
-      first = false;
-
-      if (!mem->is_bitfield) {
-        emitf(" %s", llvm_type(mem->ty));
-        continue;
-      }
-
-      /* Handle bitfields */
-      unsigned int bits = mem->bit_width;
-      while (mem->next && mem->next->is_bitfield) {
-        Member *mem_next = mem->next;
-        bits += mem_next->bit_width;
-        mem = mem_next;
-      }
-
-      /* Select bytespan */
-      int bytes = ((bits % 8) == 0)
-                    ? bits / 8
-                    : (bits / 8) + 1;
-
-      emitf(" %s", llvm_type_for_size(bytes, false));
-
-      if (!mem) break; /* Avoid crashing the for loop */
-    }
-
-    emitf(" }");
-    if (ty->is_packed)
-      emitc('>');
-
-    emitln;
-  }
-}
-
-static void emit_float_lit(TypeKind kind, flt_number fval) {
-  switch(kind) {
-    case TY_FLOAT:
-    case TY_DOUBLE:
-      emitf("%.6e", (double)fval);
-      break;
-    case TY_LDOUBLE: {
-      /* FIXME: x86_fp80 is not well emitted */
-      unsigned char bytes[10];
-      memcpy(bytes, &fval, 10);
-      emitf("0xK");
-      for (int i = 9; i >= 0; i--)
-        emitf("%02X", bytes[i]);
-    } break;
-  }
-}
-
-static inline bool ty_is_pointer(Type *ty) {
-  return ty->kind == TY_PTR || ty->kind == TY_ARRAY;
-}
-
-static void emit_gep(char *symbol, bool is_sym_global, Type *lty, Type *rty,
-                     bool is_puc_addr, int64_t index) {
-  /* Simplify pointers to base */
-  while (lty->kind == TY_PTR && lty->base)
-    lty = lty->base;
-  while (rty->kind == TY_PTR && rty->base)
-    rty = rty->base;
-
-  const char *ll_lty = llvm_type(lty);
-  const char *ll_rty = llvm_type(rty);
-
-  emitf("getelementptr%s (%s, %s* ",
-    is_puc_addr ? " inbounds" : "",
-    ll_lty, ll_lty);
-
-  bool do_bitcast = (!ty_is_pointer(lty) && ty_is_pointer(rty) && rty->base->kind != lty->kind) ||
-                    (!ty_is_pointer(rty) && ty_is_pointer(lty) && lty->base->kind != rty->kind);
-
-  /* Bitcast if necesary */
-  if (do_bitcast)
-    emitf("bitcast (%s* ", ll_rty);
-
-  emitf("%c%s", is_sym_global ? '@' : '%', symbol);
-
-  if (do_bitcast)
-    emitf(" to %s*)", ll_lty);
-
-  if (is_puc_addr)
-    emitf(", i32 0");
-  emitf(", i32 %ld", index);
-
-  emitc(')');
-}
-
-static void emit_deref(Node *expr, Type *type_to) {
-  assert(expr->lhs);
-  Obj *var;
-  uint64_t val = eval2(expr->lhs, &var);
-
-  bool do_bitcast = type_to->kind != TY_PTR || type_to->base->kind != TY_CHAR;
-
-  if (do_bitcast)
-    emitf("bitcast (i8* ");
-
-  emit_gep(get_symbol(var), true, ty_char, var->ty, var->is_puc_addr, val);
-
-  if (do_bitcast)
-    emitf(" to %s)",
-          llvm_type(type_to));
-}
-
-static void emit_array_comptime_elem(Node *expr) {
-  /* Get index & symbol */
-  Obj *var;
-  uint64_t idx = eval2(expr->lhs, &var);
-
-  /* Get initializer */
-  Initializer *vinit = var->init;
-
-  if (!vinit || vinit->ty->kind != TY_ARRAY)
-    error_tok(expr->tok,
-      "invalid initializer for compile time dereferencing");
-
-  if (idx >= vinit->ty->array_len)
-    error_tok(expr->tok,
-      "index out of bounds for compile time dereferencing");
-
-  /* Emit initializer */
-  emit_initializer(vinit->children[idx]);
-  return;
-}
-
-static void emit_initializer(Initializer *init) {
-  if (!init) {
-    /* Zero initializer (BSS) */
-    emitf("zeroinitializer");
-    return;
-  }
-
-  // Rare case like `char l = "hello"[3];`
-  // We cannot dereference the expression,
-  // so make a copy of the element
-  if (init->ty->kind != TY_PTR && init->expr && init->expr->kind == ND_DEREF) {
-    emit_array_comptime_elem(init->expr);
-    return;
-  }
-
-  /* Basic initializer */
-  switch (init->ty->kind) {
-    case TY_BOOL:
-    case TY_CHAR:
-    case TY_SHORT:
-    case TY_INT:
-    case TY_LONG: {
-      emitf("%ld", init->expr->val);
-    } return;
-
-    case TY_FLOAT:
-    case TY_DOUBLE:
-    case TY_LDOUBLE: {
-      emit_float_lit(init->ty->kind, init->expr->fval);
-    } return;
-
-    case TY_STRUCT: {
-      emitc('{');
-      bool first = true;
-      for (Member *mem = init->ty->members; mem; mem = mem->next) {
-        Initializer *child = init->children[mem->idx];
-
-        /* Bitfields can be merged previously, so skip */
-        if (!child->expr && !child->children) continue;
-
-        if (!first) emitc(',');
-        first = false;
-        emitf(" %s ", llvm_type(child->ty));
-        emit_initializer(child);
-      }
-      emitf(" }");
-    } return;
-
-    case TY_UNION: {
-      emitc('{');
-
-      /* Get the last initializer */
-      Initializer *valid;
-      for (Member *mem = init->ty->members; mem && mem->next; mem = mem->next) {
-        Initializer *child = init->children[mem->idx];
-        /* Skip invalid values */
-        if (child->expr || child->children)
-          valid = child;
-      }
-
-      emitf(" %s ", llvm_type(valid->ty));
-      emit_initializer(valid);
-
-      emitf(" }");
-    } return;
-
-    case TY_ARRAY: {
-      /* Special case for strings */
-      if (init->ty->base->kind == TY_CHAR &&
-          init->ty->base->size == 1 &&
-          init->ty->base->align == 1) {
-        emitc('c');
-        emitc('"');
-
-        for (size_t i = 0; i < init->ty->array_len; ++i) {
-          Initializer *child = init->children[i];
-          unsigned char ch = child->expr->val;
-
-          /* Emit normal letter character */
-          if (ch >= ' ' && ch < 127)
-            emitf("%c", ch);
-          else
-            emitf("\\%02X", ch);
-        }
-
-        emitc('"');
-        return;
-      }
-
-      emitc('[');
-      bool first = true;
-      for (size_t i = 0; i < init->ty->array_len; ++i) {
-        Initializer *child = init->children[i];
-        if (!first) emitf(", ");
-        first = false;
-        emitf("%s ", llvm_type(child->ty));
-        emit_initializer(child);
-      }
-      emitf("]");
-    } return;
-
-    case TY_PTR: {
-      switch (init->expr->kind) {
-        case ND_ADDR: {
-          /* Resolve pointer */
-          Obj *rel = init->expr->lhs->var;
-          emitf("bitcast (%s @%s to %s)",
-                llvm_type(init->expr->ty),
-                get_symbol(rel),
-                llvm_type(init->ty));
-        } return;
-
-        case ND_VAR: {
-          char *symbol = get_symbol(init->expr->var);
-          emit_gep(symbol, true, init->expr->ty, init->expr->ty, init->expr->var->is_puc_addr, 0);
-        } return;
-
-        case ND_DEREF:
-          emit_deref(init->expr, init->ty);
-          return;
-      }
-    } break;
-  }
-
-  unreachable();
-}
-
-static void emit_data(Obj *prog) {
-  for (Obj *var = prog; var; var = var->next) {
-    if (var->is_function || !var->is_definition)
-      continue;
-
-    if (var->body && var->body->kind == ND_ASM) {
-      /* Global assembly statement */
-      emitfln("%s", var->body->asm_str);
-      continue;
-    }
-
-    const char *symbol = get_symbol(var);
-    const char *llty = llvm_type(var->ty);
-
-    emitf("@%s = ", symbol);
-
-    if (var->is_puc_addr) {
-      emitf("private unnamed_addr constant ");
-    } else {
-      if (var->is_static)
-        emitf("internal ");
-      else
-        emitf("dso_local ");
-      emitf("global ");
-    }
-
-    emitf("%s ", llty);
-    emit_initializer(var->init);
-
-    int align = (var->ty->kind == TY_ARRAY && var->ty->size >= 16)
-      ? MAX(16, var->align) : var->align;
-
-    emitf(", align %d", align);
-    emitln;
-  }
-}
-
-static count_t emit_alloca(Obj *var) {
-  count_t id = instr_id++;
-  emitfln("  %%%ld = alloca %s, align %d", id, llvm_type(var->ty), var->align);
-  return id;
-}
-
-static void emit_stmt(Node *stmt) {
+  return 0;
 }
 
 static void emit_text(Obj *prog) {
@@ -489,41 +396,81 @@ static void emit_text(Obj *prog) {
     if (!fn->is_live)
       continue;
 
+    /* Reset LLVM cursor */
+    LLVM ll_head;
+    memset(&ll_head, 0, sizeof(LLVM));
+    _emit_cur = &ll_head;
+
+    ssa_id = 1; // Reset SSA indexes
+
     current_fn = fn;
     const char *symbol = get_symbol(fn);
-
-    current_defer_fn = NO_DEFER; // Reset defers
-    instr_id = 1; // Reset instruction id
 
     Type *ret_ty = fn->ty->return_ty;
     const char *ll_ret_ty = llvm_type(ret_ty);
 
+    /* ==== Function header ==== */
     emitf("define");
     if (fn->is_static)
       emitf(" internal");
     else
       emitf(" dso_local");
 
-    count_t attr_num = 0;
-    /* TODO: emit attributes */
-
+    count_t attr_num = 0; // TODO: emit attributes
     emitfln(" %s @%s() #%ld {", ll_ret_ty, symbol, attr_num);
 
-    // Prologue
+    /* ==== Prologue ==== */
+
+    /* Allocate return value */
+    if (ret_ty->kind != TY_VOID) {
+      fn_retval_ll = gen_alloca(ret_ty);
+    } else
+     fn_retval_ll = NULL;
+
     /* Allocate local variables */
-    for (Obj *local = fn->locals; local; local = local->next)
-      local->instr_id = emit_alloca(local);
-    /* Initialize local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
+      LLVM * ref = gen_alloca(local->ty);
+      /* Create cross-reference so it can be addressed */
+      local->llvm = ref;
     }
 
-    // Emit code
-    emit_stmt(fn->body);
+    // [https://www.sigbus.info/n1570#5.1.2.2.3p1] The C spec defines
+    // a special rule for the main function. Reaching the end of the
+    // main function is equivalent to returning 0, even though the
+    // behavior is undefined for the other functions.
+    if (strcmp(symbol, "main") == 0)
+      gen_store(ret_ty, gen_num(ret_ty, 0), fn_retval_ll);
 
-    // Epilogue
-    emitf("  ret %s", ll_ret_ty);
-    if (ret_ty->kind != TY_VOID)
-      emitf(" 0");
+    /* ==== BODY ==== */
+
+    /* Generate LLVM IR AST */
+    gen_stmt(fn->body);
+    LLVM *ll_body = ll_head.next; /* Skip dummy head */
+
+    /* Enumerate instructions before emitting */
+    for (LLVM *ll = ll_body; ll; ll = ll->next) {
+      if (is_assignable_ll(ll->kind))
+        ll->ssa = new_ssa;
+    }
+    /* Return label receive the last SSA */
+    fn_label_ret.ssa = new_ssa;
+
+    /* Emit LLVM IR*/
+    while (ll_body) {
+      emit_llvm(ll_body);
+      ll_body = ll_body->next;
+    }
+
+    /* ==== Epilogue ==== */
+    // TODO: Defers
+    emit_label(&fn_label_ret);
+
+    if (ret_ty->kind == TY_VOID)
+      emitf("  ret void");
+    else
+      emitf("  ret %s %%%ld", llvm_type(ret_ty),
+            emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
+
     emitln;
     emitc('}');
     emitln;
@@ -548,12 +495,12 @@ void codegen(Obj *prog, FILE *out) {
   emitfln("target triple = \"%s\"", mtriple);
   emitln;
 
-  detect_member_types(prog);
-  emit_member_types();
-  emitln;
+  // detect_member_types(prog);
+  // emit_member_types();
+  // emitln;
 
-  emit_data(prog);
-  emitln;
+  // emit_data(prog);
+  // emitln;
 
   emit_text(prog);
 }

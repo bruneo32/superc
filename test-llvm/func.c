@@ -1,12 +1,15 @@
-#include <stdio.h>
-#include <stdarg.h>
+// #include <stdio.h>
+// #include <stdarg.h>
 
 struct nothing {} _nothing;
 
-struct ReturnVal {
-	int a;
-	int b;
-};
+// struct ReturnVal {
+// 	char  a;
+// 	int   b;
+// 	long  c;
+// 	char  d;
+// 	short e;
+// } __attribute__((packed));
 
 /** This is a shame for C compilers,
  * an inline function should be able
@@ -14,25 +17,27 @@ struct ReturnVal {
 #define inline __attribute__((always_inline)) inline
 
 static void foo() {}
+static void bar(int a, ...) {}
 
-inline int bar() {
-	return 1;
-}
+// inline int bar() { return 1; }
 
-static inline int foobar() {
-	return 2;
-}
+// static int _33() { return 33; }
 
-inline static char *foobar2() {
-	return __func__;
-}
+// static inline int foobar() { return 2; }
 
-static struct ReturnVal foobar3() {
-	struct ReturnVal rv;
-	rv.a = 5;
-	rv.b = 6;
-	return rv;
-}
+// inline static const char *foobar2() {
+// 	return __func__;
+// }
+
+// static struct ReturnVal foobar3() {
+// 	return (struct ReturnVal){
+// 		.a = 1,
+// 		.b = 2,
+// 		.c = 3,
+// 		.d = 4,
+// 		.e = 5,
+// 	};
+// }
 
 // long sumall(int n, ...) {
 // 	va_list ap;
@@ -45,13 +50,27 @@ static struct ReturnVal foobar3() {
 // }
 
 int main() {
+	alloca(7);
+	// foo();
+	int a = 10;
+	int b = 10 + (2 * 3);
+
+	float f = (float)b;
+	int c = (int)f;
+
+	// int c = _33();
+	// int d = _33() + 1;
+	// printf("OK\n");
+	return 0;
+}
+
+int early() {
+	static volatile int x;
+	if (x & 1) {
+		foo();
+		goto earl_ret;
+	}
 	foo();
-	int a = bar();
-	int b = foobar();
-	int c = foobar2();
-	// long d = sumall(3, 6, -5, 2);
-	long d = 4;
-	struct ReturnVal rv = foobar3();
-	printf("OK, %d %d %d %ld\n", a, b, c, d);
+	earl_ret:
 	return 0;
 }

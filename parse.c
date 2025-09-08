@@ -59,10 +59,10 @@ struct InitDesg {
 };
 
 // String array iterator
-typedef struct StrArray StrArray;
-struct StrArray {
-  char *str;
-  StrArray *next;
+typedef struct LabelArray LabelArray;
+struct LabelArray {
+  Label *label;
+  LabelArray *next;
 };
 
 // All local variable instances created during parsing are
@@ -82,12 +82,14 @@ static Node *gotos;
 static Node *labels;
 
 // Current "goto" and "continue" jump targets.
-static StrArray *brk_label_array = &(StrArray){};
-static char *cont_label;
+static LabelArray *brk_label_array = &(LabelArray){};
+static Label *cont_label;
 
 // Points to a node representing a switch if we are parsing
 // a switch statement. Otherwise, NULL.
 static Node *current_switch;
+
+static Obj *builtin_alloca;
 
 static bool is_typename(Token *tok);
 static bool is_identifier(Token *tok);
@@ -159,22 +161,22 @@ static void leave_scope(void) {
   scope = scope->next;
 }
 
-static char *push_brk_label(char *label) {
-  StrArray *new_label = calloc(1, sizeof(StrArray));
-  new_label->str = strdup(label);
+static Label *push_brk_label(Label *label) {
+  LabelArray *new_label = calloc(1, sizeof(LabelArray));
+  new_label->label = label;
   new_label->next = brk_label_array;
   brk_label_array = new_label;
-  return brk_label_array->str;
+  return brk_label_array->label;
 }
 
-static char *find_brk_label(size_t depth) {
-  StrArray *search = brk_label_array;
+static Label *find_brk_label(size_t depth) {
+  LabelArray *search = brk_label_array;
 
   /* Dive in N levels */
   while (search && --depth > 0)
     search = search->next;
 
-  return (!search) ? NULL : search->str;
+  return (!search) ? NULL : search->label;
 }
 
 // Find a variable by name.
@@ -225,6 +227,13 @@ static Type *find_tag(Token *tok) {
       return ty;
   }
   return NULL;
+}
+
+static Label *new_label(const char *name) {
+  Label *label = calloc(1, sizeof(Label));
+  label->ssa = 0; // Uninitialized, assigned in codegen
+  label->name = name;
+  return label;
 }
 
 static Node *new_node(NodeKind kind, Token *tok) {
@@ -388,10 +397,10 @@ static Obj *new_anon_gvar(Type *ty) {
 }
 
 static void
-fulfill_string_initializer(Initializer *init, Token *tok, char *p, size_t len) {
+fulfill_string_initializer(Initializer *init, Token *tok, const char *p, size_t len) {
   switch (init->ty->base->size) {
   case 1: {
-    char *str = p;
+    char *str = (char*)p;
     for (size_t i = 0; i < len; i++)
       init->children[i]->expr = new_num(str[i], tok);
     break;
@@ -413,7 +422,7 @@ fulfill_string_initializer(Initializer *init, Token *tok, char *p, size_t len) {
   }
 }
 
-static Obj *new_string_literal(char *p, Type *ty) {
+static Obj *new_string_literal(const char *p, Type *ty) {
   assert(ty->kind == TY_ARRAY);
 
   Initializer *init = new_initializer(array_of(ty->base, ty->array_len), false);
@@ -773,9 +782,6 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
     cur = cur->next = copy_type(ty2);
   }
 
-  if (cur == &head)
-    is_variadic = true;
-
   ty = func_type(ty);
   ty->params = head.next;
   ty->is_variadic = is_variadic;
@@ -988,7 +994,9 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
 }
 
 static Node *new_alloca(Node *sz) {
-  Node *node = new_node(ND_ALLOCA, sz->tok);
+  Node *node = new_unary(ND_FUNCALL, new_var_node(builtin_alloca, sz->tok), sz->tok);
+  node->func_ty = builtin_alloca->ty;
+  node->ty = builtin_alloca->ty->return_ty;
   node->args = sz;
   add_type(sz);
   return node;
@@ -1487,15 +1495,7 @@ static Node *lvar_initializer(Token **rest, Token *tok, Obj *var) {
   Initializer *init = initializer(rest, tok, var->ty, &var->ty);
   InitDesg desg = {NULL, 0, NULL, var};
 
-  // If a partial initializer list is given, the standard requires
-  // that unspecified elements are set to 0. Here, we simply
-  // zero-initialize the entire memory region of a variable before
-  // initializing it with user-supplied values.
-  Node *lhs = new_node(ND_MEMZERO, tok);
-  lhs->var = var;
-
-  Node *rhs = create_lvar_init(init, var->ty, &desg, tok);
-  return new_binary(ND_COMMA, lhs, rhs, tok);
+  return create_lvar_init(init, var->ty, &desg, tok);
 }
 
 // Returns true if a given token represents a type.
@@ -1592,8 +1592,8 @@ static Node *stmt(Token **rest, Token *tok) {
     Node *sw = current_switch;
     current_switch = node;
 
-    StrArray *brk = brk_label_array;
-    node->brk_label = push_brk_label(new_unique_name());
+    LabelArray *brk = brk_label_array;
+    node->brk_label = push_brk_label(new_label(NULL));
 
     node->then = stmt(rest, tok);
 
@@ -1620,7 +1620,7 @@ static Node *stmt(Token **rest, Token *tok) {
     }
 
     tok = skip(tok, ":");
-    node->label = new_unique_name();
+    node->label = new_label(NULL);
     node->lhs = stmt(rest, tok);
     node->begin = begin;
     node->end = end;
@@ -1635,7 +1635,7 @@ static Node *stmt(Token **rest, Token *tok) {
 
     Node *node = new_node(ND_CASE, tok);
     tok = skip(tok->next, ":");
-    node->label = new_unique_name();
+    node->label = new_label(NULL);
     node->lhs = stmt(rest, tok);
     current_switch->default_case = node;
     return node;
@@ -1649,11 +1649,11 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    StrArray *brk  = brk_label_array;
-    node->brk_label = push_brk_label(new_unique_name());
+    LabelArray *brk = brk_label_array;
+    node->brk_label = push_brk_label(new_label(NULL));
 
-    char *cont = cont_label;
-    cont_label = node->cont_label = new_unique_name();
+    Label *cont = cont_label;
+    cont_label = node->cont_label = new_label(NULL);
 
     if (is_typename(tok)) {
       Type *basety = declspec(&tok, tok, NULL);
@@ -1689,11 +1689,11 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    StrArray *brk  = brk_label_array;
-    node->brk_label = push_brk_label(new_unique_name());
+    LabelArray *brk = brk_label_array;
+    node->brk_label = push_brk_label(new_label(NULL));
 
-    char *cont = cont_label;
-    cont_label = node->cont_label = new_unique_name();
+    Label *cont = cont_label;
+    cont_label = node->cont_label = new_label(NULL);
 
     node->then = stmt(rest, tok);
 
@@ -1710,11 +1710,11 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_defers  = NULL;
     node->cont_defers = NULL;
 
-    StrArray *brk  = brk_label_array;
-    node->brk_label = push_brk_label(new_unique_name());
+    LabelArray *brk  = brk_label_array;
+    node->brk_label = push_brk_label(new_label(NULL));
 
-    char *cont = cont_label;
-    cont_label = node->cont_label = new_unique_name();
+    Label *cont = cont_label;
+    cont_label = node->cont_label = new_label(NULL);;
 
     node->then = stmt(&tok, tok->next);
 
@@ -1743,7 +1743,7 @@ static Node *stmt(Token **rest, Token *tok) {
     }
 
     Node *node = new_node(ND_GOTO, tok);
-    node->label = get_ident(tok->next);
+    node->label = new_label(get_ident(tok->next));
     node->goto_next = gotos;
     gotos = node;
     *rest = skip(tok->next->next, ";");
@@ -1751,7 +1751,7 @@ static Node *stmt(Token **rest, Token *tok) {
   }
 
   if (equal(tok, "break")) {
-    if (!brk_label_array || !brk_label_array->str)
+    if (!brk_label_array || !brk_label_array->label)
       error_tok(tok, "stray break");
 
     Node *node = new_node(ND_BREAK, tok);
@@ -1764,7 +1764,7 @@ static Node *stmt(Token **rest, Token *tok) {
       if (!node->unique_label)
         error_tok(tok, "invalid break label");
     } else {
-      node->unique_label = brk_label_array->str;
+      node->unique_label = brk_label_array->label;
     }
 
     *rest = skip(tok->next, ";");
@@ -1825,8 +1825,9 @@ static Node *stmt(Token **rest, Token *tok) {
 
   if (tok->kind == TK_IDENT && equal(tok->next, ":")) {
     Node *node = new_node(ND_LABEL, tok);
-    node->label = strndup(tok->loc, tok->len);
-    node->unique_label = new_unique_name();
+    char *name = strndup(tok->loc, tok->len);
+    node->label = new_label(name);
+    node->unique_label = new_label(NULL);
     node->lhs = stmt(rest, tok->next->next);
     node->goto_next = labels;
     labels = node;
@@ -2175,8 +2176,8 @@ static Node *to_assign(Node *binary) {
                 tok);
 
     Node *loop = new_node(ND_DO, tok);
-    loop->brk_label = new_unique_name();
-    loop->cont_label = new_unique_name();
+    loop->brk_label = new_label(NULL);
+    loop->cont_label = new_label(NULL);
 
     Node *body = new_binary(ND_ASSIGN,
                             new_var_node(new, tok),
@@ -2610,7 +2611,7 @@ static Node *unary(Token **rest, Token *tok) {
   // [GNU] labels-as-values
   if (equal(tok, "&&")) {
     Node *node = new_node(ND_LABEL_VAL, tok);
-    node->label = get_ident(tok->next);
+    node->label = new_label(get_ident(tok->next));
     node->goto_next = gotos;
     gotos = node;
     *rest = tok->next->next;
@@ -3214,7 +3215,7 @@ static Node *primary(Token **rest, Token *tok) {
     if (!sc)
       error_tok(tok, "cannot find symbol of %s", ident_to_string(ident));
 
-    char *symbolname = get_symbol(sc->var);
+    const char *symbolname = get_symbol(sc->var);
     Type *symbol_ty = stringlit_of(symbolname);
 
     Obj *var = new_string_literal(symbolname, symbol_ty);
@@ -3368,7 +3369,7 @@ static void create_param_lvars(Type *param) {
 static void resolve_goto_labels(void) {
   for (Node *x = gotos; x; x = x->goto_next) {
     for (Node *y = labels; y; y = y->goto_next) {
-      if (!strcmp(x->label, y->label)) {
+      if (!strcmp(x->label->name, y->label->name)) {
         x->unique_label = y->unique_label;
         break;
       }
@@ -3662,8 +3663,16 @@ static void scan_globals(void) {
   globals = head.next;
 }
 
+static void declare_builtin_functions(void) {
+  Type *ty = func_type(pointer_to(ty_void));
+  ty->params = copy_type(ty_int);
+  builtin_alloca = new_gvar("__builtin_alloca", NULL, ty);
+  builtin_alloca->is_definition = false;
+}
+
 // program = ("asm" asm-stmt | typedef | function-definition | global-variable)*
 Obj *parse(Token *tok) {
+  declare_builtin_functions();
   globals = NULL;
 
   while (tok->kind != TK_EOF) {
