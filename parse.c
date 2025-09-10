@@ -3632,7 +3632,7 @@ static bool is_function(Token *tok) {
 }
 
 // Remove redundant tentative definitions.
-static void scan_globals(Obj *first_global) {
+static Obj *scan_tentatives(Obj *first_global) {
   Obj head;
   Obj *cur = &head;
 
@@ -3655,7 +3655,7 @@ static void scan_globals(Obj *first_global) {
   }
 
   cur->next = NULL;
-  globals = head.next;
+  return head.next;
 }
 
 static void declare_builtin_functions(void) {
@@ -3708,7 +3708,6 @@ Obj *parse(Token *tok) {
     if (var->is_root)
       mark_live(var);
 
-  // Remove redundant tentative definitions.
-  scan_globals(head.next);
-  return head.next;
+  // Remove redundant tentative definitions
+  return scan_tentatives(head.next);
 }
