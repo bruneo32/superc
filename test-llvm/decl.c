@@ -1,14 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
-#include <float.h>
+
 
 // asm("movl $0, %eax");
 
 _Bool g0;
-bool g001 = true;
+_Bool g001 = 1;
 unsigned short g01;
 unsigned long g02;
 float g03;
@@ -23,18 +18,18 @@ __int128 g06;
 _Float16 g07;
 #endif
 
-size_t g08;
-ptrdiff_t g09;
+// size_t g08;
+// ptrdiff_t g09;
 
 void* g10 = &g01;
 
 int _Alignas(512) g1;
-static int _Alignas(256) __attribute__((used)) g2 = 5;
+static int _Alignas(256) g2 = 5;
 
 char *public_string = "public";
-static char *__attribute__((used)) private_string = "private";
+static char *private_string = "private";
 
-static short __attribute__((used)) bidimensional[][3] = {{1, 2, 3}, {4, 5, 6}};
+static short bidimensional[][3] = {{1, 2, 3}, {4, 5, 6}};
 short *bidim_ptr = bidimensional[1];
 
 char l = "hello"[3];
@@ -68,7 +63,7 @@ struct mypack {
 	long b;
 } __attribute__((packed)) mypacked;
 
-typedef uint8_t bit;
+typedef unsigned char bit;
 
 struct ByteField {
 	bit _8 : 1;
@@ -91,7 +86,7 @@ struct ByteField {
 	._1 = 0,
 };
 
-static char __attribute__((used)) _a = 'A'; // = 95
+static char _a = 'A'; // = 95
 
 struct ShortField {
 	bit _padding0 : 7;
@@ -102,17 +97,26 @@ struct ShortField {
 	bit _6 : 1;
 	bit _5 : 1;
 	bit _4 : 1;
-	bit _3 : 1;
-	bit _2 : 1;
+	bit _3 : 2;
 	bit _1 : 1;
-} shortfield;
+} shortfield= {
+	._padding0 = 7,
+	._9 = 1,
+	._8 = 1,
+	._7 = 0,
+	._6 = 0,
+	._5 = 0,
+	._4 = 0,
+	._3 = 3,
+	._1 = 0,
+};
 
 struct ComplexField {
 	bit _padding0 : 7;
 	bit _1 : 1;
 	bit _2 : 1; // OVERFLOW
-	uint16_t s;
-	uint32_t i;
+	unsigned short s;
+	unsigned int i;
 	bit _3 : 7; // OVERFLOW AGAIN
 } complexfield;
 
@@ -145,10 +149,10 @@ int main() {
 		int b;
 	} __attribute__((packed)) abc;
 
-	printf("anonymous\n");
-	printf("-> %c\n", l);
+	// printf("anonymous\n");
+	// printf("-> %c\n", l);
 
-	int array_vla[g2];
+	// int array_vla[g2];
 
 	// asm("movl $0, %eax");
 

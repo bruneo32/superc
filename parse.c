@@ -146,10 +146,6 @@ static Obj *find_func(Identifier ident);
 static Identifier consume_ident(Token** rest, Token *tok);
 static char *ident_to_string(Identifier ident);
 
-static int align_down(int n, int align) {
-  return align_to(n - align + 1, align);
-}
-
 static void enter_scope(Node *block) {
   Scope *sc = calloc(1, sizeof(Scope));
   sc->block = block;
