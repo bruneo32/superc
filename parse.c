@@ -371,10 +371,9 @@ static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
 
 static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
-  var->next = globals;
   var->is_static = true;
   var->is_definition = true;
-  globals = var;
+  globals = globals->next = var;
   return var;
 }
 
@@ -3633,18 +3632,18 @@ static bool is_function(Token *tok) {
 }
 
 // Remove redundant tentative definitions.
-static void scan_globals(void) {
+static void scan_globals(Obj *first_global) {
   Obj head;
   Obj *cur = &head;
 
-  for (Obj *var = globals; var; var = var->next) {
+  for (Obj *var = first_global; var; var = var->next) {
     if (!var->is_tentative) {
       cur = cur->next = var;
       continue;
     }
 
     // Find another definition of the same identifier.
-    Obj *var2 = globals;
+    Obj *var2 = first_global;
     for (; var2; var2 = var2->next)
       if (var != var2 && var2->is_definition && !strcmp(var->name, var2->name))
         break;
@@ -3660,6 +3659,7 @@ static void scan_globals(void) {
 }
 
 static void declare_builtin_functions(void) {
+  /* Declare __builtin_alloca */
   Type *ty = func_type(pointer_to(ty_void));
   ty->params = copy_type(ty_int);
   builtin_alloca = new_gvar("__builtin_alloca", NULL, ty);
@@ -3668,20 +3668,22 @@ static void declare_builtin_functions(void) {
 
 // program = ("asm" asm-stmt | typedef | function-definition | global-variable)*
 Obj *parse(Token *tok) {
+  Obj head = {};
+  globals = &head;
+
   declare_builtin_functions();
-  globals = NULL;
 
   while (tok->kind != TK_EOF) {
     // global asm statement
-    if (equal(tok, "asm")) {
-      Node *node = asm_stmt(&tok, tok);
-      tok = skip(tok, ";");
-      Obj *var = new_anon_gvar(node->ty);
-      var->is_live = true;
-      var->body = node;
-      globals = var;
-      continue;
-    }
+    // if (equal(tok, "asm")) {
+    //   Node *node = asm_stmt(&tok, tok);
+    //   tok = skip(tok, ";");
+    //   Obj *var = new_anon_gvar(node->ty);
+    //   var->is_live = true;
+    //   var->body = node;
+    //   globals = var;
+    //   continue;
+    // }
 
     VarAttr attr = {};
     Type *basety = declspec(&tok, tok, &attr);
@@ -3702,11 +3704,11 @@ Obj *parse(Token *tok) {
     tok = global_variable(tok, basety, &attr);
   }
 
-  for (Obj *var = globals; var; var = var->next)
+  for (Obj *var = head.next; var; var = var->next)
     if (var->is_root)
       mark_live(var);
 
   // Remove redundant tentative definitions.
-  scan_globals();
-  return globals;
+  scan_globals(head.next);
+  return head.next;
 }
