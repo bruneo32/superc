@@ -16,6 +16,21 @@ static count_t ssa_id = 1;
 
 static LLVM *_emit_cur;
 
+/* Structs and union tracking */
+static HashMap mp_unions_structs = {0};
+
+void store_union_struct_decl(Type *ty) {
+  assert(ty->tagname);
+
+  /* Get tagname */
+  char tagname[ty->tagname->len + 1];
+  strncpy(tagname, ty->tagname->loc, ty->tagname->len);
+  tagname[ty->tagname->len] = '\0';
+
+  if (!hashmap_get(&mp_unions_structs, tagname))
+    hashmap_put(&mp_unions_structs, tagname, ty);
+}
+
 // Round up `n` to the nearest multiple of `align`. For instance,
 // align_to(5, 8) returns 8 and align_to(11, 8) returns 16.
 int align_to(int n, int align) {
@@ -65,12 +80,12 @@ static inline bool is_float_tid(int tid) {
   return tid == F32 || tid == F64 || tid == F80;
 }
 
-static const char *llvm_type_for_size(int bytes, bool is_flo) {
+static const char *llvm_type_for_size(uint64_t bytes, bool is_flo) {
   if (bytes <= 1)      return "i8";
   else if (bytes <= 2) return "i16";
   else if (bytes <= 4) return !is_flo ? "i32" : "float";
   else if (bytes <= 8) return !is_flo ? "i64" : "double";
-  else return format("[%d x i8]", bytes);
+  else return format("[%ld x i8]", bytes);
 }
 
 static const char *llvmty_usize;
@@ -510,58 +525,64 @@ static void emitd_initializer(Initializer *init) {
   case TY_STRUCT: {
     emitc('{');
     bool first = true;
-    for (Member *mem = init->ty->members; mem; ) {
+    for (Member *mem = init->ty->members; mem;) {
       if (!first)
         emitf(", ");
       first = false;
 
-      /* Skip bitfields */
-      if (mem->is_bitfield) {
-        size_t nbytes = init->ty->size;
-        int8_t bits[nbytes];
-        memset(bits, 0, nbytes);
-
-        while (mem && mem->is_bitfield) {
-          if (!mem->bit_width) {
-            mem = mem->next;
-            continue;
-          }
-
-          Initializer *child = init->children[mem->idx];
-
-          /* Evaluate initializer to an unsigned 64-bit value and mask to width.
-           * Casting to uint64_t preserves two's-complement low bits for negatives. */
-          uint64_t raw = (uint64_t)eval2(child->expr, NULL);
-          uint64_t mask = (mem->bit_width >= 64) ? ~0ULL : ((1ULL << mem->bit_width) - 1);
-          uint64_t val = raw & mask;
-
-          /* Absolute start bit from beginning of struct: byte-offset * 8 + bit_offset */
-          size_t start_bit = (size_t)mem->offset * 8 + (size_t)mem->bit_offset;
-
-          for (size_t i = 0; i < (size_t)mem->bit_width; ++i) {
-            size_t bit_index = start_bit + i;
-            size_t byte_index = bit_index / 8;
-            size_t bit_in_byte = bit_index % 8;
-            bits[byte_index] |= (unsigned char)(((val >> i) & 1ULL) << bit_in_byte);
-          }
-
-          mem = mem->next;
-        }
-
-        /* Emit the packed bytes as i8 constants */
-        for (size_t i = 0; i < nbytes; ++i)
-          emitf("%si8 %d", (i != 0) ? ", " : "", bits[i]);
-
-        /* continue with next (non-bitfield) member */
+      if (!mem->is_bitfield) {
+        /* Emit normal struct member */
+        Initializer *child = init->children[mem->idx];
+        emitf("%s ", llvm_type(child->ty));
+        emitd_initializer(child);
+        mem = mem->next;
         continue;
       }
 
-      /* Emit normal struct member */
-      Initializer *child = init->children[mem->idx];
-      emitf("%s ", llvm_type(child->ty));
-      emitd_initializer(child);
-      mem = mem->next;
+      /* Handle bitfields */
+      uint64_t nbits = mem->bit_width;
+      Member *mem_cx = mem;
+      while (mem_cx->next && mem_cx->next->is_bitfield) {
+        Member *_mem_next = mem_cx->next;
+        nbits += _mem_next->bit_width;
+        mem_cx = _mem_next;
+      }
+
+      /* Select bytespan */
+      uint64_t nbytes = ((nbits % 8) == 0)
+                          ? nbits / 8
+                          : (nbits / 8) + 1;
+
+      const char *bfty = llvm_type_for_size(nbytes, false);
+
+      int64_t databits = 0;
+
+      while (mem && mem->is_bitfield) {
+        if (!mem->bit_width) {
+          mem = mem->next;
+          continue;
+        }
+
+        Initializer *child = init->children[mem->idx];
+
+        /* Evaluate initializer to an unsigned 64-bit value and mask to width.
+         * Casting to uint64_t preserves two's-complement low bits for negatives. */
+        uint64_t raw = (uint64_t)eval2(child->expr, NULL);
+        uint64_t mask = (mem->bit_width >= 64) ? ~0ULL : ((1ULL << mem->bit_width) - 1);
+        uint64_t val = raw & mask;
+
+        /* Absolute start bit from beginning of struct: byte-offset * 8 + bit_offset */
+        size_t start_bit = (size_t)mem->offset * 8 + (size_t)mem->bit_offset;
+
+        databits |= (val << start_bit);
+
+        mem = mem->next;
+      }
+
+      /* Emit the initializer */
+      emitf("%s %ld", bfty, databits);
     }
+
     emitc('}');
   } break;
 
@@ -577,7 +598,7 @@ static void emitd_initializer(Initializer *init) {
     {
     case ND_NUM: {
       if (is_flonum(init->expr->ty)) {
-        emitf("%s", get_float_lit(init->expr->ty->kind, init->expr->fval));
+        emitf("%s", get_float_lit(init->ty->kind, init->expr->fval));
         return;
       }
       int64_t val = eval2(init->expr, NULL);
@@ -639,6 +660,84 @@ static void emitd_initializer(Initializer *init) {
     }
   }
 
+}
+
+static void emit_union_structs_decl() {
+  for (size_t i = 0; i < mp_unions_structs.capacity; ++i) {
+    HashEntry *ent = &mp_unions_structs.buckets[i];
+    if (!ent || !ent->val) continue;
+
+    Type *ty = ent->val;
+    emitf("%s = type ", llvm_type(ty));
+
+    /* == Unions == */
+    if (ty->kind == TY_UNION) {
+      // %union.numbers = type { i64 }
+      // %union.idk_bigf = type { double, [504 x i8] } ; _Alignas(512)
+      Member *mem = ty->members;
+      int max_size = mem->align;
+      bool is_flo = is_flonum(mem->ty);
+
+      while (mem->next) {
+        Member *mem_next = mem->next;
+        if (mem_next->align > max_size) {
+          max_size = mem_next->align;
+          is_flo = is_flonum(mem_next->ty);
+        }
+        mem = mem_next;
+      }
+
+      if (max_size <= 8)
+        emitfln("{ %s }", llvm_type_for_size(max_size, is_flo));
+      else
+        emitfln("{ %s, %s }", !is_flo ? "i64" : "double", llvm_type_for_size(max_size - 8, is_flo));
+      continue;
+    }
+
+    /* == Structs == */
+
+    // %struct.color = type { i8, i8, i8, i8 }
+    // %struct.Car = type { i8*, %struct.color, i32 }
+    // %struct.mypacked = type <{ i8, i64 }>
+
+    if (ty->is_packed)
+      emitc('<');
+    emitc('{');
+
+    bool first = true;
+    for (Member *mem = ty->members; mem; mem = mem->next) {
+      if (!first)
+        emitc(',');
+      first = false;
+
+      if (!mem->is_bitfield) {
+        emitf(" %s", llvm_type(mem->ty));
+        continue;
+      }
+
+      /* Handle bitfields */
+      uint64_t bits = mem->bit_width;
+      while (mem->next && mem->next->is_bitfield) {
+        Member *mem_next = mem->next;
+        bits += mem_next->bit_width;
+        mem = mem_next;
+      }
+
+      /* Select bytespan */
+      uint64_t bytes = ((bits % 8) == 0)
+                        ? bits / 8
+                        : (bits / 8) + 1;
+
+      emitf(" %s", llvm_type_for_size(bytes, false));
+      if (!mem) break; /* Avoid crashing the for loop */
+    }
+
+    emitf(" }");
+    if (ty->is_packed)
+      emitc('>');
+
+    emitln;
+  }
 }
 
 static void emit_data(Obj *prog) {
@@ -789,9 +888,8 @@ void codegen(Obj *prog, FILE *out) {
 
   llvmty_usize = llvm_type(ty_usize);
 
-  // detect_member_types(prog);
-  // emit_member_types();
-  // emitln;
+  emit_union_structs_decl();
+  emitln;
 
   emit_data(prog);
   emitln;

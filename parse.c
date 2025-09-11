@@ -2769,6 +2769,9 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     push_tag_scope(tag, ty);
   }
 
+  // If type is not registered, save it for codegen.
+  store_union_struct_decl(ty);
+
   return ty;
 }
 
@@ -3337,10 +3340,12 @@ static Token *parse_typedef(Token *tok, Type *basety) {
     if (!ty->name)
       error_tok(ty->name_pos, "typedef name omitted");
 
-    /* When typedef an anonymous struct, make sure that there is a tag name. */
-    if ((ty->kind == TY_STRUCT || ty->kind == TY_UNION) && !ty->tagname)
-      ty->tagname = ty->name;
-
+    if (ty->kind == TY_STRUCT || ty->kind == TY_UNION) {
+      /* When typedef an anonymous struct, make sure that there is a tag name. */
+      if (!ty->tagname) ty->tagname = ty->name;
+      /* Save it aligator */
+      store_union_struct_decl(ty);
+    }
 
     push_scope(get_ident(ty->name))->type_def = ty;
   }

@@ -530,6 +530,7 @@ struct LLVM {
 };
 
 void codegen(Obj *prog, FILE *out);
+void store_union_struct_decl(Type *ty);
 int  align_to(int n, int align);
 int  align_down(int n, int align);
 const char* get_symbol(Obj *var);

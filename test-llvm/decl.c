@@ -63,7 +63,7 @@ struct mypack {
 	long b;
 } __attribute__((packed)) mypacked;
 
-typedef unsigned char bit;
+typedef unsigned long bit;
 
 struct ByteField {
 	bit _8 : 1;
