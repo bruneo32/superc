@@ -1,5 +1,5 @@
 // #include <stdio.h>
-// #include <stdarg.h>
+#include <alloca.h>
 
 struct nothing {} _nothing;
 
@@ -51,6 +51,7 @@ static void bar(int a, ...) {}
 
 int main() {
 	alloca(7);
+
 	// foo();
 	int a = 10;
 	int b = 10 + (2 * 3);
@@ -64,13 +65,13 @@ int main() {
 	return 0;
 }
 
-int early() {
-	static volatile int x;
-	if (x & 1) {
-		foo();
-		goto earl_ret;
-	}
-	foo();
-	earl_ret:
-	return 0;
-}
+// int early() {
+// 	static volatile int x;
+// 	if (x & 1) {
+// 		foo();
+// 		goto earl_ret;
+// 	}
+// 	foo();
+// 	earl_ret:
+// 	return 0;
+// }

@@ -114,7 +114,7 @@ static int64_t eval_rval(Node *node, Obj **label);
 static bool is_const_expr(Node *node);
 static Node *assign(Token **rest, Token *tok);
 static Node *logor(Token **rest, Token *tok);
-static flt_number eval_double(Node *node);
+flt_number eval_double(Node *node);
 static Node *conditional(Token **rest, Token *tok);
 static Node *logand(Token **rest, Token *tok);
 static Node *bitor(Token **rest, Token *tok);
@@ -2065,7 +2065,7 @@ int64_t const_expr(Token **rest, Token *tok) {
   return eval(node);
 }
 
-static flt_number eval_double(Node *node) {
+flt_number eval_double(Node *node) {
   add_type(node);
 
   if (is_integer(node->ty)) {

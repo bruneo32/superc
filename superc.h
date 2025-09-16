@@ -356,6 +356,7 @@ struct Node {
 Node *new_cast(Node *expr, Type *ty);
 int64_t const_expr(Token **rest, Token *tok);
 int64_t eval2(Node *node, Obj **label);
+flt_number eval_double(Node *node);
 Obj *parse(Token *tok);
 
 //
@@ -504,6 +505,8 @@ enum LLKind {
   LL_FEXT,    // "fpext"     (extend a primitive float point)
   LL_F_SI,    // "fptosi"    float point to   signed int
   LL_F_UI,    // "fptoui"    float point to unsigned int
+  LL_ADD,
+  LL_MUL,
 };
 
 struct LLVM {
@@ -517,6 +520,10 @@ struct LLVM {
   // Load/Store
   LLVM *src;
   LLVM *dst;
+
+  // Binops
+  LLVM *lhs;
+  LLVM *rhs;
 
   // Unconditional jump
   Label *label;
@@ -577,6 +584,7 @@ void hashmap_test(void);
 bool file_exists(char *path);
 
 extern StringArray include_paths;
+extern char *base_file;
 extern bool opt_fpic;
 extern bool opt_fcommon;
-extern char *base_file;
+extern bool opt_constant_folding;

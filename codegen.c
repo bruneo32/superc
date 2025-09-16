@@ -268,6 +268,28 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   return llvm;
 }
 
+static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_ADD;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
+static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_MUL;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
 static LLVM *gen_expr(Node *node) {
   switch (node->kind) {
     case ND_NULL_EXPR:
@@ -314,6 +336,48 @@ static LLVM *gen_expr(Node *node) {
         return builtint_alloca(sz);
       }
       error_tok(node->tok, "unsupported funcall");
+    }
+    case ND_ADD: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 + val2);
+        } else if (lhs->kind == LL_NUMF &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 + val2);
+        }
+      }
+
+      return gen_add(node->ty, lhs, rhs);
+    }
+    case ND_MUL: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 + val2);
+        } else if (lhs->kind == LL_NUMF &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 + val2);
+        }
+      }
+
+      return gen_mul(node->ty, lhs, rhs);
     }
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
@@ -426,6 +490,18 @@ static count_t emit_llvm(LLVM *llvm) {
     emitfln("  %%%ld = sext %s %s to %s", llvm->ssa,
             llvm_type(llvm->src->ty), get_symvar(llvm->src),
             llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_ADD:
+    emitfln("  %%%ld = add %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_MUL:
+    emitfln("  %%%ld = mul %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
     return llvm->ssa;
   }
   return 0;

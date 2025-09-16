@@ -9,6 +9,7 @@ typedef enum {
 StringArray include_paths;
 bool opt_fcommon = true;
 bool opt_fpic;
+bool opt_constant_folding = true;
 
 static FileType opt_x;
 static StringArray opt_include;
@@ -169,9 +170,19 @@ static void parse_args(int argc, char **argv) {
       opt_fcommon = true;
       continue;
     }
-
     if (!strcmp(argv[i], "-fno-common")) {
       opt_fcommon = false;
+      continue;
+    }
+
+    /* Enable constant folding for evaluating expressions
+     * at compile time like `10 + (2 * 3)` => `16` */
+    if (!strcmp(argv[i], "-fconstant-folding")) {
+      opt_constant_folding = true;
+      continue;
+    }
+    if (!strcmp(argv[i], "-fno-constant-folding")) {
+      opt_constant_folding = false;
       continue;
     }
 
