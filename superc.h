@@ -501,12 +501,16 @@ enum LLKind {
   LL_SI_F,    // "sitofp"      signed int to float point
   LL_UI_F,    // "uitofp"    unsigned int to float point
   /* Cast FLOAT primitives */
-  LL_FTRN,    // "fptrunc"     (extend a primitive float point)
+  LL_FTRN,    // "fptrunc"   shrink a primitive float point
   LL_FEXT,    // "fpext"     (extend a primitive float point)
   LL_F_SI,    // "fptosi"    float point to   signed int
   LL_F_UI,    // "fptoui"    float point to unsigned int
+  /* INT binops */
   LL_ADD,
   LL_MUL,
+  /* FLOAT binops */
+  LL_FADD,
+  LL_FMUL,
 };
 
 struct LLVM {

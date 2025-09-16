@@ -168,7 +168,7 @@ static LLVM *gen_inum(Type *ty, int64_t val) {
 
 static LLVM *gen_fnum(Type *ty, flt_number val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_NUM;
+  llvm->kind = LL_NUMF;
   llvm->ty = ty;
   llvm->fval = val;
   return llvm;
@@ -180,10 +180,11 @@ static inline LLVM *gen_num(Type *ty, Node *node) {
   return gen_inum(ty, node->val);
 }
 
-static LLVM *gen_alloca(Type *ty) {
+static LLVM *gen_alloca(Type *ty, int64_t val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_ALLOCA;
   llvm->ty = ty;
+  llvm->val = val;
 
   _emit_cur = _emit_cur->next = llvm;
   return llvm;
@@ -191,8 +192,8 @@ static LLVM *gen_alloca(Type *ty) {
 
 static LLVM *builtint_alloca(count_t size) {
   Type *ty = copy_type(ty_char);
-  ty->align = size;
-  return gen_alloca(ty);
+  ty->align = 16;
+  return gen_alloca(ty, size);
 }
 
 static LLVM *gen_load(Type *ty, LLVM *src) {
@@ -270,7 +271,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
 
 static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_ADD;
+  llvm->kind = is_flonum(ty) ? LL_FADD : LL_ADD;
   llvm->ty = ty;
   llvm->lhs = lhs;
   llvm->rhs = rhs;
@@ -281,7 +282,7 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
 
 static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_MUL;
+  llvm->kind = is_flonum(ty) ? LL_FMUL : LL_MUL;
   llvm->ty = ty;
   llvm->lhs = lhs;
   llvm->rhs = rhs;
@@ -431,7 +432,11 @@ static void emitfln(char *fmt, ...) {
 static count_t emit_alloca(count_t ssa, LLVM *ll) {
   assert(ll);
   if (!ssa) ssa = ll->ssa;
-  emitfln("  %%%ld = alloca %s, align %d", ssa, llvm_type(ll->ty), ll->ty->align);
+  // %9 = alloca i8, i64 7, align 16
+  emitf("  %%%ld = alloca %s", ssa, llvm_type(ll->ty));
+  if (ll->val)
+    emitf(", i64 %ld", ll->val);
+  emitfln(", align %d", ll->ty->align);
   return ssa;
 }
 
@@ -476,6 +481,8 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_store(llvm->src, llvm->dst);
   case LL_LABEL:
     return emit_label(llvm->label);
+
+  /* INT cast */
   case LL_TRUN:
     emitfln("  %%%ld = trunc %s %s to %s", llvm->ssa,
             llvm_type(llvm->src->ty), get_symvar(llvm->src),
@@ -491,6 +498,46 @@ static count_t emit_llvm(LLVM *llvm) {
             llvm_type(llvm->src->ty), get_symvar(llvm->src),
             llvm_type(llvm->ty));
     return llvm->ssa;
+  case LL_SI_F:
+    emitfln("  %%%ld = sitofp %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_UI_F:
+    emitfln("  %%%ld = uitofp %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+
+  /* FLOAT cast */
+  case LL_FTRN:
+    emitfln("  %%%ld = fptrunc %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_FEXT:
+    emitfln("  %%%ld = fpext %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_F_SI:
+    emitfln("  %%%ld = fptosi %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+  case LL_F_UI:
+    emitfln("  %%%ld = fptoui %s %s to %s", llvm->ssa,
+            llvm_type(llvm->src->ty),
+            get_symvar(llvm->src),
+            llvm_type(llvm->ty));
+    return llvm->ssa;
+
+  /* INT binops */
   case LL_ADD:
     emitfln("  %%%ld = add %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
@@ -499,6 +546,20 @@ static count_t emit_llvm(LLVM *llvm) {
     return llvm->ssa;
   case LL_MUL:
     emitfln("  %%%ld = mul %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+
+  /* FLOAT binops */
+  case LL_FADD:
+    emitfln("  %%%ld = fadd %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_FMUL:
+    emitfln("  %%%ld = fmul %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
@@ -890,13 +951,13 @@ static void emit_text(Obj *prog) {
 
     /* Allocate return value */
     if (ret_ty->kind != TY_VOID) {
-      fn_retval_ll = gen_alloca(ret_ty);
+      fn_retval_ll = gen_alloca(ret_ty, 0);
     } else
      fn_retval_ll = NULL;
 
     /* Allocate local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
-      LLVM * ref = gen_alloca(local->ty);
+      LLVM * ref = gen_alloca(local->ty, 0);
       /* Create cross-reference so it can be addressed */
       local->llvm = ref;
     }

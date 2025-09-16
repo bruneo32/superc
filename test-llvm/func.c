@@ -59,6 +59,10 @@ int main() {
 	float f = (float)b;
 	int c = (int)f;
 
+	float ff = f + 9.0f;
+	double d = f + 9.0;
+	long double ld = d * 9.0;
+
 	// int c = _33();
 	// int d = _33() + 1;
 	// printf("OK\n");
