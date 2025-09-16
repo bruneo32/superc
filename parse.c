@@ -225,9 +225,9 @@ static Type *find_tag(Token *tok) {
   return NULL;
 }
 
+/** If name is NULL, the label is anonymous and unique by codegen */
 static Label *new_label(const char *name) {
   Label *label = calloc(1, sizeof(Label));
-  label->ssa = 0; // Uninitialized, assigned in codegen
   label->name = name;
   return label;
 }
@@ -1755,11 +1755,11 @@ static Node *stmt(Token **rest, Token *tok) {
       tok = tok->next;
       if (is_flonum(tok->ty))
         error_tok(tok, "break number must be integer");
-      node->unique_label = find_brk_label(tok->val);
-      if (!node->unique_label)
+      node->label = find_brk_label(tok->val);
+      if (!node->label)
         error_tok(tok, "invalid break label");
     } else {
-      node->unique_label = brk_label_array->label;
+      node->label = brk_label_array->label;
     }
 
     *rest = skip(tok->next, ";");
@@ -1770,7 +1770,7 @@ static Node *stmt(Token **rest, Token *tok) {
     if (!cont_label)
       error_tok(tok, "stray continue");
     Node *node = new_node(ND_CONTINUE, tok);
-    node->unique_label = cont_label;
+    node->label = cont_label;
     *rest = skip(tok->next, ";");
     return node;
   }
@@ -1822,7 +1822,6 @@ static Node *stmt(Token **rest, Token *tok) {
     Node *node = new_node(ND_LABEL, tok);
     char *name = strndup(tok->loc, tok->len);
     node->label = new_label(name);
-    node->unique_label = new_label(NULL);
     node->lhs = stmt(rest, tok->next->next);
     node->goto_next = labels;
     labels = node;
@@ -3370,12 +3369,13 @@ static void resolve_goto_labels(void) {
   for (Node *x = gotos; x; x = x->goto_next) {
     for (Node *y = labels; y; y = y->goto_next) {
       if (!strcmp(x->label->name, y->label->name)) {
-        x->unique_label = y->unique_label;
+        free(x->label);
+        x->label = y->label;
         break;
       }
     }
 
-    if (x->unique_label == NULL)
+    if (x->label == NULL)
       error_tok(x->tok->next, "use of undeclared label");
   }
 

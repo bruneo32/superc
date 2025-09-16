@@ -52,9 +52,14 @@ static void bar(int a, ...) {}
 int main() {
 	alloca(7);
 
+// goto test_label;
+
 	// foo();
+
 	int a = 10;
 	int b = 10 + (2 * 3);
+
+test_label: {
 
 	float f = (float)b;
 	int c = (int)f;
@@ -62,7 +67,7 @@ int main() {
 	float ff = f + 9.0f;
 	double d = f + 9.0;
 	long double ld = d * 9.0;
-
+}
 	// int c = _33();
 	// int d = _33() + 1;
 	// printf("OK\n");

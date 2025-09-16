@@ -173,6 +173,7 @@ struct Initializer {
 struct Label {
   count_t ssa;
   const char *name;
+  bool   is_live;
   Label *next;
 };
 

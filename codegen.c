@@ -130,21 +130,32 @@ static const char *get_symvar(LLVM *llvm) {
   }
 }
 
-static inline bool is_assignable_ll(LLKind kind) {
-  switch (kind) {
+static inline bool is_assignable_ll(LLVM *ll) {
+  switch (ll->kind) {
   /* List of instructions that don't emit an SSA */
   case LL_JMP:
   case LL_STORE:
     return false;
+  case LL_LABEL:
+    return ll->label->is_live;
   default:
     return true;
   }
+}
+
+static LLVM *gen_label(Label *label) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_LABEL;
+  llvm->label = label;
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
 }
 
 static LLVM *gen_jmp(Label *label) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_JMP;
   llvm->label = label;
+  label->is_live = true;
   _emit_cur = _emit_cur->next = llvm;
   return llvm;
 }
@@ -393,6 +404,14 @@ static void gen_stmt(Node *node) {
         gen_stmt(m);
       break;
 
+    case ND_LABEL:
+      gen_label(node->label);
+      break;
+
+    case ND_GOTO:
+      gen_jmp(node->label);
+      break;
+
     case ND_EXPR_STMT:
       gen_expr(node->lhs);
       break;
@@ -453,6 +472,8 @@ static count_t emit_load(count_t ssa, LLVM *ll) {
 }
 
 static count_t emit_label(Label *label) {
+  if (!label->is_live)
+    return 0;
   assert(label);
   emitfln("%ld:", label->ssa);
   return label->ssa;
@@ -929,8 +950,6 @@ static void emit_text(Obj *prog) {
     memset(&ll_head, 0, sizeof(LLVM));
     _emit_cur = &ll_head;
 
-    ssa_id = 1; // Reset SSA indexes
-
     current_fn = fn;
     const char *symbol = get_symbol(fn);
 
@@ -975,10 +994,15 @@ static void emit_text(Obj *prog) {
     gen_stmt(fn->body);
     LLVM *ll_body = ll_head.next; /* Skip dummy head */
 
+    ssa_id = 1; // Reset SSA indexes
+
     /* Enumerate instructions before emitting */
     for (LLVM *ll = ll_body; ll; ll = ll->next) {
-      if (is_assignable_ll(ll->kind))
+      if (is_assignable_ll(ll)) {
         ll->ssa = new_ssa;
+        if (ll->kind == LL_LABEL)
+          ll->label->ssa = ll->ssa;
+      }
     }
     /* Return label receive the last SSA */
     fn_label_ret.ssa = new_ssa;
