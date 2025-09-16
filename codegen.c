@@ -994,12 +994,17 @@ static void emit_text(Obj *prog) {
     gen_stmt(fn->body);
     LLVM *ll_body = ll_head.next; /* Skip dummy head */
 
-    ssa_id = 1; // Reset SSA indexes
+    /* Reset SSA indexes.
+     * > Note that if the first instruction is a label,
+     * then ssa shall start at 0: instead of 1: */
+    if (ll_body)
+      ssa_id = ll_body->kind != LL_LABEL;
 
     /* Enumerate instructions before emitting */
     for (LLVM *ll = ll_body; ll; ll = ll->next) {
       if (is_assignable_ll(ll)) {
         ll->ssa = new_ssa;
+        /* Propagate ssa to label */
         if (ll->kind == LL_LABEL)
           ll->label->ssa = ll->ssa;
       }

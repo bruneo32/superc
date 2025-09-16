@@ -49,6 +49,12 @@ static void bar(int a, ...) {}
 // 	return sum;
 // }
 
+void label_test() {
+first:{}
+	return;
+	goto first;
+}
+
 int main() {
 	alloca(7);
 
