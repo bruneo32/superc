@@ -21,7 +21,7 @@ static void bar(int a, ...) {}
 
 // inline int bar() { return 1; }
 
-// static int _33() { return 33; }
+static int _33(int a, float b) { return 33 + a + (int)b; }
 
 // static inline int foobar() { return 2; }
 
@@ -50,7 +50,7 @@ static void bar(int a, ...) {}
 // }
 
 void label_test() {
-first:{}
+first:
 	return;
 	goto first;
 }
@@ -60,12 +60,12 @@ int main() {
 
 // goto test_label;
 
-	// foo();
+	foo();
 
 	int a = 10;
 	int b = 10 + (2 * 3);
 
-test_label: {
+test_label: ;
 
 	float f = (float)b;
 	int c = (int)f;
@@ -73,9 +73,9 @@ test_label: {
 	float ff = f + 9.0f;
 	double d = f + 9.0;
 	long double ld = d * 9.0;
-}
-	// int c = _33();
-	// int d = _33() + 1;
+
+	int e = _33(3, 2.0f);
+	int g = _33(0, 0.0f) + 1;
 	// printf("OK\n");
 	return 0;
 }

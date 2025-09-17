@@ -302,6 +302,17 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_funcall(Node *fn, LLVM *args) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_FUNCALL;
+  llvm->ty = fn->ty;
+  llvm->args = args;
+  llvm->lhs = gen_addr(fn->lhs);
+
+  _emit_cur = _emit_cur->next = llvm;
+  return llvm;
+}
+
 static LLVM *gen_expr(Node *node) {
   switch (node->kind) {
     case ND_NULL_EXPR:
@@ -343,11 +354,16 @@ static LLVM *gen_expr(Node *node) {
     case ND_FUNCALL: {
       if (node->lhs->kind == ND_VAR &&
         !strcmp(get_symbol(node->lhs->var), "__builtin_alloca")) {
-        // gen_expr(node->args);
         int64_t sz = eval2(node->args, NULL);
         return builtint_alloca(sz);
       }
-      error_tok(node->tok, "unsupported funcall");
+      LLVM head = {};
+      LLVM *cur = &head;
+
+      for (Node *arg = node->args; arg; arg = arg->next)
+        cur = cur->next = gen_expr(arg);
+
+      return gen_funcall(node, head.next);
     }
     case ND_ADD: {
       LLVM *lhs = gen_expr(node->lhs);
@@ -494,14 +510,27 @@ static count_t emit_llvm(LLVM *llvm) {
   case LL_JMP:
     emitfln("  br label %%%ld", llvm->label->ssa);
     return llvm->ssa;
+  case LL_LABEL:
+    return emit_label(llvm->label);
+
   case LL_ALLOCA:
     return emit_alloca(0, llvm);
   case LL_LOAD:
     return emit_load(0, llvm);
   case LL_STORE:
     return emit_store(llvm->src, llvm->dst);
-  case LL_LABEL:
-    return emit_label(llvm->label);
+  case LL_FUNCALL:
+    // call i32 @_33(i32 noundef 3, float noundef 2.000000e+00)
+    emitf("  %%%ld = call %s %s(", llvm->ssa,
+            llvm_type(llvm->ty), get_symvar(llvm->lhs));
+    for (LLVM *arg = llvm->args; arg; arg = arg->next) {
+      emitf("%s noundef %s", llvm_type(arg->ty), get_symvar(arg));
+      if (arg->next)
+        emitf(", ");
+    }
+    emitc(')');
+    emitln;
+    break;
 
   /* INT cast */
   case LL_TRUN:

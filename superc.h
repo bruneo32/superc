@@ -485,14 +485,18 @@ const char *llvm_type(Type *ty);
 
 enum LLKind {
   LL_NOOP = 0,
+  /* Control flow */
   LL_LABEL,
   LL_JMP,
-  LL_VAR,
+  /* Literals & vars */
   LL_NUM,
   LL_NUMF,
+  LL_VAR,
+  /* Basic ops */
   LL_ALLOCA,
   LL_LOAD,
   LL_STORE,
+  LL_FUNCALL,
   /* Cast PTR */
   LL_BITCAST, // bitcast     (transform a kind of ptr to another)
   /* Cast INT primitives */
@@ -535,6 +539,9 @@ struct LLVM {
 
   // Variable
   Obj *var;
+
+  // Function
+  LLVM *args;
 
   // Numeric literal
   int64_t val;
