@@ -11,10 +11,11 @@ static count_t emit_llvm(LLVM *llvm);
 LLVM *fn_retval_ll = NULL;
 Label fn_label_ret = {};
 
-static count_t ssa_id = 1;
+static count_t ssa_id;
 #define new_ssa ssa_id++
 
 static LLVM *_emit_cur;
+#define advance_emit(llvm_) ({ _emit_cur = _emit_cur->next = (llvm_); })
 
 /* Structs and union tracking */
 static HashMap mp_unions_structs = {0};
@@ -135,37 +136,64 @@ static inline bool is_assignable_ll(LLVM *ll) {
   /* List of instructions that don't emit an SSA */
   case LL_JMP:
   case LL_STORE:
+  case LL_STORE_PARAM:
     return false;
   case LL_LABEL:
     return ll->label->is_live;
+  case LL_FUNCALL:
+    return ll->ty->kind != TY_VOID;
   default:
     return true;
   }
+}
+
+static bool is_noundef(Obj *var) {
+  switch (var->ty->kind)
+  {
+  case TY_BOOL:
+  case TY_CHAR:
+  case TY_SHORT:
+  case TY_INT:
+  case TY_LONG:
+  case TY_FLOAT:
+  case TY_DOUBLE:
+  case TY_LDOUBLE:
+    return true;
+  case TY_PTR:
+    /* TODO: Check if has __attribute__((nonnull)) to return true*/
+    return false;
+  default:
+    return false;
+  }
+}
+
+static LLVM *gen_jmp(Label *label) {
+  /* Don't emit if the previous is an unconditional jump */
+  if (_emit_cur->kind == LL_JMP)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_JMP;
+  llvm->label = label;
+  label->is_live = true;
+  advance_emit(llvm);
+  return llvm;
 }
 
 static LLVM *gen_label(Label *label) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LABEL;
   llvm->label = label;
-  _emit_cur = _emit_cur->next = llvm;
+  gen_jmp(label); // Pred
+  advance_emit(llvm);
   return llvm;
 }
 
-static LLVM *gen_jmp(Label *label) {
-  LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_JMP;
-  llvm->label = label;
-  label->is_live = true;
-  _emit_cur = _emit_cur->next = llvm;
-  return llvm;
-}
-
-static LLVM *gen_addr(Node *node) {
-  assert(node->kind == ND_VAR);
+static LLVM *gen_addr(Type *ty, Obj *var) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_VAR;
-  llvm->ty = node->ty;
-  llvm->var = node->var;
+  llvm->ty   = ty;
+  llvm->var  = var;
   return llvm;
 }
 
@@ -197,7 +225,7 @@ static LLVM *gen_alloca(Type *ty, int64_t val) {
   llvm->ty = ty;
   llvm->val = val;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -215,7 +243,7 @@ static LLVM *gen_load(Type *ty, LLVM *src) {
   llvm->ty = ty;
   llvm->src = src;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -226,7 +254,19 @@ static LLVM *gen_store(Type *ty, LLVM *src, LLVM *dst) {
   llvm->src = src;
   llvm->dst = dst;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_store_param(count_t ssa, Type *ty, Obj *param, LLVM *dst) {
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_STORE_PARAM;
+  llvm->ty = ty;
+  llvm->var = param;
+  llvm->dst = dst;
+  llvm->ssa = ssa;
+
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -276,7 +316,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   llvm->ty = to;
   llvm->src = ref;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -287,7 +327,7 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   llvm->lhs = lhs;
   llvm->rhs = rhs;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -298,7 +338,7 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
   llvm->lhs = lhs;
   llvm->rhs = rhs;
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -307,9 +347,9 @@ static LLVM *gen_funcall(Node *fn, LLVM *args) {
   llvm->kind = LL_FUNCALL;
   llvm->ty = fn->ty;
   llvm->args = args;
-  llvm->lhs = gen_addr(fn->lhs);
+  llvm->lhs = gen_addr(fn->lhs->ty, fn->lhs->var);
 
-  _emit_cur = _emit_cur->next = llvm;
+  advance_emit(llvm);
   return llvm;
 }
 
@@ -330,7 +370,7 @@ static LLVM *gen_expr(Node *node) {
     }
     case ND_VAR: {
       // rvalue of a var = load from its address
-      return gen_load(node->ty, gen_addr(node));
+      return gen_load(node->ty, gen_addr(node->ty, node->var));
     }
     case ND_CAST: {
       /* If lhs is a primitive, don't need to cast,
@@ -347,7 +387,7 @@ static LLVM *gen_expr(Node *node) {
     }
     case ND_ASSIGN: {
       // lhs must be an lvalue
-      LLVM *ptr = gen_addr(node->lhs);
+      LLVM *ptr = gen_addr(node->lhs->ty, node->lhs->var);
       LLVM *rhs = gen_expr(node->rhs);
       return gen_store(node->ty, rhs, ptr);
     }
@@ -422,6 +462,7 @@ static void gen_stmt(Node *node) {
 
     case ND_LABEL:
       gen_label(node->label);
+      gen_stmt(node->lhs);
       break;
 
     case ND_GOTO:
@@ -519,12 +560,31 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_load(0, llvm);
   case LL_STORE:
     return emit_store(llvm->src, llvm->dst);
+
+  case LL_STORE_PARAM: {
+    emitfln("  store %s %%%ld, %s* %s, align %d",
+            llvm_type(llvm->var->ty), llvm->ssa,
+            llvm_type(llvm->dst->ty), get_symvar(llvm->dst),
+            llvm->dst->ty->align);
+    break;
+  }
+
   case LL_FUNCALL:
     // call i32 @_33(i32 noundef 3, float noundef 2.000000e+00)
-    emitf("  %%%ld = call %s %s(", llvm->ssa,
-            llvm_type(llvm->ty), get_symvar(llvm->lhs));
-    for (LLVM *arg = llvm->args; arg; arg = arg->next) {
-      emitf("%s noundef %s", llvm_type(arg->ty), get_symvar(arg));
+
+    /* Identation */
+    emitc(' ');
+    emitc(' ');
+
+    /* If return ty is void don't have ssa */
+    if (llvm->ssa)
+      emitf("%%%ld = ", llvm->ssa);
+
+    emitf("call %s %s(", llvm_type(llvm->ty), get_symvar(llvm->lhs));
+
+    Obj *param = llvm->lhs->var->params;
+    for (LLVM *arg = llvm->args; arg && param; arg = arg->next, param = param->next) {
+      emitf("%s%s %s", llvm_type(arg->ty), is_noundef(param) ? " noundef" : "", get_symvar(arg));
       if (arg->next)
         emitf(", ");
     }
@@ -985,6 +1045,12 @@ static void emit_text(Obj *prog) {
     Type *ret_ty = fn->ty->return_ty;
     const char *ll_ret_ty = llvm_type(ret_ty);
 
+    /* Allocate return value */
+    if (ret_ty->kind != TY_VOID) {
+      fn_retval_ll = gen_alloca(ret_ty, 0);
+    } else
+     fn_retval_ll = NULL;
+
     /* ==== Function header ==== */
     emitf("define");
     if (fn->is_static)
@@ -993,21 +1059,26 @@ static void emit_text(Obj *prog) {
       emitf(" dso_local");
 
     count_t attr_num = 0; // TODO: emit attributes
-    emitfln(" %s @%s() #%ld {", ll_ret_ty, symbol, attr_num);
+    emitf(" %s @%s(", ll_ret_ty, symbol);
+
+    /* Emit arguments */
+    ssa_id = 0;
+    for (Obj *param = fn->params; param; param = param->next) {
+      param->llvm = gen_alloca(param->ty, 0);
+      emitf("%s%s %%%ld", llvm_type(param->ty), is_noundef(param) ? " noundef" : "",
+            new_ssa);
+      if (param->next)
+        emitf(", ");
+    }
+
+    emitfln(") #%ld {", attr_num);
 
     /* ==== Prologue ==== */
 
-    /* Allocate return value */
-    if (ret_ty->kind != TY_VOID) {
-      fn_retval_ll = gen_alloca(ret_ty, 0);
-    } else
-     fn_retval_ll = NULL;
-
     /* Allocate local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
-      LLVM * ref = gen_alloca(local->ty, 0);
       /* Create cross-reference so it can be addressed */
-      local->llvm = ref;
+      local->llvm = gen_alloca(local->ty, 0);
     }
 
     // [https://www.sigbus.info/n1570#5.1.2.2.3p1] The C spec defines
@@ -1017,6 +1088,12 @@ static void emit_text(Obj *prog) {
     if (strcmp(symbol, "main") == 0)
       gen_store(ret_ty, gen_inum(ret_ty, 0), fn_retval_ll);
 
+    /* Generate stores for parameters */
+    count_t pssa = 0;
+    for (Obj *param = fn->params; param; param = param->next) {
+      gen_store_param(pssa++, param->ty, param, param->llvm);
+    }
+
     /* ==== BODY ==== */
 
     /* Generate LLVM IR AST */
@@ -1025,9 +1102,10 @@ static void emit_text(Obj *prog) {
 
     /* Reset SSA indexes.
      * > Note that if the first instruction is a label,
-     * then ssa shall start at 0: instead of 1: */
-    if (ll_body)
-      ssa_id = ll_body->kind != LL_LABEL;
+     * then ssa shall start at 0: instead of 1:
+     * (if there was no params) */
+    if (ll_body && ll_body->kind != LL_LABEL)
+      ssa_id++;
 
     /* Enumerate instructions before emitting */
     for (LLVM *ll = ll_body; ll; ll = ll->next) {
@@ -1041,7 +1119,7 @@ static void emit_text(Obj *prog) {
     /* Return label receive the last SSA */
     fn_label_ret.ssa = new_ssa;
 
-    /* Emit LLVM IR*/
+    /* Emit LLVM IR */
     while (ll_body) {
       emit_llvm(ll_body);
       ll_body = ll_body->next;

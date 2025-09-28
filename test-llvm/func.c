@@ -17,11 +17,16 @@ struct nothing {} _nothing;
 #define inline __attribute__((always_inline)) inline
 
 static void foo() {}
-static void bar(int a, ...) {}
 
 // inline int bar() { return 1; }
 
-static int _33(int a, float b) { return 33 + a + (int)b; }
+static int _33(int a, float b) {
+wtf: ;
+// TODO: Emit blocks wisely
+	double c = 1;
+	goto wtf;
+	return 33 + a + (int)b;
+}
 
 // static inline int foobar() { return 2; }
 

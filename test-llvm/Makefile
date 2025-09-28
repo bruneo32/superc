@@ -1,4 +1,4 @@
-LLCFLAGS=-O0 -mtriple=x86_64-pc-linux-gnu
+LLCFLAGS=-O2 -mtriple=x86_64-pc-linux-gnu
 
 all: simple.exe simple.s
 

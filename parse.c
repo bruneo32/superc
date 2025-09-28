@@ -3546,6 +3546,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     new_lvar("__struct_area__", NULL, pointer_to(rty));
 
   fn->params = locals;
+  locals = NULL; /* Prevent params to be registered as locals */
 
   if (ty->is_variadic)
     fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));

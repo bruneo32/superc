@@ -485,6 +485,7 @@ const char *llvm_type(Type *ty);
 
 enum LLKind {
   LL_NOOP = 0,
+  LL_STORE_PARAM,
   /* Control flow */
   LL_LABEL,
   LL_JMP,

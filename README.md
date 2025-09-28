@@ -375,3 +375,15 @@ int main() {
 
 ## Notes
 > Forked from [chibicc](https://github.com/rui314/chibicc).
+
+Tip for debugging with gdb.
+File `~/.gdbinit`:
+```
+set disable-randomization on
+set follow-fork-mode child
+catch syscall exit
+catch syscall exit_group
+catch signal SIGSEGV
+catch signal SIGABRT
+break error
+```
