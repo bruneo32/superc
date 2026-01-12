@@ -5,7 +5,7 @@ static Obj  *current_fn;
 static Node *current_loop;
 
 static LLVM   *gen_expr(Node *node);
-static void    gen_stmt(Node *node);
+static void    gen_stmt(Node *node, bool is_root_block);
 static count_t emit_llvm(LLVM *llvm);
 
 LLVM *fn_retval_ll = NULL;
@@ -14,8 +14,8 @@ Label fn_label_ret = {};
 static count_t ssa_id;
 #define new_ssa ssa_id++
 
+#define advance_emit(llvm_) ({ _emit_cur = _emit_cur->next = (llvm_); _emit_cur; })
 static LLVM *_emit_cur;
-#define advance_emit(llvm_) ({ _emit_cur = _emit_cur->next = (llvm_); })
 
 /* Structs and union tracking */
 static HashMap mp_unions_structs = {0};
@@ -147,6 +147,16 @@ static inline bool is_assignable_ll(LLVM *ll) {
   }
 }
 
+static inline bool is_block_terminator_ll(LLVM *ll) {
+  switch (ll->kind) {
+  /* List of instructions LLVM block terminators */
+  case LL_JMP:
+    return true;
+  default:
+    return false;
+  }
+}
+
 static bool is_noundef(Obj *var) {
   switch (var->ty->kind)
   {
@@ -184,7 +194,6 @@ static LLVM *gen_label(Label *label) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LABEL;
   llvm->label = label;
-  gen_jmp(label); // Pred
   advance_emit(llvm);
   return llvm;
 }
@@ -363,7 +372,7 @@ static LLVM *gen_expr(Node *node) {
       return NULL;
     case ND_STMT_EXPR:
       for (Node *n = node->body; n; n = n->next)
-        gen_stmt(n);
+        gen_stmt(n, false);
       return NULL;
     case ND_NUM: {
       return gen_num(node->ty, node);
@@ -453,16 +462,36 @@ static LLVM *gen_expr(Node *node) {
   unreachable();
 }
 
-static void gen_stmt(Node *node) {
+static bool statement_unreachable = false;
+
+static void gen_stmt(Node *node, bool is_root_block) {
   switch (node->kind) {
     case ND_BLOCK:
-      for (Node *m = node->body; m; m = m->next)
-        gen_stmt(m);
+      size_t count = 0;
+
+      for (Node *m = node->body; m; m = m->next) {
+        gen_stmt(m, false);
+        count++;
+        /* A terminator ends the block */
+        if (is_block_terminator_ll(_emit_cur)) {
+          if (!is_root_block)
+            break;
+          statement_unreachable = true;
+          return;
+        }
+      }
+
+      if (count > 1 && !is_block_terminator_ll(_emit_cur)) {
+        /* Emit terminator for this block */
+        Label *label = calloc(1, sizeof(Label));
+        gen_jmp(label);
+        gen_label(label);
+      }
       break;
 
     case ND_LABEL:
       gen_label(node->label);
-      gen_stmt(node->lhs);
+      gen_stmt(node->lhs, is_root_block);
       break;
 
     case ND_GOTO:
@@ -1093,17 +1122,31 @@ static void emit_text(Obj *prog) {
     for (Obj *param = fn->params; param; param = param->next) {
       gen_store_param(pssa++, param->ty, param, param->llvm);
     }
+    LLVM *fn_header_last = _emit_cur;
 
     /* ==== BODY ==== */
 
     /* Generate LLVM IR AST */
-    gen_stmt(fn->body);
-    LLVM *ll_body = ll_head.next; /* Skip dummy head */
+    statement_unreachable = false;
+    gen_stmt(fn->body, true);
+
+    if (fn_header_last->next && fn_header_last->next->kind == LL_LABEL) {
+      /* End header block with a terminator */
+      Label *label = fn_header_last->next->label;
+      LLVM *llvm = calloc(1, sizeof(LLVM));
+      llvm->kind = LL_JMP;
+      llvm->label = label;
+      label->is_live = true;
+      /* Insert before the label */
+      llvm->next = fn_header_last->next;
+      fn_header_last->next = llvm;
+    }
 
     /* Reset SSA indexes.
-     * > Note that if the first instruction is a label,
-     * then ssa shall start at 0: instead of 1:
-     * (if there was no params) */
+    * > Note that if the first instruction is a label,
+    * then ssa shall start at 0: instead of 1:
+    * (if there was no params) */
+    LLVM *ll_body = ll_head.next; /* Skip dummy head */
     if (ll_body && ll_body->kind != LL_LABEL)
       ssa_id++;
 
@@ -1125,17 +1168,19 @@ static void emit_text(Obj *prog) {
       ll_body = ll_body->next;
     }
 
-    /* ==== Epilogue ==== */
-    // TODO: Defers
-    emit_label(&fn_label_ret);
+    if (!statement_unreachable) {
+      /* ==== Epilogue ==== */
+      // TODO: Defers
+      emit_label(&fn_label_ret);
 
-    if (ret_ty->kind == TY_VOID)
-      emitf("  ret void");
-    else
-      emitf("  ret %s %%%ld", llvm_type(ret_ty),
-            emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
+      if (ret_ty->kind == TY_VOID)
+        emitf("  ret void");
+      else
+        emitf("  ret %s %%%ld", llvm_type(ret_ty),
+              emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
+      emitln;
+    }
 
-    emitln;
     emitc('}');
     emitln;
     emitln;
