@@ -7,8 +7,10 @@
   - [Type methods](#type-methods)
   - [break N](#break-n)
   - [Symbol mangling](#symbol-mangling)
+    - [Aliases](#aliases)
 - [Current planned features](#current-planned-features)
-  - [Aliases](#aliases)
+  - [Operator overload](#operator-overload)
+  - [Nullish coalescing operator](#nullish-coalescing-operator)
   - [Lambdas](#lambdas)
 
 # Current developed features
@@ -196,6 +198,7 @@ int main() {
 
 ## break N
 Will break out of a loop or switch N levels up.
+> Technically this can be done already in C with a **goto** statement, but this is syntactically more readable.
 
 ### Examples
 ```c
@@ -267,58 +270,186 @@ int main(void) {
 }
 ```
 
-# Current planned features
-> Please note that the **syntax** of all the planned features is **subject to change**.
-
 ## Aliases
-Register a declaration as an alias of another symbol. Very useful for [type methods](#type-methods).
+Symbol mangling can be used to create syntax aliases to existing variables and functions in the compiled binary.
+Sure you can do `#define def abc`, but you cannot use preprocessor for [Type methods](#type-methods), so this is a useful feature of the symbol mangling.
 
-### Examples
 ```c
 #include <stdio.h>
+#include <string.h>
 
-void foo() {
-  printf("foo\n");
-}
+/* Silly GCC headers
+ * destroy __attribute__ */
+#ifdef __attribute__
+#undef __attribute__
+#endif
 
-void bar() __attribute__((alias(foo)));
+int abc = 32;
+/* def is an alias of abc does not create a new variable */
+extern int def __attribute__((symbol("abc")));
 
-int main() {
-  foo();
-  bar();
-  printf("%p == %p", foo, bar);
-  // foo
-  // foo
-  // 0x7fff5fb3b3e0 == 0x7fff5fb3b3e0
+/* Use symbol mangling to create a function alias string.concat -> strcat */
+char *(char *s1) concat(char *s2) __attribute__((symbol("strcat")));
+
+int main(void) {
+  char str_hello[100] = "Hello";
+  str_hello.concat(" World").concat("!")
+  printf("%d\n%s\n", def, str_hello);
+  // 32
+  // Hello World!
   return 0;
 }
 ```
 ```c
 #include <stdio.h>
 
+/*
+ * Question: How can I alias an inline function?
+ * Answer: Inline the inliner
+ */
+
+inline int inline1(int n) { return n + 3; }
+inline int (int i) inline2() { return inline1(i); }
+
+/* Since both functions are inlined,
+ * the binary result is the same as
+ * calling just inline1(), so this
+ * is an alias of inline1() */
+
+int main(void) {
+  /*
+    binary result is exactly the same as
+    printf("%d\n", 10 + 3);
+    so this is an inline function alias
+  */
+  printf("%d\n", ((int)10).inline2());
+  // 13
+  return 0;
+}
+```
+
+# Current planned features
+> Please note that the **syntax** of all the planned features is **subject to change**.
+
+## Operator overload
+You can map an operator (+, +=, etc) to a type method call.
+
+This can be very useful to avoid a headache when working with complex data types like strings and arrays.
+
+But this is one of the features that could kill a **C** succesor, and has so many detractors because of the hidden code; so it has to be implemented wisely.
+
+There are some rules that the compiler follows:
+- You cannot overload primitive types.
+  > `1+1` is 2, and **not a function call**
+- You cannot pass a number to a pointer overload.
+  This is meant to preserve pointer arithmetic.
+  > `(char*)"Hello" + 2` is `"llo"`, and **not a function call**
+
+### Binary arithmetic operators
+| Operator |         Method         |
+|:--------:|:-----------------------|
+|   `+`    | `__add__(self, other)` |
+|   `-`    | `__sub__(self, other)` |
+|   `*`    | `__mul__(self, other)` |
+|   `/`    | `__div__(self, other)` |
+|   `%`    | `__mod__(self, other)` |
+
+### Comparison operators
+| Operator |         Method         |
+|:--------:|:-----------------------|
+|   `<`    | `__lt__(self, other)`  |
+|   `>`    | `__gt__(self, other)`  |
+|   `<=`   | `__le__(self, other)`  |
+|   `>=`   | `__qe__(self, other)`  |
+|   `==`   | `__eq__(self, other)`  |
+|   `!=`   | `__ne__(self, other)`  |
+
+### Assignment operators
+| Operator |          Method         |
+|:--------:|:------------------------|
+|   `+=`   | `__iadd__(self, other)` |
+|   `-=`   | `__isub__(self, other)` |
+|   `*=`   | `__imul__(self, other)` |
+|   `/=`   | `__idiv__(self, other)` |
+|   `%=`   | `__imod__(self, other)` |
+
+### Unary operators
+| Operator |      Method     |
+|:--------:|:----------------|
+|   `-`    | `__neg__(self)` |
+|   `+`    | `__pos__(self)` |
+|   `~`    | `__inv__(self)` |
+
+### Examples
+```c
+#include <stdio.h>
+#include <string.h>
+
+/* char* + char* ====> s1.__iadd__(s2) */
+char *(char *s1) __iadd__(char *s2) __attribute__((symbol("strcat")));
+
+int main(void) {
+  char str_hello[100] = "Hello";
+  str_hello += " World";
+  str_hello += "!";
+  printf("%s\n", str_hello);
+  // Hello World!
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+#include <string.h>
+
 typedef struct Point Point;
 struct Point {
-  double x, y;
+  int x;
+  int y;
 };
 
-Point point_add(Point p1, Point p2) {
-  return (Point){
-    .x = p1.x + p2.x,
-    .y = p1.y + p2.y,
-  };
+/* Point + Point ====> p1.__add__(p2) */
+Point (Point p1) __add__(Point p2) {
+  /* structs are copied by value,
+   * so we could have use p1 directly
+   * without overwriting the original
+   * p1 struct */
+  Point p3;
+  p3.x = p1.x + p2.x;
+  p3.y = p1.y + p2.y;
+  return p3;
 }
 
-/* No new function is emitted, just the compiler replaces the call with the aliased function */
-Point (Point p1) add(Point p2) __attribute__((alias(point_add)));
+bool (Point p1) __eq__(Point p2) {
+  return p1.x == p2.x && p1.y == p2.y;
+}
 
-int main() {
-  Point p = { .x = 1, .y = 2 };
-  Point q = { .x = 7, .y = -1 };
+int main(void) {
+  Point p1 = {1, 2};
+  Point p2 = {3, 4};
+  Point p3 = p1 + p2;
+  printf("%f %f\n", p3.x, p3.y);
+  // 4 6
+  return 0;
+}
+```
 
-  Point r = p.add(q);
+## Nullish coalescing operator
+The nullish coalescing operator is a ternary operator that returns its right operand if the left operand is null, and its left operand otherwise.
 
-  // 8.0, 1.0
-  printf("%f, %f\n", r.x, r.y);
+**I.E:** `a ?? b` is equivalent to `a ? a : b`**
+
+### Examples
+```c
+#include <stdio.h>
+#include <string.h>
+
+char *str_en_hello = "Hello";
+char *str_es_hello = "Hola";
+
+int main(void) {
+  str_en_hello = NULL;
+  printf("%s\n", str_en_hello ?? str_es_hello);
+  // Hola
   return 0;
 }
 ```
@@ -375,3 +506,15 @@ int main() {
 
 ## Notes
 > Forked from [chibicc](https://github.com/rui314/chibicc).
+
+Tip for debugging with gdb.
+File `~/.gdbinit`:
+```
+set disable-randomization on
+set follow-fork-mode child
+catch syscall exit
+catch syscall exit_group
+catch signal SIGSEGV
+catch signal SIGABRT
+break error
+```
