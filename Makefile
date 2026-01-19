@@ -1,5 +1,6 @@
 CFLAGS=-std=c11 -g -fno-common -Wall -Wno-switch
 
+PROJECT_VERSION="0.0"
 GIT_VERSION=$(shell git describe --tags --always --dirty)
 
 SRCS=$(wildcard *.c)
@@ -19,6 +20,7 @@ $(OBJS): superc.h version.h
 version.h: .git/HEAD $(shell git rev-parse --git-dir)/refs/heads/$(shell git branch --show-current)
 	echo "#ifndef _VERSION_H_IN" > version.h
 	echo "#define _VERSION_H_IN" >> version.h
+	echo "#define PROJECT_VERSION \"$(PROJECT_VERSION)\"" >> version.h
 	echo "#define PROJECT_GIT_VERSION_DESCRIBE \"$(GIT_VERSION)\"" >> version.h
 	echo "#endif // _VERSION_H_IN" >> version.h
 

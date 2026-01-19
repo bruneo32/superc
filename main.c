@@ -42,8 +42,8 @@ static void print_usage_exit(int status, const char* progname) {
 }
 
 static void print_version_exit(int status) {
-#ifdef PROJECT_GIT_VERSION_DESCRIBE
-  fprintf(stderr, "%s\n", PROJECT_GIT_VERSION_DESCRIBE);
+#if defined(PROJECT_VERSION) && defined(PROJECT_GIT_VERSION_DESCRIBE)
+  fprintf(stderr, "%s-%s\n", PROJECT_VERSION, PROJECT_GIT_VERSION_DESCRIBE);
 #else
   fprintf(stderr, "<unknown>\n");
 #endif
