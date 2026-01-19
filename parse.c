@@ -2136,7 +2136,11 @@ static int64_t eval2(Node *node, char ***label) {
       error_tok(node->tok, "not a compile-time constant");
     if (node->var->ty->kind != TY_ARRAY && node->var->ty->kind != TY_FUNC)
       error_tok(node->tok, "invalid initializer");
-    *label = &node->var->name;
+    /* Cannot call &get_symbolname() here. */
+    if (node->var->symbol)
+      *label = &node->var->symbol;
+    else
+      *label = &node->var->name;
     return 0;
   case ND_NUM:
     return node->val;
@@ -2150,7 +2154,11 @@ static int64_t eval_rval(Node *node, char ***label) {
   case ND_VAR:
     if (node->var->is_local)
       error_tok(node->tok, "not a compile-time constant");
-    *label = &node->var->name;
+    /* Cannot call &get_symbolname() here. */
+    if (node->var->symbol)
+      *label = &node->var->symbol;
+    else
+      *label = &node->var->name;
     return 0;
   case ND_DEREF:
     return eval2(node->lhs, label);
@@ -2841,6 +2849,8 @@ static Token *attribute_list(Token *tok, Type *ty, Obj *var) {
       if (consume(&tok, tok, "symbol")) {
         if (var && var->is_local)
           error_tok(tok, "symbol attribute can only be applied to global declarations");
+        if (var && var->is_inline)
+          error_tok(tok, "symbol attribute cannot be applied to inline functions");
 
         tok = skip(tok, "(");
         if (tok->kind != TK_STR)
@@ -3232,6 +3242,12 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   if (!same_type(basety, impl_type))
     error_tok(name_tok, "expected a method of type '%s'", basety_str);
 
+  // For "static inline" function
+  if (current_fn)
+    strarray_push(&current_fn->refs, fnobj->name); // No symbolname
+  else
+    fnobj->is_root = true;
+
   tok = skip(after_name, "(");
 
   Node *fn = new_var_node(fnobj, name_tok);  // callee is an identifier
@@ -3423,7 +3439,7 @@ static Node *primary(Token **rest, Token *tok) {
     // For "static inline" function
     if (sc && sc->var && sc->var->is_function) {
       if (current_fn)
-        strarray_push(&current_fn->refs, sc->var->name);
+        strarray_push(&current_fn->refs, sc->var->name); // No symbolname
       else
         sc->var->is_root = true;
     }
@@ -3784,7 +3800,7 @@ static void scan_globals(void) {
     // Find another definition of the same identifier.
     Obj *var2 = globals;
     for (; var2; var2 = var2->next)
-      if (var != var2 && var2->is_definition && !strcmp(var->name, var2->name))
+      if (var != var2 && var2->is_definition && !strcmp(get_symbolname(var), get_symbolname(var2)))
         break;
 
     // If there's another definition, the tentative definition
