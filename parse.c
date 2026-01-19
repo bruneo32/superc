@@ -2362,6 +2362,78 @@ static Node *to_assign(Node *binary) {
   return new_binary(ND_COMMA, expr1, expr2, tok);
 }
 
+static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
+  /* Build function node */
+  if (fn->ty->kind != TY_FUNC &&
+      (fn->ty->kind != TY_PTR || fn->ty->base->kind != TY_FUNC))
+    error_tok(fn->tok, "not a function");
+
+  add_type(lhs);
+  add_type(rhs);
+
+  /* Build method node */
+  Node *method = new_var_node(fn, tok);
+  method->ty = fn->ty;
+  method->func_ty = fn->ty;
+  method->recv = lhs;
+  add_type(method);
+
+  Type *ty = (fn->ty->kind == TY_FUNC) ? fn->ty : fn->ty->base;
+  Type *param_ty = ty->params;
+
+  Node head = {};
+  Node *cur = &head;
+
+  /* Add receiver as first parameter of the function */
+  if (param_ty) {
+    if (param_ty->kind != TY_STRUCT && param_ty->kind != TY_UNION)
+      method->recv = new_cast(method->recv, param_ty);
+    param_ty = param_ty->next;
+  } else if (method->recv->ty->kind == TY_FLOAT) {
+    // If parameter type is omitted (e.g. in "..."), float
+    // arguments are promoted to double.
+    method->recv = new_cast(method->recv, ty_double);
+  }
+
+  cur = cur->next = method->recv;
+
+  while (rhs) {
+    add_type(rhs);
+
+    /* First argument if !recv */
+    if (!param_ty && !ty->is_variadic)
+      error_tok(tok, "too many arguments");
+
+    if (param_ty) {
+      if (param_ty->kind != TY_STRUCT && param_ty->kind != TY_UNION)
+        rhs = new_cast(rhs, param_ty);
+      param_ty = param_ty->next;
+    } else if (rhs->ty->kind == TY_FLOAT) {
+      // If parameter type is omitted (e.g. in "..."), float
+      // arguments are promoted to double.
+      rhs = new_cast(rhs, ty_double);
+    }
+
+    cur = cur->next = rhs;
+    rhs = rhs->next; // Advance
+  }
+
+  if (param_ty)
+    error_tok(tok, "too few arguments");
+
+  Node *node = new_unary(ND_FUNCALL, method, tok);
+  node->func_ty = ty;
+  node->ty = ty->return_ty;
+  node->args = head.next;
+  add_type(node);
+
+  // If a function returns a struct, it is caller's responsibility
+  // to allocate a space for the return value.
+  if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
+    node->ret_buffer = new_lvar("", NULL, node->ty);
+  return node;
+}
+
 // assign    = conditional (assign-op assign)?
 // assign-op = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^="
 //           | "<<=" | ">>="
@@ -2371,8 +2443,61 @@ static Node *assign(Token **rest, Token *tok) {
   if (equal(tok, "="))
     return new_binary(ND_ASSIGN, node, assign(rest, tok->next), tok);
 
-  if (equal(tok, "+="))
-    return to_assign(new_add(node, assign(rest, tok->next), tok));
+  if (equal(tok, "+=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    /* Convert array and function types to pointers for lookup */
+    Type *ftyl = node->ty;
+    if (node->ty->kind == TY_ARRAY || node->ty->kind == TY_VLA) {
+      // "array of T" is converted to "pointer to T" only in the receiver
+      // context. For example, *argv[] is converted to **argv by this.
+      ftyl = pointer_to(node->ty->base);
+    } else if (node->ty->kind == TY_FUNC) {
+      // Likewise, a function is converted to a pointer to a function
+      // only in the receiver context.
+      ftyl = pointer_to(node->ty);
+    }
+
+    /* Lookup method */
+    Identifier ident = {"__iadd__", ftyl};
+    Obj *fn = find_func(ident);
+    if (!fn)
+      /* Return normal arithmetic */
+      return to_assign(new_add(node, rhs, tok));
+
+    /* Expect: (recv, rhs) */
+    if (!fn->ty->params || !fn->ty->params->next || fn->ty->params->next->next)
+      error_tok(tok, "invalid __iadd__ signature");
+
+    /* Convert array and function types to pointers for lookup */
+    add_type(rhs);
+    Type *ftyr = rhs->ty;
+    if (ftyr->kind == TY_ARRAY || ftyr->kind == TY_VLA) {
+      // "array of T" is converted to "pointer to T" only in the receiver
+      // context. For example, *argv[] is converted to **argv by this.
+      ftyr = pointer_to(ftyr->base);
+    } else if (ftyr->kind == TY_FUNC) {
+      // Likewise, a function is converted to a pointer to a function
+      // only in the receiver context.
+      ftyr = pointer_to(ftyr);
+    }
+
+    /* Check that rhs type is correct */
+    if (!same_type(fn->ty->params->next, ftyr)) {
+      char *msg3 = type_to_string(fn->ty->params);
+      error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
+                msg3,
+                type_to_string(fn->ty->params->next),
+                msg3,
+                type_to_string(ftyr));
+    }
+
+    /* Discard return value, the function must modify the receiver in place */
+    return operator_overload(fn, node, rhs, tok);
+  }
 
   if (equal(tok, "-="))
     return to_assign(new_sub(node, assign(rest, tok->next), tok));
@@ -3193,6 +3318,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   node->func_ty = ty;
   node->ty = ty->return_ty;
   node->args = head.next;
+  add_type(node);
 
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
@@ -3254,6 +3380,8 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   fn->ty = fnobj->ty;
   fn->func_ty = fnobj->ty;
   fn->recv = recv;
+
+  free(basety_str);
 
   *rest = tok;
   return funcall(rest, tok, fn);
@@ -3593,6 +3721,19 @@ static bool is_type_method(Token *tok) {
   return true;
 }
 
+static void check_operator_overload(Type *ty, char *name_str, Token *name_tok) {
+  /* Not an operator overload method */
+  if (!!strcmp(name_str, "__iadd__"))
+    return;
+
+  /* First type is the receiver */
+  if (ty->kind == TY_PTR && is_integer(ty->next)) {
+    /* You cannot pass a number to a pointer overload */
+    error_tok(name_tok, "cannot overload pointer arithmetic, parameter '%s' cannot be numeric",
+      get_ident(ty->next->name));
+  }
+}
+
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if it's a type method */
   Type *recv = NULL;
@@ -3621,10 +3762,16 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     tok = skip(tok, ")");
   }
 
+  Token *name_tok = tok;
   Type *ty = declarator(&tok, tok, basety);
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
+
+  /* Discard operator overload for primitives */
+  if (recv && is_numeric(recv) &&
+      !strcmp(name_str, "__iadd__"))
+    error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
   /* Save the method type and name */
   Identifier ident = {name_str, recv};
@@ -3676,6 +3823,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (recv) {
     recv->next = ty->params;
     ty->params = recv;
+    check_operator_overload(ty->params, ident.name, name_tok);
   }
 
   /* Not a function definition, exit */
