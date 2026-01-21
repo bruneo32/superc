@@ -446,6 +446,7 @@ Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
 bool same_type(Type *a, Type *b);
+bool same_type_value(Type *a, Type *b);
 char *type_to_string(Type *ty);
 char *type_to_asmident(Type *ty);
 

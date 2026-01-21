@@ -429,6 +429,19 @@ static bool is_identifier(Token *tok) {
   return tok->kind == TK_IDENT;
 }
 
+static Type *type_param_sanitized(Type *ty) {
+  if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
+    // "array of T" is converted to "pointer to T" only in the receiver
+    // context. For example, *argv[] is converted to **argv by this.
+    return pointer_to(ty->base);
+  } else if (ty->kind == TY_FUNC) {
+    // Likewise, a function is converted to a pointer to a function
+    // only in the receiver context.
+    return pointer_to(ty);
+  }
+  return ty;
+}
+
 static Identifier consume_ident(Token** rest, Token *tok) {
   /* Select type methods as idenfiers `(int).sum` */
   if (equal(tok, "(") && is_typename(tok->next)) {
@@ -436,15 +449,7 @@ static Identifier consume_ident(Token** rest, Token *tok) {
     Type *ty = typename(&tok, tok->next);
 
     /* Convert array and function types to pointers */
-    if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      ty = pointer_to(ty->base);
-    } else if (ty->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      ty = pointer_to(ty);
-    }
+    ty = type_param_sanitized(ty);
 
     tok = skip(tok, ")");
 
@@ -742,6 +747,7 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
 
     Token *name = ty2->name;
 
+    /* Don't  use type_param_sanitized, because it modifies name too */
     if (ty2->kind == TY_ARRAY || ty2->kind == TY_VLA) {
       // "array of T" is converted to "pointer to T" only in the parameter
       // context. For example, *argv[] is converted to **argv by this.
@@ -2449,44 +2455,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
-    /* Convert array and function types to pointers for lookup */
-    Type *ftyl = node->ty;
-    if (node->ty->kind == TY_ARRAY || node->ty->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      ftyl = pointer_to(node->ty->base);
-    } else if (node->ty->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      ftyl = pointer_to(node->ty);
-    }
-
     /* Lookup method */
-    Identifier ident = {"__iadd__", ftyl};
+    Identifier ident = {"__iadd__", type_param_sanitized(node->ty)};
     Obj *fn = find_func(ident);
     if (!fn)
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
 
-    /* Expect: (recv, rhs) */
-    if (!fn->ty->params || !fn->ty->params->next || fn->ty->params->next->next)
-      error_tok(tok, "invalid __iadd__ signature");
-
-    /* Convert array and function types to pointers for lookup */
-    add_type(rhs);
-    Type *ftyr = rhs->ty;
-    if (ftyr->kind == TY_ARRAY || ftyr->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      ftyr = pointer_to(ftyr->base);
-    } else if (ftyr->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      ftyr = pointer_to(ftyr);
-    }
-
     /* Check that rhs type is correct */
-    if (!same_type(fn->ty->params->next, ftyr)) {
+    Type *ftyr = type_param_sanitized(rhs->ty);
+    if (!same_type_value(fn->ty->params->next, ftyr)) {
       char *msg3 = type_to_string(fn->ty->params);
       error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
                 msg3,
@@ -2495,7 +2473,6 @@ static Node *assign(Token **rest, Token *tok) {
                 type_to_string(ftyr));
     }
 
-    /* Discard return value, the function must modify the receiver in place */
     return operator_overload(fn, node, rhs, tok);
   }
 
@@ -2699,6 +2676,10 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok) {
   add_type(lhs);
   add_type(rhs);
 
+  /* Safe */
+  if (lhs->ty->kind != TY_PTR && !is_numeric(lhs->ty))
+    error_tok(tok, "cannot add non-numeric types");
+
   // num + num
   if (is_numeric(lhs->ty) && is_numeric(rhs->ty))
     return new_binary(ND_ADD, lhs, rhs, tok);
@@ -2728,6 +2709,10 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok) {
 static Node *new_sub(Node *lhs, Node *rhs, Token *tok) {
   add_type(lhs);
   add_type(rhs);
+
+  /* Safe */
+  if (lhs->ty->kind != TY_PTR && !is_numeric(lhs->ty))
+    error_tok(tok, "cannot add non-numeric types");
 
   // num - num
   if (is_numeric(lhs->ty) && is_numeric(rhs->ty))
@@ -2769,7 +2754,32 @@ static Node *add(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "+")) {
-      node = new_add(node, mul(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = mul(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__add__", type_param_sanitized(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Return normal arithmetic */
+        node = new_add(node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = type_param_sanitized(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -3672,16 +3682,9 @@ static Obj *find_func(Identifier ident) {
           !sc2->var->recv.name)
         continue;
 
-      /* Check if it's the same method by value, not by pointer*/
-      char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
-      char *msg2 = type_to_asmident(ident.method_ty);
-      if (strcmp(msg1, msg2) != 0){
-        free(msg1);
-        free(msg2);
+      /* Check if it's the same method by value, not by pointer */
+      if (!same_type_value(sc2->var->recv.method_ty, ident.method_ty))
         continue;
-      }
-      free(msg1);
-      free(msg2);
 
       /* Check if it's the method we are searching for */
       if (strcmp(sc2->var->recv.name, ident.name) == 0)
@@ -3721,16 +3724,84 @@ static bool is_type_method(Token *tok) {
   return true;
 }
 
-static void check_operator_overload(Type *ty, char *name_str, Token *name_tok) {
+static void check_operator_overload(Type *fty, char *name_str, Token *name_tok) {
+  /* Identify operator overload by function name */
+  enum e_opv {
+    OP_NONE = 0,
+    OP_ADD,
+    OP_IADD,
+  };
+
+  char fn_op_id = OP_NONE;
+  if (!strcmp(name_str, "__add__"))
+    fn_op_id = OP_ADD;
+  else if (!strcmp(name_str, "__iadd__"))
+    fn_op_id = OP_IADD;
+
   /* Not an operator overload method */
-  if (!!strcmp(name_str, "__iadd__"))
+  if (fn_op_id == OP_NONE)
     return;
 
-  /* First type is the receiver */
-  if (ty->kind == TY_PTR && is_integer(ty->next)) {
+  /* First param is the receiver */
+  if (fty->params->kind == TY_PTR && fty->params->next && is_integer(fty->params->next)) {
     /* You cannot pass a number to a pointer overload */
     error_tok(name_tok, "cannot overload pointer arithmetic, parameter '%s' cannot be numeric",
-      get_ident(ty->next->name));
+      get_ident(fty->params->next->name));
+  }
+
+  /* == Verify function signature == */
+
+  /* Binary signatures
+   * string (string) __iadd__(<any_t> param) */
+  if (fn_op_id == OP_ADD) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    // TODO: Currently the parser doesn't save the "const" of the variables
+    // if (!fty->params->is_const) {
+    //   error_tok(name_tok, "invalid %s signature, receiver must be constant", name_str);
+    // }
+  }
+
+  /* Assignment signatures
+   * string (string) __iadd__(<any_t> param) */
+  else if (fn_op_id == OP_IADD) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if the receiver is modifiable */
+    if (fty->params->kind == TY_STRUCT || fty->params->kind == TY_UNION || fty->params->kind == TY_FUNC)
+      error_tok(name_tok, "invalid %s signature, receiver '(%s %s)' must be passed by reference\nstructs and unions are passed by value", name_str, type_to_string(fty->params), get_ident(fty->params->name));
+
+    /* Check if return type matches receiver type */
+    if (!same_type_value(fty->return_ty, fty->params)) {
+      char *recv_ty_str = type_to_string(fty->params);
+      char *recv_id_str = get_ident(fty->params->name);
+      char *param_ty_str = type_to_string(fty->params->next);
+      char *param_id_str = get_ident(fty->params->next->name);
+      error_tok(name_tok, "invalid %s signature, return type does not match receiver type\nexpected '%s (%s %s) %s(%s %s)', but got '%s (%s %s) %s(%s %s)'",
+        name_str,
+        recv_ty_str, recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str,
+        type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str
+      );
+    }
   }
 }
 
@@ -3745,15 +3816,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     recv = declarator(&tok, tok, impl_base);
 
     /* Convert array and function types to pointers */
-    if (recv->kind == TY_ARRAY || recv->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      recv = pointer_to(recv->base);
-    } else if (recv->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      recv = pointer_to(recv);
-    }
+    recv = type_param_sanitized(recv);
 
     /* This is not arbitrary, the next declarator function
      * would destroy the recv references. So copy to save. */
@@ -3823,7 +3886,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (recv) {
     recv->next = ty->params;
     ty->params = recv;
-    check_operator_overload(ty->params, ident.name, name_tok);
+    check_operator_overload(ty, ident.name, name_tok);
   }
 
   /* Not a function definition, exit */

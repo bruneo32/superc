@@ -314,6 +314,20 @@ void add_type(Node *node) {
   }
 }
 
+/** Check if it's the same method by comparing it's assembly name */
+bool same_type_value(Type *a, Type *b) {
+  char *msg1 = type_to_asmident(a);
+  char *msg2 = type_to_asmident(b);
+  if (!strcmp(msg1, msg2)){
+    free(msg1);
+    free(msg2);
+    return true;
+  }
+  free(msg1);
+  free(msg2);
+  return false;
+}
+
 /** Check if two types are C compatible. */
 bool same_type(Type *a, Type *b) {
   if (a == b)
