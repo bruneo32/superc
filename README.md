@@ -11,6 +11,8 @@
 - [Current planned features](#current-planned-features)
   - [Operator overload](#operator-overload)
   - [Nullish coalescing operator](#nullish-coalescing-operator)
+  - [Function override](#function-override)
+  - [Struct inheritance](#struct-inheritance)
   - [Lambdas](#lambdas)
 
 # Current developed features
@@ -42,7 +44,7 @@ int main() {
     printf("File closed!\n");
   }
 
-  /* 50% change to exit early with error */
+  /* 50% chance to exit early with error */
   if ((rand() & 1) == 0) {
     printf("No need to call fclose(), because the defer executes before the return.\n");
     return 1;
@@ -86,7 +88,7 @@ int main() {
    * This example shows a basic usage of defer.
    * If function returns early, it will execute the defer statements before
    * exiting the function.
-   * I.E.:
+   * i.e.:
    *   - If game_renderer is NULL, SDL_DestroyWindow and SDL_Quit will be called
    *     (in that order, reverse to declaration), but SDL_DestroyRenderer won't.
    *     Because the return happens before the defer is declared.
@@ -94,7 +96,7 @@ int main() {
    * [!!!]
    * Beware that defer statements are related to the function, not the block of code.
    * This means that even though the following if statement never runs,
-   * the following defer is declared and will beexecuted because `main`
+   * the following defer is declared and will be executed because `main`
    * does not return before the defer is declared.
    */
   if (1 == 0) {
@@ -109,7 +111,7 @@ int main() {
 
 ## Defer in loops
 Will execute the code stated right before the break/continue label of a for/while/do loop.
-At first glance it can look totally unnecessary, but for memory management escenarios can be very useful.
+At first glance it can look totally unnecessary, but for memory management scenarios can be very useful.
 
 ### Examples
 ```c
@@ -135,9 +137,9 @@ int main() {
 
 ## Type methods
 Extends a type with implicit function calls.
-It is equivalent of passing the caller as the first argument.
+It is equivalent to passing the caller as the first argument.
 - Function is registered as `(type).name` *(the symbol is mangled, see [symbols](#symbol-mangling))*.
-- **I.E.** `mycat.meow()` is exactly the same to `(Cat).meow(mycat)`.
+- **i.e.** `mycat.meow()` is exactly the same to `(Cat).meow(mycat)`.
 
 ### Examples
 ```c
@@ -293,7 +295,7 @@ char *(char *s1) concat(char *s2) __attribute__((symbol("strcat")));
 
 int main(void) {
   char str_hello[100] = "Hello";
-  str_hello.concat(" World").concat("!")
+  str_hello.concat(" World").concat("!");
   printf("%d\n%s\n", def, str_hello);
   // 32
   // Hello World!
@@ -360,7 +362,7 @@ There are some rules that the compiler follows:
 |   `<`    | `__lt__(self, other)`  |
 |   `>`    | `__gt__(self, other)`  |
 |   `<=`   | `__le__(self, other)`  |
-|   `>=`   | `__qe__(self, other)`  |
+|   `>=`   | `__ge__(self, other)`  |
 |   `==`   | `__eq__(self, other)`  |
 |   `!=`   | `__ne__(self, other)`  |
 
@@ -385,7 +387,7 @@ There are some rules that the compiler follows:
 #include <stdio.h>
 #include <string.h>
 
-/* char* + char* ====> s1.__iadd__(s2) */
+/* char* += char* ===> s1.__iadd__(s2) */
 char *(char *s1) __iadd__(char *s2) __attribute__((symbol("strcat")));
 
 int main(void) {
@@ -407,7 +409,7 @@ struct Point {
   int y;
 };
 
-/* Point + Point ====> p1.__add__(p2) */
+/* Point + Point ===> p1.__add__(p2) */
 Point (Point p1) __add__(Point p2) {
   /* structs are copied by value,
    * so we could have use p1 directly
@@ -427,7 +429,7 @@ int main(void) {
   Point p1 = {1, 2};
   Point p2 = {3, 4};
   Point p3 = p1 + p2;
-  printf("%f %f\n", p3.x, p3.y);
+  printf("%d %d\n", p3.x, p3.y);
   // 4 6
   return 0;
 }
@@ -436,7 +438,7 @@ int main(void) {
 ## Nullish coalescing operator
 The nullish coalescing operator is a ternary operator that returns its right operand if the left operand is null, and its left operand otherwise.
 
-**I.E:** `a ?? b` is equivalent to `a ? a : b`**
+**i.e.:** `a ?? b` is equivalent to `(a != NULL) ? a : b`**
 
 ### Examples
 ```c
@@ -448,14 +450,123 @@ char *str_es_hello = "Hola";
 
 int main(void) {
   str_en_hello = NULL;
+  /* Equivalent to: (str_en_hello != NULL) ? str_en_hello : str_es_hello */
   printf("%s\n", str_en_hello ?? str_es_hello);
   // Hola
   return 0;
 }
 ```
 
+## Function override
+**SuperC** allows function override with manual symbol mangling.
+
+When a **function call** is made in **SuperC**, the compiler will not check the function name, it will check the function signature, this means that when you have two functions with the same name but different type of parameters, the compiler will call the one that matches *(in name, return type and parameter types)*.
+
+This means that the collision of the **symbols** only happen in the linker, so if you have two functions with the same symbol, the linker will throw an **error**; but the compiler won't throw an error if they have the same name, but different **symbols**.
+
+> This is what [_Generic](https://en.wikipedia.org/wiki/C11_(C_standard_revision)#Changes_from_C99) does in C11, but made easy.
+
+```c
+#include <stdio.h>
+
+void foo(float a) __attribute__((symbol("foo_f"))) {
+  printf("FLOAT: %f\n", a);
+}
+
+void foo(int a)   __attribute__((symbol("foo_i"))) {
+  printf("INT: %d\n", a);
+}
+
+// Examples of linker errors:
+// void foo_f(); // Link error: redefinition of symbol 'foo_f'
+// void bar() __attribute__((symbol("foo_f"))); // Link error: redefinition of symbol 'foo_f'
+
+int main(void) {
+  foo((int)   10);
+  foo((float) 3.1415);
+  // INT: 10
+  // FLOAT: 3.141500
+  return 0;
+}
+```
+
+## Struct inheritance
+A struct can inherit members from another (or more) struct, and also you can specify the order where the parent's members will be placed.
+
+```c
+#include <stdio.h>
+
+struct A {
+  int a;
+  int b;
+};
+
+struct B {
+  int c;
+  int d;
+};
+
+struct C {
+  int e;
+  struct A; // Inherit members from struct A (at this offset)
+  int f;
+  struct B; // Inherit members from struct B (at this offset)
+  int g;
+};
+
+// i.e. ===>
+// struct C {
+//   int e;
+//   int a; // from struct A
+//   int b; // from struct A
+//   int f;
+//   int c; // from struct B
+//   int d; // from struct B
+//   int g;
+// };
+
+int main(void) {
+  struct C c;
+  // struct C has 7 members of type int (4 bytes)
+  // so sizeof(c) = 7 * 4 = 28
+  printf("C: %ld B", sizeof(c));
+  // C: 28 B
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+struct color {
+  unsigned char r, g, b, a;
+};
+
+typedef struct Vehicle Vehicle;
+struct Vehicle {
+  int doors;
+};
+
+typedef struct Car Car;
+struct Car {
+  Vehicle; // Inherit members from Vehicle
+  int wheels;
+  struct color;
+};
+/* Constructor */
+#define Car(doors_, color_) ((Car){.wheels = 4, .doors = (doors_), .color = (color_)})
+
+int main(void) {
+  struct color c_red = {.r = 255, .g = 0, .b = 0, .a = 255};
+  Car car = Car(4, c_red);
+  printf("%d %d %d\n", c.a, c.b, c.c);
+  // 1 2 3
+  return 0;
+}
+```
+
 ## Lambdas
 Lambdas are anonymous functions that can be assigned to variables, or used immediately.
+> Capture is still on the thinking phase
 
 ### Examples
 ```c
@@ -498,7 +609,7 @@ int main() {
   /* Print out the ordered array */
   for (int i = 0; i < 10; i++)
     printf("%d ", a[i]);
-  putchat('\n');
+  putchar('\n');
 
   return 0;
 }

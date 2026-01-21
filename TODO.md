@@ -1,22 +1,24 @@
 ### First: new complete syntax
-- Symbol alias
+- Operators
+- Function override
+- Nullish coalescing operator
+- Struct inheritance
 - Lambdas
 - HolyC switch ranges
 - HolyC sub switch
 - Namespaces?
-- Operators?
-- Errors?
 
 ### SuperC lib
-- String builder
-- Multithreading
-- ArrayList?
+- Arrays
+- Strings
+- Try/catch
 - Date?
 - ...
 
 ### After lib
 - Complete C11 and C23
 - LLVM backend
+- Multithreading: syntax & lib
 - VSCode extension
 - Compiler for windows
 - Improve --help
