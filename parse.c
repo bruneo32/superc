@@ -2377,6 +2377,12 @@ static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
   add_type(lhs);
   add_type(rhs);
 
+  // For "static inline" function
+  if (current_fn)
+    strarray_push(&current_fn->refs, fn->name); // No symbolname
+  else
+    fn->is_root = true;
+
   /* Build method node */
   Node *method = new_var_node(fn, tok);
   method->ty = fn->ty;
