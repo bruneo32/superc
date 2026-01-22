@@ -3809,7 +3809,16 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if it's a type method */
   Type *recv = NULL;
 
+  // Pointers of the return type, in case of type methods
+  // For some reason the pointers are checked in
+  // declarator instead of declspec
+  bool has_pointers = false;
+  Token *before_pointers = tok;
+  // Just advance tok
+  pointers(&tok, tok, NULL);
+
   if (is_type_method(tok)) {
+    has_pointers = tok != before_pointers;
     tok = tok->next;
 
     Type *impl_base = declspec(&tok, tok, NULL);
@@ -3823,10 +3832,18 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     recv = copy_type(recv);
 
     tok = skip(tok, ")");
+  } else {
+    tok = before_pointers;
   }
 
   Token *name_tok = tok;
   Type *ty = declarator(&tok, tok, basety);
+
+  // If has pending pointers, apply them to the type
+  if (has_pointers)
+    // Don't advance, before_pointers will not be used again
+    ty->return_ty = pointers(&before_pointers, before_pointers, ty->return_ty);
+
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
@@ -3966,6 +3983,11 @@ static bool is_function(Token *tok) {
   if (equal(tok, ";"))
     return false;
 
+  // Pointers of the return type, in case of type methods
+  Token *before_pointers = tok;
+  // Just advance tok
+  pointers(&tok, tok, NULL);
+
   /* Check if it's type method */
   if (is_type_method(tok)) {
     tok = tok->next;
@@ -3990,6 +4012,8 @@ static bool is_function(Token *tok) {
       error_tok(ty->name_pos, "expected an identifier for receiver");
 
     tok = skip(tok, ")");
+  } else {
+    tok = before_pointers;
   }
 
   Type dummy = {};

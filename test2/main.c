@@ -14,8 +14,7 @@ typedef struct Point {
 	float y;
 } Point;
 
-typedef Point* PointPtr;
-PointPtr (Point* p) __iadd__(Point q) {
+Point* (Point* p) __iadd__(Point q) {
 	p->x += q.x;
 	p->y += q.y;
 	return p;
