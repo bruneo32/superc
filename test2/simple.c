@@ -2,7 +2,7 @@
 /* GNU overrides __attribute__ macro */
 #undef __attribute__
 
-void (int *i) __iadd__(int *n) {
+int *(int *i) __iadd__(int *n) {
 	// Just print
 	printf("Adding %d to %d\n", *n, *i);
 }

@@ -255,6 +255,13 @@ static Type *find_tag(Token *tok) {
   return NULL;
 }
 
+static void add_func_ref(Obj *fn, Obj *ref) {
+  if (fn)
+    strarray_push(&fn->refs, ref->name); // No symbolname
+  else
+    ref->is_root = true;
+}
+
 static Node *new_node(NodeKind kind, Token *tok) {
   Node *node = calloc(1, sizeof(Node));
   node->kind = kind;
@@ -298,6 +305,8 @@ static Node *new_ulong(long val, Token *tok) {
 static Node *new_var_node(Obj *var, Token *tok) {
   Node *node = new_node(ND_VAR, tok);
   node->var = var;
+  if (current_fn && var && var->is_function && !var->is_local)
+    add_func_ref(current_fn, var);
   return node;
 }
 
@@ -1470,6 +1479,10 @@ static Node *init_desg_expr(InitDesg *desg, Token *tok) {
   }
 
   Node *lhs = init_desg_expr(desg->next, tok);
+  add_type(lhs);
+  if (lhs->ty->kind == TY_ARRAY)
+      lhs = new_unary(ND_ADDR, lhs, tok);
+
   Node *rhs = new_num(desg->idx, tok);
   return new_unary(ND_DEREF, new_add(lhs, rhs, tok), tok);
 }
@@ -2376,12 +2389,6 @@ static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
 
   add_type(lhs);
   add_type(rhs);
-
-  // For "static inline" function
-  if (current_fn)
-    strarray_push(&current_fn->refs, fn->name); // No symbolname
-  else
-    fn->is_root = true;
 
   /* Build method node */
   Node *method = new_var_node(fn, tok);
@@ -3381,14 +3388,8 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
 
   /* Check that is the type expected */
   Type *impl_type = fnobj->recv.method_ty;
-  if (!same_type(basety, impl_type))
+  if (!same_type_value(basety, impl_type))
     error_tok(name_tok, "expected a method of type '%s'", basety_str);
-
-  // For "static inline" function
-  if (current_fn)
-    strarray_push(&current_fn->refs, fnobj->name); // No symbolname
-  else
-    fnobj->is_root = true;
 
   tok = skip(after_name, "(");
 
@@ -3580,14 +3581,6 @@ static Node *primary(Token **rest, Token *tok) {
     // Variable or enum constant
     VarScope *sc = find_var(ident);
 
-    // For "static inline" function
-    if (sc && sc->var && sc->var->is_function) {
-      if (current_fn)
-        strarray_push(&current_fn->refs, sc->var->name); // No symbolname
-      else
-        sc->var->is_root = true;
-    }
-
     if (sc) {
       if (sc->var)
         return new_var_node(sc->var, tok);
@@ -3730,22 +3723,28 @@ static bool is_type_method(Token *tok) {
   return true;
 }
 
-static void check_operator_overload(Type *fty, char *name_str, Token *name_tok) {
-  /* Identify operator overload by function name */
-  enum e_opv {
-    OP_NONE = 0,
-    OP_ADD,
-    OP_IADD,
-  };
+/* Identify operator overload by function name */
+enum e_opv {
+  OPV_NONE = 0,
+  OPV_ADD,
+  OPV_IADD,
+};
 
+static inline short get_opv_id(char *name_str) {
   char fn_op_id = OP_NONE;
-  if (!strcmp(name_str, "__add__"))
-    fn_op_id = OP_ADD;
-  else if (!strcmp(name_str, "__iadd__"))
-    fn_op_id = OP_IADD;
 
+  if (!strcmp(name_str, "__add__"))
+    fn_op_id = OVP_ADD;
+  else if (!strcmp(name_str, "__iadd__"))
+    fn_op_id = OPV_IADD;
+
+  return fn_op_id;
+}
+
+static void check_operator_overload_signature(Type *fty, char *name_str, Token *name_tok) {
+  short fn_op_id = get_opv_id(name_str);
   /* Not an operator overload method */
-  if (fn_op_id == OP_NONE)
+  if (fn_op_id == OPV_NONE)
     return;
 
   /* First param is the receiver */
@@ -3759,7 +3758,7 @@ static void check_operator_overload(Type *fty, char *name_str, Token *name_tok) 
 
   /* Binary signatures
    * string (string) __iadd__(<any_t> param) */
-  if (fn_op_id == OP_ADD) {
+  if (fn_op_id == OPV_ADD) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -3780,7 +3779,7 @@ static void check_operator_overload(Type *fty, char *name_str, Token *name_tok) 
 
   /* Assignment signatures
    * string (string) __iadd__(<any_t> param) */
-  else if (fn_op_id == OP_IADD) {
+  else if (fn_op_id == OPV_IADD) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -3808,6 +3807,21 @@ static void check_operator_overload(Type *fty, char *name_str, Token *name_tok) 
         type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str
       );
     }
+  }
+}
+
+static void check_operator_overload_body(Obj *fn, char *name_str, Token *name_tok) {
+  short fn_op_id = get_opv_id(name_str);
+  /* Not an operator overload method */
+  if (fn_op_id == OPV_NONE)
+    return;
+
+  // Function already passed the signature check
+  // so there's no need to check again
+
+  /* Assignment shall return the receiver */
+  if (fn_op_id == OPV_IADD) {
+    // TODO: Check that the return is the recv
   }
 }
 
@@ -3909,7 +3923,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (recv) {
     recv->next = ty->params;
     ty->params = recv;
-    check_operator_overload(ty, ident.name, name_tok);
+    check_operator_overload_signature(ty, ident.name, name_tok);
   }
 
   /* Not a function definition, exit */
@@ -3951,6 +3965,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   fn->locals = locals;
   leave_scope();
   resolve_goto_labels();
+
+  check_operator_overload_body(fn, ident.name, name_tok);
   return tok;
 }
 
