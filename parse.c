@@ -438,15 +438,22 @@ static bool is_identifier(Token *tok) {
   return tok->kind == TK_IDENT;
 }
 
-static Type *type_param_sanitized(Type *ty) {
+static Type *array_decay(Type *ty) {
   if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
+    // array decay
     // "array of T" is converted to "pointer to T" only in the receiver
     // context. For example, *argv[] is converted to **argv by this.
-    return pointer_to(ty->base);
+    Type *ret = pointer_to(ty->base);
+    ret->name = ty->name;
+    ret->name_pos = ty->name_pos;
+    return ret;
   } else if (ty->kind == TY_FUNC) {
     // Likewise, a function is converted to a pointer to a function
     // only in the receiver context.
-    return pointer_to(ty);
+    Type *ret = pointer_to(ty);
+    ret->name = ty->name;
+    ret->name_pos = ty->name_pos;
+    return ret;
   }
   return ty;
 }
@@ -458,7 +465,7 @@ static Identifier consume_ident(Token** rest, Token *tok) {
     Type *ty = typename(&tok, tok->next);
 
     /* Convert array and function types to pointers */
-    ty = type_param_sanitized(ty);
+    ty = array_decay(ty);
 
     tok = skip(tok, ")");
 
@@ -546,6 +553,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     UNSIGNED = 1 << 18,
   };
 
+  Qualifiers_t quals = Q_NONE;
   Type *ty = ty_int;
   int counter = 0;
   bool is_atomic = false;
@@ -576,11 +584,26 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
       continue;
     }
 
+    // Parse qualifiers
+    if (consume(&tok, tok, "const")) {
+      quals |= Q_CONST;
+      continue;
+    }
+    if (consume(&tok, tok, "volatile")) {
+      quals |= Q_VOLATILE;
+      continue;
+    }
+    if (consume(&tok, tok, "restrict") ||
+        consume(&tok, tok, "__restrict") ||
+        consume(&tok, tok, "__restrict__")) {
+      quals |= Q_RESTRICT;
+      continue;
+    }
+
     // These keywords are recognized but ignored.
-    if (consume(&tok, tok, "const") || consume(&tok, tok, "volatile") ||
-        consume(&tok, tok, "auto") || consume(&tok, tok, "register") ||
-        consume(&tok, tok, "restrict") || consume(&tok, tok, "__restrict") ||
-        consume(&tok, tok, "__restrict__") || consume(&tok, tok, "_Noreturn"))
+    if (consume(&tok, tok, "auto") ||
+        consume(&tok, tok, "register") ||
+        consume(&tok, tok, "_Noreturn"))
       continue;
 
     if (equal(tok, "_Atomic")) {
@@ -724,6 +747,11 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     ty->is_atomic = true;
   }
 
+  if (quals != 0) {
+    ty = copy_type(ty);
+    ty->quals = quals;
+  }
+
   *rest = tok;
   return ty;
 }
@@ -752,22 +780,7 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
     }
 
     Type *ty2 = declspec(&tok, tok, NULL);
-    ty2 = declarator(&tok, tok, ty2);
-
-    Token *name = ty2->name;
-
-    /* Don't  use type_param_sanitized, because it modifies name too */
-    if (ty2->kind == TY_ARRAY || ty2->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the parameter
-      // context. For example, *argv[] is converted to **argv by this.
-      ty2 = pointer_to(ty2->base);
-      ty2->name = name;
-    } else if (ty2->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the parameter context.
-      ty2 = pointer_to(ty2);
-      ty2->name = name;
-    }
+    ty2 = array_decay(declarator(&tok, tok, ty2));
 
     cur = cur->next = copy_type(ty2);
   }
@@ -819,9 +832,25 @@ static Type *type_suffix(Token **rest, Token *tok, Type *ty) {
 static Type *pointers(Token **rest, Token *tok, Type *ty) {
   while (consume(&tok, tok, "*")) {
     ty = pointer_to(ty);
-    while (equal(tok, "const") || equal(tok, "volatile") || equal(tok, "restrict") ||
-           equal(tok, "__restrict") || equal(tok, "__restrict__"))
-      tok = tok->next;
+    // Add qualifiers
+    bool check_again = true;
+    while (check_again) {
+      check_again = false;
+      if (consume(&tok, tok, "const")) {
+        check_again = true;
+        ty->quals |= Q_CONST;
+      }
+      if (consume(&tok, tok, "volatile")) {
+        check_again = true;
+        ty->quals |= Q_VOLATILE;
+      }
+      if (consume(&tok, tok, "restrict") ||
+          consume(&tok, tok, "__restrict") ||
+          consume(&tok, tok, "__restrict__")) {
+        check_again = true;
+        ty->quals |= Q_RESTRICT;
+      }
+    }
   }
   *rest = tok;
   return ty;
@@ -2469,14 +2498,14 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__iadd__", type_param_sanitized(node->ty)};
+    Identifier ident = {"__iadd__", array_decay(node->ty)};
     Obj *fn = find_func(ident);
     if (!fn)
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
 
     /* Check that rhs type is correct */
-    Type *ftyr = type_param_sanitized(rhs->ty);
+    Type *ftyr = array_decay(rhs->ty);
     if (!same_type_value(fn->ty->params->next, ftyr)) {
       char *msg3 = type_to_string(fn->ty->params);
       error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
@@ -2773,7 +2802,7 @@ static Node *add(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__add__", type_param_sanitized(node->ty)};
+      Identifier ident = {"__add__", array_decay(node->ty)};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Return normal arithmetic */
@@ -2782,7 +2811,7 @@ static Node *add(Token **rest, Token *tok) {
       }
 
       /* Check that rhs type is correct */
-      Type *ftyr = type_param_sanitized(rhs->ty);
+      Type *ftyr = array_decay(rhs->ty);
       if (!same_type_value(fn->ty->params->next, ftyr)) {
         char *msg3 = type_to_string(fn->ty->params);
         error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
@@ -3359,18 +3388,7 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
 
   add_type(recv);
 
-  Type *basety = recv->ty;
-
-  /* Convert array and function types to pointers */
-  if (basety->kind == TY_ARRAY) {
-    // "array of T" is converted to "pointer to T" only in the receiver
-    // context. For example, *argv[] is converted to **argv by this.
-    basety = pointer_to(basety->base);
-  } else if (basety->kind == TY_FUNC) {
-    // Likewise, a function is converted to a pointer to a function
-    // only in the receiver context.
-    basety = pointer_to(basety);
-  }
+  Type *basety = array_decay(recv->ty);
 
   char *basety_str = type_to_string(basety);
 
@@ -3415,11 +3433,8 @@ static Node *generic_selection(Token **rest, Token *tok) {
   Node *ctrl = assign(&tok, tok);
   add_type(ctrl);
 
-  Type *t1 = ctrl->ty;
-  if (t1->kind == TY_FUNC)
-    t1 = pointer_to(t1);
-  else if (t1->kind == TY_ARRAY)
-    t1 = pointer_to(t1->base);
+  // array decay
+  Type *t1 = array_decay(ctrl->ty);
 
   Node *ret = NULL;
 
@@ -3771,10 +3786,9 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
     }
 
     /* Check if receiver is const */
-    // TODO: Currently the parser doesn't save the "const" of the variables
-    // if (!fty->params->is_const) {
-    //   error_tok(name_tok, "invalid %s signature, receiver must be constant", name_str);
-    // }
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
   }
 
   /* Assignment signatures
@@ -3793,7 +3807,10 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
 
     /* Check if the receiver is modifiable */
     if (fty->params->kind == TY_STRUCT || fty->params->kind == TY_UNION || fty->params->kind == TY_FUNC)
-      error_tok(name_tok, "invalid %s signature, receiver '(%s %s)' must be passed by reference\nstructs and unions are passed by value", name_str, type_to_string(fty->params), get_ident(fty->params->name));
+      error_tok(name_tok, "invalid %s signature, receiver '(%s %s)' must be passed by reference\nstructs and unions are passed by value",
+        name_str,
+        type_to_string(fty->params),
+        get_ident(fty->params->name));
 
     /* Check if return type matches receiver type */
     if (!same_type_value(fty->return_ty, fty->params)) {
@@ -3925,7 +3942,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     recv = declarator(&tok, tok, impl_base);
 
     /* Convert array and function types to pointers */
-    recv = type_param_sanitized(recv);
+    recv = array_decay(recv);
 
     /* This is not arbitrary, the next declarator function
      * would destroy the recv references. So copy to save. */

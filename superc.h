@@ -357,12 +357,21 @@ typedef enum {
   TY_UNION,
 } TypeKind;
 
+typedef uint8_t Qualifiers_t;
+enum Qualifiers_t {
+  Q_NONE     = 0,
+  Q_CONST    = 1,
+  Q_VOLATILE = (1 << 1),
+  Q_RESTRICT = (1 << 2),
+};
+
 struct Type {
   TypeKind kind;
   int size;           // sizeof() value
   int align;          // alignment
   bool is_unsigned;   // unsigned or signed
   bool is_atomic;     // true if _Atomic
+  Qualifiers_t quals; // const, volatile, ...
   Type *origin;       // for type compatibility check
 
   // Pointer-to or array-of type. We intentionally use the same member

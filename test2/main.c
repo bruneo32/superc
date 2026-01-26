@@ -21,14 +21,17 @@ inline Point* (Point* p) __iadd__(Point q) {
 	return p;
 }
 
-Point (const Point p) __add__(const Point q) {
+Point (const Point *p) __add__(const Point *q) {}
+// Point (Point p[3]) __add__(const Point q) {}
+
+Point (Point p) __add__(const Point q) {
 	Point r;
 	r.x = p.x + q.x;
 	r.y = p.y + q.y;
 	return r;
 }
 
-int main(int argc, char const *argv[]) {
+int main(int argc, const char *argv[]) {
 	str_hello.concat(", ");
 	str_hello += "World!";
 	printf("%s\n", str_hello);
