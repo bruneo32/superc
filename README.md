@@ -346,6 +346,8 @@ There are some rules that the compiler follows:
 - You cannot pass a number to a pointer overload.
   This is meant to preserve pointer arithmetic.
   > `(char*)"Hello" + 2` is `"llo"`, and **not a function call**
+- Assignment operators must return the receiver back and no other variable.
+  > This alone is enough to avoid a lot of problems with operator overloading.
 
 ### Binary arithmetic operators
 | Operator |         Method         |
@@ -380,7 +382,7 @@ There are some rules that the compiler follows:
 |:--------:|:----------------|
 |   `-`    | `__neg__(self)` |
 |   `+`    | `__pos__(self)` |
-|   `~`    | `__inv__(self)` |
+|   `~`    | `__del__(self)` |
 
 ### Examples
 ```c
@@ -423,6 +425,34 @@ Point (Point p1) __add__(Point p2) {
 
 bool (Point p1) __eq__(Point p2) {
   return p1.x == p2.x && p1.y == p2.y;
+}
+
+int main(void) {
+  Point p1 = {1, 2};
+  Point p2 = {3, 4};
+  Point p3 = p1 + p2;
+  printf("%d %d\n", p3.x, p3.y);
+  // 4 6
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+char *(char *s1) __iadd__(char *s2) {
+  char *s3 = strdup(s1);
+  s3 = strcat(s3, s2);
+  // return s3; // Error: the function shall always return the receiver 's1'
+  s1 = s3;
+  return s1; // Valid, you can modify s1 or not, but you must return s1
+}
+
+int main(void) {
+  char str_hello[100] = "Hello";
+  str_hello += " World";
+  str_hello += "!";
+  printf("%s\n", str_hello);
+  return 0;
 }
 
 int main(void) {

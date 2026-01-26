@@ -17,6 +17,7 @@ typedef struct Point {
 inline Point* (Point* p) __iadd__(Point q) {
 	p->x += q.x;
 	p->y += q.y;
+	// return q; // Error: the function shall always return the receiver 'p'
 	return p;
 }
 

@@ -3731,10 +3731,10 @@ enum e_opv {
 };
 
 static inline short get_opv_id(char *name_str) {
-  char fn_op_id = OP_NONE;
+  char fn_op_id = OPV_NONE;
 
   if (!strcmp(name_str, "__add__"))
-    fn_op_id = OVP_ADD;
+    fn_op_id = OPV_ADD;
   else if (!strcmp(name_str, "__iadd__"))
     fn_op_id = OPV_IADD;
 
@@ -3810,6 +3810,73 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
   }
 }
 
+static Node *check_that_function_return_recv(Node *n, char *fn_recv, bool *has_return_stmt) {
+  while (n) {
+    Node *ret = NULL;
+
+    switch (n->kind) {
+      case ND_RETURN:
+        // TODO: Check that all branches return
+        *has_return_stmt = true;
+
+        // Compare if variable is the receiver
+        n = n->lhs;
+
+        // Don't care about type casts
+        if (n->kind == ND_CAST)
+          n = n->lhs;
+
+        if (n->kind != ND_VAR || strcmp(fn_recv, n->var->name) != 0)
+          return n;
+      break;
+
+      case ND_CASE:
+      case ND_LABEL:
+        ret = check_that_function_return_recv(n->lhs, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_IF:
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        ret = check_that_function_return_recv(n->els, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_FOR:
+        ret = check_that_function_return_recv(n->init, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_DO:
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_BLOCK:
+      case ND_STMT_EXPR:
+        for (Node *m = n->body; m; m = m->next) {
+          ret = check_that_function_return_recv(m, fn_recv, has_return_stmt);
+          if (ret)
+            return ret;
+        }
+        break;
+    }
+
+    n = n->next;
+  }
+
+  return NULL;
+}
+
 static void check_operator_overload_body(Obj *fn, char *name_str, Token *name_tok) {
   short fn_op_id = get_opv_id(name_str);
   /* Not an operator overload method */
@@ -3821,7 +3888,20 @@ static void check_operator_overload_body(Obj *fn, char *name_str, Token *name_to
 
   /* Assignment shall return the receiver */
   if (fn_op_id == OPV_IADD) {
-    // TODO: Check that the return is the recv
+    char *fn_recv = fn->params->name;
+
+    bool has_ret = false;
+    Node *ret = check_that_function_return_recv(fn->body, fn->params->name, &has_ret);
+
+    // Check that has some return
+    if (!has_ret)
+      error_tok(name_tok, "invalid %s; the function must return '%s'",
+        name_str, fn_recv);
+
+    // Check that the return is the recv
+    if (ret)
+      error_tok(ret->tok, "invalid %s; the function shall always return the receiver '%s'",
+        name_str, fn_recv);
   }
 }
 

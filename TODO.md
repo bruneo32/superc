@@ -1,11 +1,13 @@
 ### First: new complete syntax
 - Operators
 - Function override
+- defer scoped
 - Nullish coalescing operator
 - Struct inheritance
 - Lambdas
 - HolyC switch ranges
 - HolyC sub switch
+- Switch goto default?
 - Namespaces?
 
 ### SuperC lib
