@@ -347,7 +347,9 @@ There are some rules that the compiler follows:
   This is meant to preserve pointer arithmetic.
   > `(char*)"Hello" + 2` is `"llo"`, and **not a function call**
 - Assignment operators must return the receiver back and no other variable.
-  > This alone is enough to avoid a lot of problems with operator overloading.
+  > This alone is enough to avoid a lot of problems with operator overloading
+- Arithmetic operators parameters must be constant if they are pointers.
+  > This prevents the user from modifying the value of the pointer
 
 ### Binary arithmetic operators
 | Operator |         Method         |
@@ -390,7 +392,7 @@ There are some rules that the compiler follows:
 #include <string.h>
 
 /* char* += char* ===> s1.__iadd__(s2) */
-char *(char *s1) __iadd__(char *s2) __attribute__((symbol("strcat")));
+char *(char *s1) __iadd__(const char *s2) __attribute__((symbol("strcat")));
 
 int main(void) {
   char str_hello[100] = "Hello";
@@ -439,7 +441,7 @@ int main(void) {
 ```c
 #include <stdio.h>
 
-char *(char *s1) __iadd__(char *s2) {
+char *(char *s1) __iadd__(const char *s2) {
   char *s3 = strdup(s1);
   s3 = strcat(s3, s2);
   // return s3; // Error: the function shall always return the receiver 's1'

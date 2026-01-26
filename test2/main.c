@@ -2,10 +2,10 @@
 int printf(const char *__restrict, ...);
 char *strcat (char *__restrict, const char *__restrict);
 
-typedef char *string;
+#define string char*
 
-string (string s) concat(string o) __attribute__((symbol("strcat")));
-string (string s) __iadd__(string o) __attribute__((symbol("strcat")));
+string (string s) concat(const string o) __attribute__((symbol("strcat")));
+string (string s) __iadd__(const string o) __attribute__((symbol("strcat")));
 
 char str_hello[100] = "Hello";
 
@@ -22,6 +22,7 @@ inline Point* (Point* p) __iadd__(Point q) {
 }
 
 Point (const Point *p) __add__(const Point *q) {}
+// Point (const Point *p) __add__(Point *q) {}
 // Point (Point p[3]) __add__(const Point q) {}
 
 Point (Point p) __add__(const Point q) {

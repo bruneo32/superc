@@ -3789,6 +3789,10 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
     if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
       error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
         name_str, get_ident(fty->params->name));
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
   }
 
   /* Assignment signatures
@@ -3824,6 +3828,11 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
         type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str
       );
     }
+
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
   }
 }
 
