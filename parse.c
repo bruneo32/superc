@@ -2500,9 +2500,14 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {"__iadd__", array_decay(node->ty)};
     Obj *fn = find_func(ident);
-    if (!fn)
+    if (!fn) {
+      /* Safe check */
+      if (node->ty->kind != TY_ARRAY && node->ty->kind != TY_VLA &&
+          node->ty->kind != TY_PTR && !is_numeric(node->ty))
+        error_tok(tok, "cannot add non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
+    }
 
     /* Check that rhs type is correct */
     Type *ftyr = array_decay(rhs->ty);
@@ -2718,10 +2723,6 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok) {
   add_type(lhs);
   add_type(rhs);
 
-  /* Safe */
-  if (lhs->ty->kind != TY_PTR && !is_numeric(lhs->ty))
-    error_tok(tok, "cannot add non-numeric types");
-
   // num + num
   if (is_numeric(lhs->ty) && is_numeric(rhs->ty))
     return new_binary(ND_ADD, lhs, rhs, tok);
@@ -2751,10 +2752,6 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok) {
 static Node *new_sub(Node *lhs, Node *rhs, Token *tok) {
   add_type(lhs);
   add_type(rhs);
-
-  /* Safe */
-  if (lhs->ty->kind != TY_PTR && !is_numeric(lhs->ty))
-    error_tok(tok, "cannot add non-numeric types");
 
   // num - num
   if (is_numeric(lhs->ty) && is_numeric(rhs->ty))
@@ -2805,6 +2802,10 @@ static Node *add(Token **rest, Token *tok) {
       Identifier ident = {"__add__", array_decay(node->ty)};
       Obj *fn = find_func(ident);
       if (!fn) {
+        /* Safe check */
+        if (node->ty->kind != TY_ARRAY && node->ty->kind != TY_VLA &&
+            node->ty->kind != TY_PTR && !is_numeric(node->ty))
+          error_tok(tok, "cannot add non-numeric types");
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
         continue;
