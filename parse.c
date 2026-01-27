@@ -3269,7 +3269,22 @@ static Node *postfix(Token **rest, Token *tok) {
       Token *name_tok = tok->next;
       Token *after_name = name_tok->next;
 
-      if (equal(after_name, "(")) {
+      /* Check if it's struct member before checking if it's a method
+       * because if foo.sum(1) and sum is a member function derefence,
+       * then foo.sum(1) is not a method call is a regular member. */
+      bool is_struct_member = false;
+      add_type(node);
+      if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION) {
+        for (Member *mem = node->ty->members; mem; mem = mem->next) {
+          if (mem->name && mem->name->len == name_tok->len &&
+              !strncmp(mem->name->loc, name_tok->loc, name_tok->len)) {
+            is_struct_member = true;
+            break;
+          }
+        }
+      }
+
+      if (!is_struct_member && equal(after_name, "(")) {
         node = methodcall(&tok, tok, node);
         continue;
       }
@@ -3974,6 +3989,17 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
+
+  /* Check that the struct/union doesn't have a member that is named
+    * exactly the same as this method */
+  if (recv && (recv->kind == TY_STRUCT || recv->kind == TY_UNION)) {
+    for (Member *mem = recv->members; mem; mem = mem->next) {
+      if (mem->name && mem->name->len == ty->name->len &&
+          !strncmp(mem->name->loc, ty->name->loc, ty->name->len))
+        error_tok(name_tok, "'%s' already has a member named '%s'",
+          type_to_string(recv), name_str);
+    }
+  }
 
   /* Discard operator overload for primitives */
   if (recv && is_numeric(recv) &&
