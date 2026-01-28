@@ -3741,7 +3741,8 @@ static void mark_live(Obj *var) {
   var->is_live = true;
 
   for (int i = 0; i < var->refs.len; i++) {
-    Identifier ident = {var->refs.data[i], var->recv.method_ty};
+    // Search function by name, no type
+    Identifier ident = {var->refs.data[i], NULL};
     Obj *fn = find_func(ident);
     if (fn)
       mark_live(fn);
