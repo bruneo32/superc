@@ -19,6 +19,7 @@ int main() {
   myint b = { 5 };
 
   ASSERT(3, ({ myint c = a + 2; c.x; }) );
+  ASSERT(3, (a + 2).x ); // Same as above
   ASSERT(1, a.x); // a unmodified
   ASSERT(&a, &a += b);
   ASSERT(6, a.x); // a modified
