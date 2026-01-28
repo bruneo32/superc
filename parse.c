@@ -262,6 +262,13 @@ static void add_func_ref(Obj *fn, Obj *ref) {
     ref->is_root = true;
 }
 
+static bool is_arithmetic_type(Type *ty) {
+  if (ty->kind != TY_ARRAY && ty->kind != TY_VLA &&
+      ty->kind != TY_PTR && !is_numeric(ty))
+    return false;
+  return true;
+}
+
 static Node *new_node(NodeKind kind, Token *tok) {
   Node *node = calloc(1, sizeof(Node));
   node->kind = kind;
@@ -2502,8 +2509,9 @@ static Node *assign(Token **rest, Token *tok) {
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
-      if (node->ty->kind != TY_ARRAY && node->ty->kind != TY_VLA &&
-          node->ty->kind != TY_PTR && !is_numeric(node->ty))
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot add non-numeric types");
+      if (!is_arithmetic_type(rhs->ty))
         error_tok(tok, "cannot add non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
@@ -2803,8 +2811,9 @@ static Node *add(Token **rest, Token *tok) {
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
-        if (node->ty->kind != TY_ARRAY && node->ty->kind != TY_VLA &&
-            node->ty->kind != TY_PTR && !is_numeric(node->ty))
+        if (!is_arithmetic_type(node->ty))
+          error_tok(tok, "cannot add non-numeric types");
+        if (!is_arithmetic_type(rhs->ty))
           error_tok(tok, "cannot add non-numeric types");
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
