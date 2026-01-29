@@ -468,23 +468,46 @@ int main(void) {
 ```
 
 ## Nullish coalescing operator
-The nullish coalescing operator is a ternary operator that returns its right operand if the left operand is null, and its left operand otherwise.
+The nullish coalescing operator is a ternary operator that returns its **right** operand if the left operand is *NULL*, and its **left** operand otherwise.
 
-**i.e.:** `a ?? b` is equivalent to `(a != NULL) ? a : b`**
+**i.e.** `a ?? b` is equivalent to `(a != 0) ? a : b`
 
 ### Examples
 ```c
 #include <stdio.h>
 #include <string.h>
 
-char *str_en_hello = "Hello";
-char *str_es_hello = "Hola";
+void print_first_word(char *str) {
+  // If str is NULL (0), s will be "unknown"
+  char *s = str ?? "unknown";
+  size_t len = strlen(s);
+
+  for (int i = 0; i < len; i++) {
+    if (s[i] == ' ')
+      break;
+    putc(s[i], stdout);
+  }
+  putc('\n', stdout);
+}
+
+int always_5() {
+  int x = 0;
+  // (x != 0) ? x : 5
+  return x ?? 5;
+}
 
 int main(void) {
-  str_en_hello = NULL;
-  /* Equivalent to: (str_en_hello != NULL) ? str_en_hello : str_es_hello */
-  printf("%s\n", str_en_hello ?? str_es_hello);
-  // Hola
+  char *str_hello = "Hello world";
+  print_first_word(str_hello);
+  // Hello
+
+  str_hello = NULL;
+  print_first_word(str_hello);
+  // unknown
+
+  printf("x: %d\n", always_5());
+  // x: 5
+
   return 0;
 }
 ```
