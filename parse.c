@@ -2680,7 +2680,35 @@ static Node *equality(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "==")) {
-      node = new_binary(ND_EQ, node, relational(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = relational(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__eq__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison */
+        node = new_binary(ND_EQ, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -3819,10 +3847,14 @@ static bool is_type_method(Token *tok) {
 /* Identify operator overload by function name */
 enum e_opv {
   OPV_NONE = 0,
+  /* Binary arithmetics */
   OPV_ADD,
   OPV_SUB,
+  /* Assignments */
   OPV_IADD,
   OPV_ISUB,
+  /* Comparisons */
+  OPV_EQ,
 };
 
 static inline short get_opv_id(char *name_str) {
@@ -3837,7 +3869,10 @@ static inline short get_opv_id(char *name_str) {
   else if (!strcmp(name_str, "__iadd__"))
     fn_op_id = OPV_IADD;
   else if (!strcmp(name_str, "__isub__"))
-    fn_op_id = OPV_IADD;
+    fn_op_id = OPV_ISUB;
+  /* Comparisons */
+  else if (!strcmp(name_str, "__eq__"))
+    fn_op_id = OPV_EQ;
 
   return fn_op_id;
 }
@@ -3917,6 +3952,34 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
     if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
       error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
         name_str, get_ident(fty->params->next->name));
+  }
+
+  /* Comparison signatures */
+  else if (fn_op_id == OPV_EQ) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
+
+    /* Check if return type is boolean */
+    if (fty->return_ty->kind != TY_BOOL)
+      error_tok(name_tok, "invalid %s signature, return type must be 'bool', found '%s'",
+        name_str, type_to_string(fty->return_ty));
   }
 }
 
@@ -4070,8 +4133,12 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   }
 
   /* Discard operator overload for primitives */
-  if (recv && is_numeric(recv) &&
-      !strcmp(name_str, "__iadd__"))
+  if (recv && is_numeric(recv) && (
+      !strcmp(name_str, "__add__") ||
+      !strcmp(name_str, "__sub__") ||
+      !strcmp(name_str, "__iadd__") ||
+      !strcmp(name_str, "__isub__") ||
+      !strcmp(name_str, "__eq__")))
     error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
   /* Save the method type and name */

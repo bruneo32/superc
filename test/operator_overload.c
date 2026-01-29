@@ -27,6 +27,10 @@ myint *(myint *a) __isub__(myint b) {
   return a;
 }
 
+_Bool (myint a) __eq__(int b) {
+  return a.x == b;
+}
+
 int main() {
   myint a = { .x = 1 };
   myint b = { .x = 5 };
@@ -45,6 +49,9 @@ int main() {
 
   ASSERT(&a, &a -= b);
   ASSERT(-4, a.x); // a modified
+
+  ASSERT(0, a == 1);
+  ASSERT(1, a == -4);
 
   printf("OK\n");
   return 0;
