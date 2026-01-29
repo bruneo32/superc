@@ -607,12 +607,19 @@ struct Car {
   int wheels;
   struct color;
 };
+
 /* Constructor */
-#define Car(doors_, color_) ((Car){.wheels = 4, .doors = (doors_), .color = (color_)})
+inline Car Car_new(int doors, struct color color) {
+  return (Car){
+    .wheels = 4,
+    .doors = doors,
+    .color = color,
+  };
+}
 
 int main(void) {
   struct color c_red = {.r = 255, .g = 0, .b = 0, .a = 255};
-  Car car = Car(4, c_red);
+  Car car = Car_new(4, c_red);
   printf("%d %d %d\n", c.a, c.b, c.c);
   // 1 2 3
   return 0;
