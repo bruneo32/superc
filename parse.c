@@ -2509,9 +2509,7 @@ static Node *assign(Token **rest, Token *tok) {
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
-      if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot add non-numeric types");
-      if (!is_arithmetic_type(rhs->ty))
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
         error_tok(tok, "cannot add non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
@@ -2531,8 +2529,36 @@ static Node *assign(Token **rest, Token *tok) {
     return operator_overload(fn, node, rhs, tok);
   }
 
-  if (equal(tok, "-="))
-    return to_assign(new_sub(node, assign(rest, tok->next), tok));
+  if (equal(tok, "-=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    /* Lookup method */
+    Identifier ident = {"__isub__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot subtract non-numeric types");
+      /* Return normal arithmetic */
+      return to_assign(new_sub(node, rhs, tok));
+    }
+
+    /* Check that rhs type is correct */
+    Type *ftyr = array_decay(rhs->ty);
+    if (!same_type_value(fn->ty->params->next, ftyr)) {
+      char *msg3 = type_to_string(fn->ty->params);
+      error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
+                msg3,
+                type_to_string(fn->ty->params->next),
+                msg3,
+                type_to_string(ftyr));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
 
   if (equal(tok, "*="))
     return to_assign(new_binary(ND_MUL, node, assign(rest, tok->next), tok));
@@ -2811,9 +2837,7 @@ static Node *add(Token **rest, Token *tok) {
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
-        if (!is_arithmetic_type(node->ty))
-          error_tok(tok, "cannot add non-numeric types");
-        if (!is_arithmetic_type(rhs->ty))
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
           error_tok(tok, "cannot add non-numeric types");
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
@@ -2836,7 +2860,35 @@ static Node *add(Token **rest, Token *tok) {
     }
 
     if (equal(tok, "-")) {
-      node = new_sub(node, mul(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = mul(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__sub__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot subtract non-numeric types");
+        /* Return normal arithmetic */
+        node = new_sub(node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -3768,15 +3820,23 @@ static bool is_type_method(Token *tok) {
 enum e_opv {
   OPV_NONE = 0,
   OPV_ADD,
+  OPV_SUB,
   OPV_IADD,
+  OPV_ISUB,
 };
 
 static inline short get_opv_id(char *name_str) {
   char fn_op_id = OPV_NONE;
 
+  /* Binary arithmetics */
   if (!strcmp(name_str, "__add__"))
     fn_op_id = OPV_ADD;
+  else if (!strcmp(name_str, "__sub__"))
+    fn_op_id = OPV_SUB;
+  /* Assignments */
   else if (!strcmp(name_str, "__iadd__"))
+    fn_op_id = OPV_IADD;
+  else if (!strcmp(name_str, "__isub__"))
     fn_op_id = OPV_IADD;
 
   return fn_op_id;
@@ -3797,9 +3857,8 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
 
   /* == Verify function signature == */
 
-  /* Binary signatures
-   * string (string) __iadd__(<any_t> param) */
-  if (fn_op_id == OPV_ADD) {
+  /* Binary signatures */
+  if (fn_op_id == OPV_ADD || fn_op_id == OPV_SUB) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -3821,9 +3880,8 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
         name_str, get_ident(fty->params->next->name));
   }
 
-  /* Assignment signatures
-   * string (string) __iadd__(<any_t> param) */
-  else if (fn_op_id == OPV_IADD) {
+  /* Assignment signatures */
+  else if (fn_op_id == OPV_IADD || fn_op_id == OPV_ISUB) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
