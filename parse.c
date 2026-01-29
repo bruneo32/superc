@@ -2980,8 +2980,24 @@ static Node *unary(Token **rest, Token *tok) {
   if (equal(tok, "+"))
     return cast(rest, tok->next);
 
-  if (equal(tok, "-"))
-    return new_unary(ND_NEG, cast(rest, tok->next), tok);
+  if (equal(tok, "-")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
+
+    /* Lookup method */
+    Identifier ident = {"__neg__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot negate non-numeric types");
+      /* Return normal comparison */
+      return new_unary(ND_NEG, node, tok);
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
 
   if (equal(tok, "&")) {
     Node *lhs = cast(rest, tok->next);
@@ -3855,6 +3871,8 @@ enum e_opv {
   OPV_ISUB,
   /* Comparisons */
   OPV_EQ,
+  /* Unarys */
+  OPV_NEG,
 };
 
 static inline short get_opv_id(char *name_str) {
@@ -3873,6 +3891,9 @@ static inline short get_opv_id(char *name_str) {
   /* Comparisons */
   else if (!strcmp(name_str, "__eq__"))
     fn_op_id = OPV_EQ;
+  /* Unarys */
+  else if (!strcmp(name_str, "__neg__"))
+    fn_op_id = OPV_NEG;
 
   return fn_op_id;
 }
@@ -3980,6 +4001,34 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
     if (fty->return_ty->kind != TY_BOOL)
       error_tok(name_tok, "invalid %s signature, return type must be 'bool', found '%s'",
         name_str, type_to_string(fty->return_ty));
+  }
+
+  /* Unary signatures */
+  else if (fn_op_id == OPV_NEG) {
+    /* Check parameter count */
+    if (fty->params->next) {
+      int cx = 0;
+      Type *param_ty = fty->params;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, no parameters expected, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
+
+    /* Check if return type matches receiver type */
+    if (!same_type_value(fty->return_ty, fty->params)) {
+      char *recv_ty_str = type_to_string(fty->params);
+      char *recv_id_str = get_ident(fty->params->name);
+      error_tok(name_tok, "invalid %s signature, return type does not match receiver type\nexpected '%s (%s %s) %s()', but got '%s (%s %s) %s()'",
+        name_str,
+        recv_ty_str, recv_ty_str, recv_id_str, name_str,
+        type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str
+      );
+    }
   }
 }
 
@@ -4138,7 +4187,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       !strcmp(name_str, "__sub__") ||
       !strcmp(name_str, "__iadd__") ||
       !strcmp(name_str, "__isub__") ||
-      !strcmp(name_str, "__eq__")))
+      !strcmp(name_str, "__eq__") ||
+      !strcmp(name_str, "__neg__")))
     error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
   /* Save the method type and name */

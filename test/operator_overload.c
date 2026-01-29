@@ -31,6 +31,11 @@ _Bool (myint a) __eq__(int b) {
   return a.x == b;
 }
 
+myint (myint a) __neg__() {
+  a.x = -a.x;
+  return a;
+}
+
 int main() {
   myint a = { .x = 1 };
   myint b = { .x = 5 };
@@ -52,6 +57,9 @@ int main() {
 
   ASSERT(0, a == 1);
   ASSERT(1, a == -4);
+
+  ASSERT(4, -a.x); // Unary negation of the member
+  ASSERT(4, (-a).x); // Unary negation of the struct
 
   printf("OK\n");
   return 0;
