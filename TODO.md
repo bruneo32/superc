@@ -1,5 +1,4 @@
 ### First: new complete syntax
-- Nullish coalescing operator
 - Function override
 - defer scoped
 - defer codegen dilemma with jmp statements
