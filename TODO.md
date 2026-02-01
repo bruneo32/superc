@@ -1,8 +1,8 @@
 ### First: new complete syntax
-- Operators
+- Nullish coalescing operator
 - Function override
 - defer scoped
-- Nullish coalescing operator
+- defer codegen dilemma with jmp statements
 - Struct inheritance
 - Lambdas
 - HolyC switch ranges

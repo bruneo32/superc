@@ -8,8 +8,8 @@
   - [break N](#break-n)
   - [Symbol mangling](#symbol-mangling)
     - [Aliases](#aliases)
-- [Current planned features](#current-planned-features)
   - [Operator overload](#operator-overload)
+- [Current planned features](#current-planned-features)
   - [Nullish coalescing operator](#nullish-coalescing-operator)
   - [Function override](#function-override)
   - [Struct inheritance](#struct-inheritance)
@@ -330,9 +330,6 @@ int main(void) {
 }
 ```
 
-# Current planned features
-> Please note that the **syntax** of all the planned features is **subject to change**.
-
 ## Operator overload
 You can map an operator (+, +=, etc) to a type method call.
 
@@ -347,7 +344,7 @@ There are some rules that the compiler follows:
   This is meant to preserve pointer arithmetic.
   > `(char*)"Hello" + 2` is `"llo"`, and **not a function call**
 - Assignment operators must return the receiver back and no other variable.
-  > This alone is enough to avoid a lot of problems with operator overloading
+  > This alone eliminates 90% of surprises.
 - Arithmetic operators parameters must be constant if they are pointers.
   > This prevents the user from modifying the value of the pointer
 
@@ -466,6 +463,9 @@ int main(void) {
   return 0;
 }
 ```
+
+# Current planned features
+> Please note that the **syntax** of all the planned features is **subject to change**.
 
 ## Nullish coalescing operator
 The nullish coalescing operator is a ternary operator that returns its **right** operand if the left operand is *NULL*, and its **left** operand otherwise.

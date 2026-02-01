@@ -2560,14 +2560,98 @@ static Node *assign(Token **rest, Token *tok) {
     return operator_overload(fn, node, rhs, tok);
   }
 
-  if (equal(tok, "*="))
-    return to_assign(new_binary(ND_MUL, node, assign(rest, tok->next), tok));
+  if (equal(tok, "*=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
 
-  if (equal(tok, "/="))
-    return to_assign(new_binary(ND_DIV, node, assign(rest, tok->next), tok));
+    /* Lookup method */
+    Identifier ident = {"__imul__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot multiply non-numeric types");
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_MUL, node, rhs, tok));
+    }
 
-  if (equal(tok, "%="))
-    return to_assign(new_binary(ND_MOD, node, assign(rest, tok->next), tok));
+    /* Check that rhs type is correct */
+    Type *ftyr = array_decay(rhs->ty);
+    if (!same_type_value(fn->ty->params->next, ftyr)) {
+      char *msg3 = type_to_string(fn->ty->params);
+      error_tok(tok, "invalid right operand type; expected (%s) *= (%s), but got (%s) *= (%s)",
+                msg3,
+                type_to_string(fn->ty->params->next),
+                msg3,
+                type_to_string(ftyr));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "/=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    /* Lookup method */
+    Identifier ident = {"__idiv__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot divide non-numeric types");
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_DIV, node, rhs, tok));
+    }
+
+    /* Check that rhs type is correct */
+    Type *ftyr = array_decay(rhs->ty);
+    if (!same_type_value(fn->ty->params->next, ftyr)) {
+      char *msg3 = type_to_string(fn->ty->params);
+      error_tok(tok, "invalid right operand type; expected (%s) /= (%s), but got (%s) /= (%s)",
+                msg3,
+                type_to_string(fn->ty->params->next),
+                msg3,
+                type_to_string(ftyr));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "%=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    /* Lookup method */
+    Identifier ident = {"__imod__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot divide non-numeric types");
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_MOD, node, rhs, tok));
+    }
+
+    /* Check that rhs type is correct */
+    Type *ftyr = array_decay(rhs->ty);
+    if (!same_type_value(fn->ty->params->next, ftyr)) {
+      char *msg3 = type_to_string(fn->ty->params);
+      error_tok(tok, "invalid right operand type; expected (%s) %%= (%s), but got (%s) %%= (%s)",
+                msg3,
+                type_to_string(fn->ty->params->next),
+                msg3,
+                type_to_string(ftyr));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
 
   if (equal(tok, "&="))
     return to_assign(new_binary(ND_BITAND, node, assign(rest, tok->next), tok));
@@ -2701,7 +2785,7 @@ static Node *equality(Token **rest, Token *tok) {
       Type *ftyr = array_decay(rhs->ty);
       if (!same_type_value(fn->ty->params->next, ftyr)) {
         char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
+        error_tok(start, "invalid right operand type; expected (%s) == (%s), but got (%s) == (%s)",
                   msg3,
                   type_to_string(fn->ty->params->next),
                   msg3,
@@ -2713,7 +2797,35 @@ static Node *equality(Token **rest, Token *tok) {
     }
 
     if (equal(tok, "!=")) {
-      node = new_binary(ND_NE, node, relational(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = relational(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__ne__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison */
+        node = new_binary(ND_NE, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) != (%s), but got (%s) != (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2730,22 +2842,134 @@ static Node *relational(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "<")) {
-      node = new_binary(ND_LT, node, shift(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__lt__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison */
+        node = new_binary(ND_LT, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) < (%s), but got (%s) < (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "<=")) {
-      node = new_binary(ND_LE, node, shift(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__le__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison */
+        node = new_binary(ND_LE, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) <= (%s), but got (%s) <= (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, ">")) {
-      node = new_binary(ND_LT, shift(&tok, tok->next), node, start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__gt__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison (inversion of ND_LT) */
+        node = new_binary(ND_LT, rhs, node, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) > (%s), but got (%s) > (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, ">=")) {
-      node = new_binary(ND_LE, shift(&tok, tok->next), node, start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__ge__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types");
+        /* Return normal comparison */
+        node = new_binary(ND_LE, rhs, node, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) >= (%s), but got (%s) >= (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2909,7 +3133,7 @@ static Node *add(Token **rest, Token *tok) {
       Type *ftyr = array_decay(rhs->ty);
       if (!same_type_value(fn->ty->params->next, ftyr)) {
         char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
+        error_tok(start, "invalid right operand type; expected (%s) - (%s), but got (%s) - (%s)",
                   msg3,
                   type_to_string(fn->ty->params->next),
                   msg3,
@@ -2933,17 +3157,101 @@ static Node *mul(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "*")) {
-      node = new_binary(ND_MUL, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__mul__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot multiply non-numeric types");
+        /* Return normal arithmetic */
+        node = new_binary(ND_MUL, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) * (%s), but got (%s) * (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "/")) {
-      node = new_binary(ND_DIV, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__div__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot divide non-numeric types");
+        /* Return normal arithmetic */
+        node = new_binary(ND_DIV, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) / (%s), but got (%s) / (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "%")) {
-      node = new_binary(ND_MOD, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      /* Lookup method */
+      Identifier ident = {"__mod__", array_decay(node->ty)};
+      Obj *fn = find_func(ident);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot divide non-numeric types");
+        /* Return normal arithmetic */
+        node = new_binary(ND_MOD, node, rhs, start);
+        continue;
+      }
+
+      /* Check that rhs type is correct */
+      Type *ftyr = array_decay(rhs->ty);
+      if (!same_type_value(fn->ty->params->next, ftyr)) {
+        char *msg3 = type_to_string(fn->ty->params);
+        error_tok(start, "invalid right operand type; expected (%s) %% (%s), but got (%s) %% (%s)",
+                  msg3,
+                  type_to_string(fn->ty->params->next),
+                  msg3,
+                  type_to_string(ftyr));
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2977,8 +3285,24 @@ static Node *cast(Token **rest, Token *tok) {
 //       | "&&" ident
 //       | postfix
 static Node *unary(Token **rest, Token *tok) {
-  if (equal(tok, "+"))
-    return cast(rest, tok->next);
+  if (equal(tok, "+")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
+
+    /* Lookup method */
+    Identifier ident = {"__pos__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot operate unary plus on non-numeric types");
+      /* Return node */
+      return node;
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
 
   if (equal(tok, "-")) {
     /* Check if there's an operator overload */
@@ -2992,7 +3316,7 @@ static Node *unary(Token **rest, Token *tok) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
         error_tok(tok, "cannot negate non-numeric types");
-      /* Return normal comparison */
+      /* Return normal negation */
       return new_unary(ND_NEG, node, tok);
     }
 
@@ -3022,8 +3346,24 @@ static Node *unary(Token **rest, Token *tok) {
   if (equal(tok, "!"))
     return new_unary(ND_NOT, cast(rest, tok->next), tok);
 
-  if (equal(tok, "~"))
-    return new_unary(ND_BITNOT, cast(rest, tok->next), tok);
+  if (equal(tok, "~")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
+
+    /* Lookup method */
+    Identifier ident = {"__del__", array_decay(node->ty)};
+    Obj *fn = find_func(ident);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot invert non-numeric types");
+      /* Return normal inversion */
+      return new_unary(ND_BITNOT, node, tok);
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
 
   // Read ++i as i+=1
   if (equal(tok, "++"))
@@ -3866,13 +4206,26 @@ enum e_opv {
   /* Binary arithmetics */
   OPV_ADD,
   OPV_SUB,
+  OPV_MUL,
+  OPV_DIV,
+  OPV_MOD,
   /* Assignments */
   OPV_IADD,
   OPV_ISUB,
+  OPV_IMUL,
+  OPV_IDIV,
+  OPV_IMOD,
   /* Comparisons */
+  OPV_LT,
+  OPV_GT,
+  OPV_LE,
+  OPV_GE,
   OPV_EQ,
+  OPV_NE,
   /* Unarys */
   OPV_NEG,
+  OPV_POS,
+  OPV_DEL,
 };
 
 static inline short get_opv_id(char *name_str) {
@@ -3883,17 +4236,43 @@ static inline short get_opv_id(char *name_str) {
     fn_op_id = OPV_ADD;
   else if (!strcmp(name_str, "__sub__"))
     fn_op_id = OPV_SUB;
+  else if (!strcmp(name_str, "__mul__"))
+    fn_op_id = OPV_MUL;
+  else if (!strcmp(name_str, "__div__"))
+    fn_op_id = OPV_DIV;
+  else if (!strcmp(name_str, "__mod__"))
+    fn_op_id = OPV_MOD;
   /* Assignments */
   else if (!strcmp(name_str, "__iadd__"))
     fn_op_id = OPV_IADD;
   else if (!strcmp(name_str, "__isub__"))
     fn_op_id = OPV_ISUB;
+  else if (!strcmp(name_str, "__mul__"))
+    fn_op_id = OPV_IMUL;
+  else if (!strcmp(name_str, "__div__"))
+    fn_op_id = OPV_IDIV;
+  else if (!strcmp(name_str, "__mod__"))
+    fn_op_id = OPV_IMOD;
   /* Comparisons */
+  else if (!strcmp(name_str, "__lt__"))
+    fn_op_id = OPV_LT;
+  else if (!strcmp(name_str, "__gt__"))
+    fn_op_id = OPV_GT;
+  else if (!strcmp(name_str, "__le__"))
+    fn_op_id = OPV_LE;
+  else if (!strcmp(name_str, "__ge__"))
+    fn_op_id = OPV_GE;
   else if (!strcmp(name_str, "__eq__"))
     fn_op_id = OPV_EQ;
+  else if (!strcmp(name_str, "__ne__"))
+    fn_op_id = OPV_NE;
   /* Unarys */
   else if (!strcmp(name_str, "__neg__"))
     fn_op_id = OPV_NEG;
+  else if (!strcmp(name_str, "__pos__"))
+    fn_op_id = OPV_POS;
+  else if (!strcmp(name_str, "__del__"))
+    fn_op_id = OPV_DEL;
 
   return fn_op_id;
 }
@@ -3914,7 +4293,8 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
   /* == Verify function signature == */
 
   /* Binary signatures */
-  if (fn_op_id == OPV_ADD || fn_op_id == OPV_SUB) {
+  if (fn_op_id == OPV_ADD || fn_op_id == OPV_SUB ||
+      fn_op_id == OPV_MUL || fn_op_id == OPV_DIV || fn_op_id == OPV_MOD) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -3937,7 +4317,8 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
   }
 
   /* Assignment signatures */
-  else if (fn_op_id == OPV_IADD || fn_op_id == OPV_ISUB) {
+  else if (fn_op_id == OPV_IADD || fn_op_id == OPV_ISUB
+        || fn_op_id == OPV_IMUL || fn_op_id == OPV_IDIV || fn_op_id == OPV_IMOD) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -3976,7 +4357,9 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
   }
 
   /* Comparison signatures */
-  else if (fn_op_id == OPV_EQ) {
+  else if (fn_op_id == OPV_LT ||fn_op_id == OPV_GT
+        || fn_op_id == OPV_LE || fn_op_id == OPV_GE
+        || fn_op_id == OPV_EQ || fn_op_id == OPV_NE) {
     /* Check parameter count */
     if (!fty->params->next)
       error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
@@ -4004,7 +4387,7 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
   }
 
   /* Unary signatures */
-  else if (fn_op_id == OPV_NEG) {
+  else if (fn_op_id == OPV_NEG || fn_op_id == OPV_NEG || fn_op_id == OPV_DEL) {
     /* Check parameter count */
     if (fty->params->next) {
       int cx = 0;
@@ -4185,10 +4568,23 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   if (recv && is_numeric(recv) && (
       !strcmp(name_str, "__add__") ||
       !strcmp(name_str, "__sub__") ||
+      !strcmp(name_str, "__mul__") ||
+      !strcmp(name_str, "__div__") ||
+      !strcmp(name_str, "__mod__") ||
       !strcmp(name_str, "__iadd__") ||
       !strcmp(name_str, "__isub__") ||
+      !strcmp(name_str, "__imul__") ||
+      !strcmp(name_str, "__idiv__") ||
+      !strcmp(name_str, "__imod__") ||
+      !strcmp(name_str, "__lt__") ||
+      !strcmp(name_str, "__gt__") ||
+      !strcmp(name_str, "__le__") ||
+      !strcmp(name_str, "__ge__") ||
       !strcmp(name_str, "__eq__") ||
-      !strcmp(name_str, "__neg__")))
+      !strcmp(name_str, "__ne__") ||
+      !strcmp(name_str, "__neg__") ||
+      !strcmp(name_str, "__pos__") ||
+      !strcmp(name_str, "__del__")))
     error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
   /* Save the method type and name */
