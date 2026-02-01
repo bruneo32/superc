@@ -9,8 +9,8 @@
   - [Symbol mangling](#symbol-mangling)
     - [Aliases](#aliases)
   - [Operator overload](#operator-overload)
-- [Current planned features](#current-planned-features)
   - [Nullish coalescing operator](#nullish-coalescing-operator)
+- [Current planned features](#current-planned-features)
   - [Function override](#function-override)
   - [Struct inheritance](#struct-inheritance)
   - [Lambdas](#lambdas)
@@ -464,13 +464,14 @@ int main(void) {
 }
 ```
 
-# Current planned features
-> Please note that the **syntax** of all the planned features is **subject to change**.
-
 ## Nullish coalescing operator
+> This is already implemented in [GNU C](https://gcc.gnu.org/onlinedocs/gcc/Conditionals.html), `??` would have been prettier, but this is nice anyway.
+
 The nullish coalescing operator is a ternary operator that returns its **right** operand if the left operand is *NULL*, and its **left** operand otherwise.
 
-**i.e.** `a ?? b` is equivalent to `(a != 0) ? a : b`
+**i.e.** `a ?: b` is equivalent to `a ? a : b`
+
+> Note: that operator overload for `__eq__` does not work for nullish coalescing operator, because `(x != 0)` is not tested, it's just the variable "truthiness". If you want to test the operator overload, use explicit ternary operator.
 
 ### Examples
 ```c
@@ -478,8 +479,8 @@ The nullish coalescing operator is a ternary operator that returns its **right**
 #include <string.h>
 
 void print_first_word(char *str) {
-  // If str is NULL (0), s will be "unknown"
-  char *s = str ?? "unknown";
+  // If str is 0 (NULL), s will be "unknown"
+  char *s = str ?: "unknown";
   size_t len = strlen(s);
 
   for (int i = 0; i < len; i++) {
@@ -492,8 +493,8 @@ void print_first_word(char *str) {
 
 int always_5() {
   int x = 0;
-  // (x != 0) ? x : 5
-  return x ?? 5;
+  // (x) ? x : 5
+  return x ?: 5;
 }
 
 int main(void) {
@@ -511,6 +512,9 @@ int main(void) {
   return 0;
 }
 ```
+
+# Current planned features
+> Please note that the **syntax** of all the planned features is **subject to change**.
 
 ## Function override
 **SuperC** allows function override with manual symbol mangling.
