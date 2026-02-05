@@ -320,7 +320,7 @@ inline int (int i) inline2() { return inline1(i); }
 
 int main(void) {
   /*
-    binary result is exactly the same as
+    assembly result is exactly the same as
     printf("%d\n", 10 + 3);
     so this is an inline function alias
   */
@@ -545,6 +545,36 @@ int main(void) {
   foo((float) 3.1415);
   // INT: 10
   // FLOAT: 3.141500
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+void foo(long a)  __attribute__((symbol("foo_l"))) {
+  printf("LONG");
+}
+
+void foo(int a)   __attribute__((symbol("foo_i"))) {
+  printf("INT");
+}
+
+void foo(short a) __attribute__((symbol("foo_s"))) {
+  printf("INT");
+}
+
+void foo(char a)  __attribute__((symbol("foo_c"))) {
+  printf("INT");
+}
+
+int main(void) {
+  // Long literal
+  foo(10L); // foo(long)
+
+  // Ambiguous literal. Which one gets called?
+  foo(10);
+  // warning: ambiguous call to overloaded function 'foo', consider casting the literal '10'
+  // the compiler will call TODO: figure out which one
   return 0;
 }
 ```

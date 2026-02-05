@@ -17,6 +17,15 @@ Type *ty_float = &(Type){TY_FLOAT, 4, 4};
 Type *ty_double = &(Type){TY_DOUBLE, 8, 8};
 Type *ty_ldouble = &(Type){TY_LDOUBLE, 16, 16};
 
+bool is_ty_original(Type *ty) {
+  if (ty == ty_void || ty == ty_bool ||
+      ty == ty_char || ty == ty_short || ty == ty_int || ty == ty_long ||
+      ty == ty_uchar || ty == ty_ushort || ty == ty_uint || ty == ty_ulong ||
+      ty == ty_float || ty == ty_double || ty == ty_ldouble)
+    return true;
+  return false;
+}
+
 static Type *new_type(TypeKind kind, int size, int align) {
   Type *ty = calloc(1, sizeof(Type));
   ty->kind = kind;
@@ -315,9 +324,9 @@ void add_type(Node *node) {
 }
 
 /** Check if it's the same method by comparing it's assembly name */
-bool same_type_value(Type *a, Type *b) {
-  char *msg1 = type_to_asmident(a);
-  char *msg2 = type_to_asmident(b);
+bool same_type_value(Type *a, Type *b, bool recurse) {
+  char *msg1 = type_to_asmident(a, recurse);
+  char *msg2 = type_to_asmident(b, recurse);
   if (!strcmp(msg1, msg2)){
     free(msg1);
     free(msg2);
@@ -565,10 +574,15 @@ static void append_type_mangle(Type *ty, StringBuilder *sb) {
 }
 
 /* return a string that can be used as an safe C identifier */
-char *type_to_asmident(Type *ty) {
+char *type_to_asmident(Type *ty, bool recurse) {
   StringBuilder sb;
   sb_init(&sb);
   append_type_mangle(ty, &sb);
+
+  if (recurse && ty->next)
+    for (Type *t = ty->next; t; t = t->next)
+      append_type_mangle(t, &sb);
+
   char *res = strndup(sb.buf, sb.len);
   sb_free(&sb);
   return res;
