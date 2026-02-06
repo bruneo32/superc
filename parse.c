@@ -88,6 +88,8 @@ struct StrArray {
   StrArray *next;
 };
 
+static Identifier ident_none = {NULL, NULL};
+
 // All local variable instances created during parsing are
 // accumulated to this list.
 static Obj *locals;
@@ -113,6 +115,8 @@ static char *cont_label;
 static Node *current_switch;
 
 static Obj *builtin_alloca;
+
+static HashMap map_func_ov = {0};
 
 static bool is_typename(Token *tok);
 static bool is_identifier(Token *tok);
@@ -373,20 +377,17 @@ static Initializer *new_initializer(Type *ty, bool is_flexible) {
   return init;
 }
 
-static Obj *new_var(char *name, Identifier *ident, Type *ty) {
+static Obj *new_var(char *name, Identifier ident, Type *ty) {
   Obj *var = calloc(1, sizeof(Obj));
   var->name = name;
   var->ty = ty;
   var->align = ty->align;
-  if (ident && ident->method_ty)
-    var->recv = *ident;
-  else
-    var->recv = (Identifier){0, 0};
+  var->recv = ident;
   push_scope(name)->var = var;
   return var;
 }
 
-static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_lvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->is_local = true;
   var->next = locals;
@@ -394,7 +395,7 @@ static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
   return var;
 }
 
-static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_gvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->next = globals;
   var->is_static = true;
@@ -409,7 +410,7 @@ static char *new_unique_name(void) {
 }
 
 static Obj *new_anon_gvar(Type *ty) {
-  return new_gvar(new_unique_name(), NULL, ty);
+  return new_gvar(new_unique_name(), ident_none, ty);
 }
 
 static Obj *new_string_literal(char *p, Type *ty) {
@@ -534,6 +535,8 @@ static Identifier consume_ident(Token** rest, Token *tok) {
         if (is_ty_original(pty))
           // Clone to avoid list destruction
           pty = copy_type(pty);
+
+        pty->name_pos = arg->tok;
 
         if (!cur)
           cur = params = pty;
@@ -1086,7 +1089,7 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
   else
     base_sz = new_num(ty->base->size, tok);
 
-  ty->vla_size = new_lvar("", NULL, ty_ulong);
+  ty->vla_size = new_lvar("", ident_none, ty_ulong);
   Node *expr = new_binary(ND_ASSIGN, new_var_node(ty->vla_size, tok),
                           new_binary(ND_MUL, ty->vla_len, base_sz, tok),
                           tok);
@@ -1140,7 +1143,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       // Variable length arrays (VLAs) are translated to alloca() calls.
       // For example, `int x[n+2]` is translated to `tmp = n + 2,
       // x = alloca(tmp)`.
-      Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+      Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
       Token *tok = ty->name;
       Node *expr = new_binary(ND_ASSIGN, new_vla_ptr(var, tok),
                               new_alloca(new_var_node(ty->vla_size, tok)),
@@ -1150,7 +1153,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       continue;
     }
 
-    Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
     if (attr && attr->align)
       var->align = attr->align;
 
@@ -2387,7 +2390,7 @@ static Node *to_assign(Node *binary) {
 
   // Convert `A.x op= C` to `tmp = &A, (*tmp).x = (*tmp).x op C`.
   if (binary->lhs->kind == ND_MEMBER) {
-    Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->lhs->ty));
+    Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->lhs->ty));
 
     Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                              new_unary(ND_ADDR, binary->lhs->lhs, tok), tok);
@@ -2422,10 +2425,10 @@ static Node *to_assign(Node *binary) {
     Node head = {};
     Node *cur = &head;
 
-    Obj *addr = new_lvar("", NULL, pointer_to(binary->lhs->ty));
-    Obj *val = new_lvar("", NULL, binary->rhs->ty);
-    Obj *old = new_lvar("", NULL, binary->lhs->ty);
-    Obj *new = new_lvar("", NULL, binary->lhs->ty);
+    Obj *addr = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
+    Obj *val = new_lvar("", ident_none, binary->rhs->ty);
+    Obj *old = new_lvar("", ident_none, binary->lhs->ty);
+    Obj *new = new_lvar("", ident_none, binary->lhs->ty);
 
     cur = cur->next =
       new_unary(ND_EXPR_STMT,
@@ -2472,7 +2475,7 @@ static Node *to_assign(Node *binary) {
   }
 
   // Convert `A op= B` to ``tmp = &A, *tmp = *tmp op B`.
-  Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->ty));
+  Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
 
   Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                            new_unary(ND_ADDR, binary->lhs, tok), tok);
@@ -2557,7 +2560,7 @@ static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", NULL, node->ty);
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
   return node;
 }
 
@@ -2701,7 +2704,7 @@ static Node *conditional(Token **rest, Token *tok) {
   if (equal(tok->next, ":")) {
     // [GNU] Compile `a ?: b` as `tmp = a, tmp ? tmp : b`.
     add_type(cond);
-    Obj *var = new_lvar("", NULL, cond->ty);
+    Obj *var = new_lvar("", ident_none, cond->ty);
     Node *lhs = new_binary(ND_ASSIGN, new_var_node(var, tok), cond, tok);
     Node *rhs = new_node(ND_COND, tok);
     rhs->cond = new_var_node(var, tok);
@@ -3583,7 +3586,7 @@ static Node *postfix(Token **rest, Token *tok) {
       return new_var_node(var, start);
     }
 
-    Obj *var = new_lvar("", NULL, ty);
+    Obj *var = new_lvar("", ident_none, ty);
     Node *lhs = lvar_initializer(rest, tok, var);
     Node *rhs = new_var_node(var, tok);
     return new_binary(ND_COMMA, lhs, rhs, start);
@@ -3732,7 +3735,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", NULL, node->ty);
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
   return node;
 }
 
@@ -3960,6 +3963,15 @@ static Node *primary(Token **rest, Token *tok) {
     Identifier ident = consume_ident(&tok, tok);
     *rest = tok;
 
+    /* Check if some of the arguments is an ambiguous literal
+     * only for overloaded functions */
+    void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
+    if (is_func_ov != 0)
+      for (Type *params_ty = ident.method_ty; params_ty; params_ty = params_ty->next)
+        if (params_ty == ty_int || params_ty->origin == ty_int)
+          // Ambiguous literal
+          error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s', cast the literal '%ld' to the desired type", ident.name, params_ty->name_pos->val);
+
     // Variable or enum constant
     VarScope *sc = find_var(ident);
 
@@ -4019,7 +4031,7 @@ static void create_param_lvars(Type *param) {
     create_param_lvars(param->next);
     if (!param->name)
       error_tok(param->name_pos, "parameter name omitted");
-    new_lvar(get_ident(param->name), NULL, param);
+    new_lvar(get_ident(param->name), ident_none, param);
   }
 }
 
@@ -4509,10 +4521,12 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
 
   /* Check if its definition or declaration */
   Token *tok_attr = tok;
+  char *lookup_symbol = NULL;
   if (equal(tok, "__attribute__")) {
     // Skip attributes and lookup ((symbol)) for function name
     Obj attr_lookup = {0};
     tok = attribute_list(tok, NULL, &attr_lookup);
+    lookup_symbol = attr_lookup.symbol;
     if (attr_lookup.symbol)
       // If the function has a symbol attribute
       // randomize name to allow function override
@@ -4531,7 +4545,28 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       error_tok(name_tok, "static declaration follows a non-static declaration");
     fn->is_definition = fn->is_definition || is_def;
   } else {
-    fn = new_gvar(name_str, &ident, ty);
+    /* Check if there is a function with the same name declared before */
+    size_t fn_ov_cx = 0;
+
+    /* Count all the other functions with the same name */
+    for (Obj *fn_ov = globals; fn_ov; fn_ov = fn_ov->next) {
+      /* Check if it's the same function name */
+      if (!fn_ov->is_function || strcmp(fn_ov->recv.name, ident.name) != 0)
+        continue;
+
+      /* Check that every overload has a different symbol */
+      if (!lookup_symbol || !strcmp(get_symbolname(fn_ov), lookup_symbol))
+        error_tok(name_tok, "'%s' and '%s' have the same symbol", ident_to_string(ident), ident_to_string(fn_ov->recv));
+
+      fn_ov_cx++;
+    }
+
+    if (fn_ov_cx)
+      // Add the function to the overload map
+      hashmap_put(&map_func_ov, ident.name, (void*)fn_ov_cx);
+
+    // Create a new function as global variable
+    fn = new_gvar(name_str, ident, ty);
     fn->is_function = true;
     fn->is_definition = is_def;
     fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
@@ -4569,13 +4604,13 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("", NULL, pointer_to(rty));
+    new_lvar("", ident_none, pointer_to(rty));
 
   fn->params = locals;
 
   if (ty->is_variadic)
-    fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));
-  fn->alloca_bottom = new_lvar("__alloca_size__", NULL, pointer_to(ty_char));
+    fn->va_area = new_lvar("__va_area__", ident_none, array_of(ty_char, 136));
+  fn->alloca_bottom = new_lvar("__alloca_size__", ident_none, pointer_to(ty_char));
 
   tok = skip(tok, "{");
 
@@ -4611,7 +4646,7 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
 
-    Obj *var = new_gvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_gvar(get_ident(ty->name), ident_none, ty);
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
@@ -4702,7 +4737,7 @@ static void scan_globals(void) {
 static void declare_builtin_functions(void) {
   Type *ty = func_type(pointer_to(ty_void));
   ty->params = copy_type(ty_int);
-  builtin_alloca = new_gvar("alloca", NULL, ty);
+  builtin_alloca = new_gvar("alloca", ident_none, ty);
   builtin_alloca->is_definition = false;
 }
 
