@@ -174,7 +174,7 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
 static char *get_symbolname(Obj *var);
 static Obj *find_func(Identifier ident);
 static Identifier consume_ident(Token** rest, Token *tok);
-static char *ident_to_string(Identifier ident);
+static char *ident_to_string(Identifier ident, bool as_type_method);
 
 static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
@@ -560,22 +560,38 @@ static Identifier consume_ident(Token** rest, Token *tok) {
   error_tok(tok, "expected an identifier");
 }
 
-static char *ident_to_string(Identifier ident) {
+static char *ident_to_string(Identifier ident, bool as_type_method) {
   if (ident.method_ty) {
     StringBuilder sb;
     sb_init(&sb);
-    sb_appendf(&sb, "%s(", ident.name);
 
-    for (Type *pty = ident.method_ty; pty; pty = pty->next) {
-      if (pty != ident.method_ty)
-        sb_appendf(&sb, ", ");
-      char *tystr = type_to_string(pty);
-      sb_appendf(&sb, "%s", tystr);
+    if (!as_type_method) {
+      /* foo(int, short) */
+      sb_appendf(&sb, "%s(", ident.name);
+
+      for (Type *pty = ident.method_ty; pty; pty = pty->next) {
+        if (pty != ident.method_ty)
+          sb_appendf(&sb, ", ");
+        char *tystr = type_to_string(pty);
+        sb_appendf(&sb, "%s", tystr);
+        free(tystr);
+      }
+    } else {
+      /* (int).foo(short) */
+      char *tystr = type_to_string(ident.method_ty);
+      sb_appendf(&sb, "(%s).%s(", tystr, ident.name);
       free(tystr);
+
+      for (Type *pty = ident.method_ty->next; pty; pty = pty->next) {
+        if (pty != ident.method_ty->next)
+          sb_appendf(&sb, ", ");
+        tystr = type_to_string(pty);
+        sb_appendf(&sb, "%s", tystr);
+        free(tystr);
+      }
     }
 
     sb_append(&sb, ")");
-
     return sb.buf;
   }
 
@@ -2579,13 +2595,17 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
-    Identifier ident = {"__iadd__", array_decay(node->ty)};
+    Identifier ident = {"__iadd__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot add non-numeric types");
+        error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) += (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
     }
@@ -2599,13 +2619,17 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
-    Identifier ident = {"__isub__", array_decay(node->ty)};
+    Identifier ident = {"__isub__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot subtract non-numeric types");
+        error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) -= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_sub(node, rhs, tok));
     }
@@ -2619,13 +2643,17 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
-    Identifier ident = {"__imul__", array_decay(node->ty)};
+    Identifier ident = {"__imul__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot multiply non-numeric types");
+        error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) *= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MUL, node, rhs, tok));
     }
@@ -2639,13 +2667,17 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
-    Identifier ident = {"__idiv__", array_decay(node->ty)};
+    Identifier ident = {"__idiv__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot divide non-numeric types");
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) /= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_DIV, node, rhs, tok));
     }
@@ -2659,13 +2691,17 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
-    Identifier ident = {"__imod__", array_decay(node->ty)};
+    Identifier ident = {"__imod__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot divide non-numeric types");
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %%= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MOD, node, rhs, tok));
     }
@@ -2789,13 +2825,17 @@ static Node *equality(Token **rest, Token *tok) {
       Node *rhs = relational(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
-      Identifier ident = {"__eq__", array_decay(node->ty)};
+      Identifier ident = {"__eq__", pty};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) == (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_EQ, node, rhs, start);
         continue;
@@ -3038,13 +3078,21 @@ static Node *add(Token **rest, Token *tok) {
       Node *rhs = mul(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Identifier ident = {"__add__", pty};
+
       /* Lookup method */
-      Identifier ident = {"__add__", array_decay(node->ty)};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot add non-numeric types");
+          error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) + (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
         continue;
@@ -3060,13 +3108,17 @@ static Node *add(Token **rest, Token *tok) {
       Node *rhs = mul(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
-      Identifier ident = {"__sub__", array_decay(node->ty)};
+      Identifier ident = {"__sub__", pty};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot subtract non-numeric types");
+          error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) - (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_sub(node, rhs, start);
         continue;
@@ -3094,13 +3146,17 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
-      Identifier ident = {"__mul__", array_decay(node->ty)};
+      Identifier ident = {"__mul__", pty};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot multiply non-numeric types");
+          error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) * (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_MUL, node, rhs, start);
         continue;
@@ -3116,13 +3172,17 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
-      Identifier ident = {"__div__", array_decay(node->ty)};
+      Identifier ident = {"__div__", pty};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot divide non-numeric types");
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) / (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_DIV, node, rhs, start);
         continue;
@@ -3138,13 +3198,17 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
-      Identifier ident = {"__mod__", array_decay(node->ty)};
+      Identifier ident = {"__mod__", pty};
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot divide non-numeric types");
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %% (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_MOD, node, rhs, start);
         continue;
@@ -3189,13 +3253,16 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
-    Identifier ident = {"__pos__", array_decay(node->ty)};
+    Identifier ident = {"__pos__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot operate unary plus on non-numeric types");
+        error_tok(tok, "cannot operate unary plus on non-numeric types, no operator overload for +(%s)",
+                   type_to_string(pty));
       /* Return node */
       return node;
     }
@@ -3208,13 +3275,16 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
-    Identifier ident = {"__neg__", array_decay(node->ty)};
+    Identifier ident = {"__neg__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot negate non-numeric types");
+        error_tok(tok, "cannot negate non-numeric types, no operator overload for +(%s)",
+                   type_to_string(pty));
       /* Return normal negation */
       return new_unary(ND_NEG, node, tok);
     }
@@ -3250,13 +3320,16 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
-    Identifier ident = {"__del__", array_decay(node->ty)};
+    Identifier ident = {"__del__", pty};
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot invert non-numeric types");
+        error_tok(tok, "cannot invert non-numeric types, no operator overload for +(%s)",
+                   type_to_string(pty));
       /* Return normal inversion */
       return new_unary(ND_BITNOT, node, tok);
     }
@@ -3753,6 +3826,8 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   add_type(recv);
 
   Type *basety = array_decay(recv->ty);
+  if (basety == ty_int)
+    error_tok(recv->tok, "method call does not allow ambiguous number types\nCast the number '%ld' to the desired type. For example, '(int)%ld'", recv->val, recv->val);
   char *basety_str = type_to_string(basety);
 
   /* Lookup parameter types */
@@ -3766,20 +3841,38 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
       lookup_tok = skip(lookup_tok, ",");
     Node *arg = assign(&lookup_tok, lookup_tok);
     add_type(arg);
-    cur = cur->next = array_decay(arg->ty);
+    Type *pty = array_decay(arg->ty);
+
+    if (is_ty_original(pty))
+      // Clone to avoid list destruction
+      pty = copy_type(pty);
+
+    pty->name_pos = arg->tok;
+
+    cur = cur->next = pty;
     first = false;
   }
 
   /* Lookup method */
   Identifier ident = {name_str, basety};
+
+  /* Check if some of the arguments is an ambiguous literal
+    * only for overloaded functions */
+  void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
+  if (is_func_ov != 0) {
+    for (Type *params_ty = ident.method_ty->next; params_ty; params_ty = params_ty->next)
+      if (params_ty == ty_int || params_ty->origin == ty_int)
+        // Ambiguous literal
+        error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
+  } else {
+    // If the function is not overloaded
+    // trim the parameters type for type auto casting
+    ident.method_ty = NULL;
+  }
+
   Obj *fnobj = find_func(ident);
   if (!fnobj)
-    error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
-
-  /* Check that is the type expected */
-  Type *impl_type = fnobj->recv.method_ty;
-  if (!same_type_value(basety, impl_type, true))
-    error_tok(name_tok, "expected a method of type '%s'", basety_str);
+    error_tok(name_tok, "unknown method '%s'", ident_to_string(ident, true));
 
   Node *fn = new_var_node(fnobj, name_tok);  // callee is an identifier
   fn->ty = fnobj->ty;
@@ -3892,7 +3985,7 @@ static Node *primary(Token **rest, Token *tok) {
     *rest = skip(tok, ")");
 
     if (!sc)
-      error_tok(tok, "cannot find symbol of %s", ident_to_string(ident));
+      error_tok(tok, "cannot find symbol of %s", ident_to_string(ident, false));
 
     char *symbolname = get_symbolname(sc->var);
     Type *symbol_ty = stringlit_of(symbolname);
@@ -3966,11 +4059,16 @@ static Node *primary(Token **rest, Token *tok) {
     /* Check if some of the arguments is an ambiguous literal
      * only for overloaded functions */
     void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
-    if (is_func_ov != 0)
+    if (is_func_ov != 0) {
       for (Type *params_ty = ident.method_ty; params_ty; params_ty = params_ty->next)
         if (params_ty == ty_int || params_ty->origin == ty_int)
           // Ambiguous literal
-          error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s', cast the literal '%ld' to the desired type", ident.name, params_ty->name_pos->val);
+          error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
+    } else {
+      // If the function is not overloaded
+      // trim the parameters type for type auto casting
+      ident.method_ty = NULL;
+    }
 
     // Variable or enum constant
     VarScope *sc = find_var(ident);
@@ -3983,8 +4081,8 @@ static Node *primary(Token **rest, Token *tok) {
     }
 
     if (equal(tok, "("))
-      error_tok(tok, "implicit declaration of a function '%s'", ident_to_string(ident));
-    error_tok(tok, "undefined variable '%s'", ident_to_string(ident));
+      error_tok(tok, "implicit declaration of a function '%s'", ident_to_string(ident, false));
+    error_tok(tok, "undefined variable '%s'", ident_to_string(ident, false));
   }
 
   if (tok->kind == TK_STR) {
@@ -4531,7 +4629,15 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       // If the function has a symbol attribute
       // randomize name to allow function override
       name_str = name_fid;
+  } else if (recv) {
+    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
+    char *type_cname = type_to_asmident(recv, true);
+    size_t newlen = strlen(ident.name) + strlen(type_cname) + 2;
+    lookup_symbol = malloc(newlen);
+    snprintf(lookup_symbol, newlen, "%s$%s", ident.name, type_cname);
+    free(type_cname);
   }
+
   const bool is_def = equal(tok, "{");
 
   Obj *fn = find_func(ident);
@@ -4540,7 +4646,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     if (!fn->is_function)
       error_tok(name_tok, "redeclared as a different kind of symbol");
     if (fn->is_definition && is_def)
-      error_tok(name_tok, "redefinition of %s", ident_to_string(ident));
+      error_tok(name_tok, "redefinition of %s", ident_to_string(ident, recv != NULL));
     if (!fn->is_static && attr->is_static)
       error_tok(name_tok, "static declaration follows a non-static declaration");
     fn->is_definition = fn->is_definition || is_def;
@@ -4555,8 +4661,12 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
         continue;
 
       /* Check that every overload has a different symbol */
-      if (!lookup_symbol || !strcmp(get_symbolname(fn_ov), lookup_symbol))
-        error_tok(name_tok, "'%s' and '%s' have the same symbol", ident_to_string(ident), ident_to_string(fn_ov->recv));
+      char *fn_symbol = lookup_symbol ?: ident.name;
+      char *fn_ov_symbol = get_symbolname(fn_ov);
+      if (!strcmp(fn_ov_symbol, fn_symbol))
+        error_tok(name_tok, "'%s' and '%s' have the same symbol",
+          ident_to_string(ident, recv != NULL),
+          ident_to_string(fn_ov->recv, fn_ov->is_type_method));
 
       fn_ov_cx++;
     }
@@ -4568,19 +4678,14 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     // Create a new function as global variable
     fn = new_gvar(name_str, ident, ty);
     fn->is_function = true;
+    fn->is_type_method = recv != NULL;
     fn->is_definition = is_def;
     fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
     fn->is_inline = attr->is_inline;
   }
 
-  if (recv) {
-    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
-    char *type_cname = type_to_asmident(recv, true);
-    size_t newlen = strlen(fn->recv.name) + strlen(type_cname) + 2;
-    fn->symbol = malloc(newlen);
-    snprintf(fn->symbol, newlen, "%s$%s", fn->recv.name, type_cname);
-    free(type_cname);
-  }
+  if (recv)
+    fn->symbol = lookup_symbol;
 
   tok = attribute_list(tok_attr, NULL, fn);
 
@@ -4617,7 +4722,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
   // automatically defined as a local variable containing the
   // current function name.
-  Obj *__fnname__ = new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  char *symname = get_symbolname(fn);
+  Obj *__fnname__ = new_string_literal(symname, array_of(ty_char, strlen(symname) + 1));
   push_scope("__func__")->var = __fnname__;
 
   // [GNU] __FUNCTION__ is yet another name of __func__.

@@ -168,6 +168,7 @@ struct Obj {
   Relocation *rel;
 
   // Function
+  bool is_type_method;
   bool is_inline;
   Identifier recv;
   Obj *params;
