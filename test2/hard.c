@@ -78,8 +78,12 @@ int main(void) {
   struct A a;
   a = a + (int)10;
   a = a + 10L;
-  // TODO:
-  // a = a + 10.0;
+
+  double d = 3.0;
+  a = (struct A, double).__add__(a, d);
+  a = a + d;
+  a = a + (double)10.0f;
+  a = a + 10.0;
 
   return 0;
 }

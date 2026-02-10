@@ -100,6 +100,7 @@ Type *copy_type(Type *ty) {
   Type *ret = calloc(1, sizeof(Type));
   *ret = *ty;
   ret->origin = ty;
+  ret->next = NULL;
   return ret;
 }
 
@@ -579,7 +580,7 @@ char *type_to_asmident(Type *ty, bool recurse) {
   sb_init(&sb);
   append_type_mangle(ty, &sb);
 
-  if (recurse && ty->next)
+  if (recurse)
     for (Type *t = ty->next; t; t = t->next)
       append_type_mangle(t, &sb);
 

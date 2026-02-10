@@ -490,9 +490,10 @@ static Identifier consume_ident(Token** rest, Token *tok) {
       else
         cur = cur->next = pty;
 
+      // Skip ","
       if (!equal(tok, ","))
         break;
-      tok = tok->next; // Skip ","
+      tok = tok->next;
     } while (is_typename(tok));
 
     tok = skip(tok, ")");
@@ -3861,7 +3862,7 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
   if (is_func_ov != 0) {
     for (Type *params_ty = ident.method_ty->next; params_ty; params_ty = params_ty->next)
-      if (params_ty == ty_int || params_ty->origin == ty_int)
+      if (params_ty->origin == ty_int && params_ty->name_pos->kind == TK_NUM)
         // Ambiguous literal
         error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
   } else {
@@ -4061,7 +4062,7 @@ static Node *primary(Token **rest, Token *tok) {
     void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
     if (is_func_ov != 0) {
       for (Type *params_ty = ident.method_ty; params_ty; params_ty = params_ty->next)
-        if (params_ty == ty_int || params_ty->origin == ty_int)
+        if (params_ty->origin == ty_int && params_ty->name_pos->kind == TK_NUM)
           // Ambiguous literal
           error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
     } else {
@@ -4722,6 +4723,9 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
   // automatically defined as a local variable containing the
   // current function name.
+  // **Update** since SuperC functions can have overloads, the __func__/__FUNCTION__
+  // will be the symbol of the function for compatibility, instead of the name.
+  // Regular C style functions will not be affected by this change
   char *symname = get_symbolname(fn);
   Obj *__fnname__ = new_string_literal(symname, array_of(ty_char, strlen(symname) + 1));
   push_scope("__func__")->var = __fnname__;
