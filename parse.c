@@ -4667,8 +4667,13 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
   // automatically defined as a local variable containing the
   // current function name.
-  Obj *__fnname__ = new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  // **Update** since SuperC functions can have overloads, the __func__/__FUNCTION__
+  // will be the symbol of the function for compatibility, instead of the name.
+  // Regular C style functions will not be affected by this change
+  char *symname = get_symbolname(fn);
+  Obj *__fnname__ = new_string_literal(symname, array_of(ty_char, strlen(symname) + 1));
   push_scope("__func__")->var = __fnname__;
+
 
   // [GNU] __FUNCTION__ is yet another name of __func__.
   push_scope("__FUNCTION__")->var = __fnname__;
