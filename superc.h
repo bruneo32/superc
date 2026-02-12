@@ -108,7 +108,8 @@ struct Token {
 typedef struct Identifier Identifier;
 struct Identifier {
   char *name;
-  Type *method_ty;
+  Type *recv_ty;
+  Type *params_ty;
 };
 
 noreturn void error(char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -207,7 +207,7 @@ static char *find_brk_label(size_t depth) {
 
 // Find a variable by name.
 static VarScope *find_var(Identifier ident) {
-  if (ident.method_ty && ident.name) {
+  if (ident.recv_ty && ident.name) {
     /* Isn't quick method, but is. */
     for (Scope *sc = scope; sc; sc = sc->next) {
       for (size_t i = 0; i < sc->vars.capacity; ++i) {
@@ -215,13 +215,13 @@ static VarScope *find_var(Identifier ident) {
         if (!ent) continue;
         VarScope *sc2 = ent->val;
         if (!sc2 || !sc2->var ||
-            !sc2->var->recv.method_ty ||
+            !sc2->var->recv.recv_ty ||
             !sc2->var->recv.name)
           continue;
 
         /* Check if it's the same method by value, not by pointer*/
-        char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
-        char *msg2 = type_to_asmident(ident.method_ty);
+        char *msg1 = type_to_asmident(sc2->var->recv.recv_ty);
+        char *msg2 = type_to_asmident(ident.recv_ty);
         if (strcmp(msg1, msg2) != 0){
           free(msg1);
           free(msg2);
@@ -385,10 +385,10 @@ static Obj *new_var(char *name, Identifier *ident, Type *ty) {
   var->name = name;
   var->ty = ty;
   var->align = ty->align;
-  if (ident && ident->method_ty)
+  if (ident && ident->recv_ty)
     var->recv = *ident;
   else
-    var->recv = (Identifier){0, 0};
+    var->recv = (Identifier){0, 0, 0};
   push_scope(name)->var = var;
   return var;
 }
@@ -482,7 +482,8 @@ static Identifier consume_ident(Token** rest, Token *tok) {
       *rest = tok->next->next;
       return (Identifier){
         .name = namestr,
-        .method_ty = ty,
+        .recv_ty = ty,
+        .params_ty = NULL,
       };
     }
 
@@ -494,7 +495,8 @@ static Identifier consume_ident(Token** rest, Token *tok) {
     *rest = tok->next;
     return (Identifier){
       .name = namestr,
-      .method_ty = NULL,
+      .recv_ty = NULL,
+      .params_ty = NULL,
     };
   }
 
@@ -502,14 +504,18 @@ static Identifier consume_ident(Token** rest, Token *tok) {
 }
 
 static char *ident_to_string(Identifier ident) {
-  if (ident.method_ty)
-    return format("(%s).%s", type_to_string(ident.method_ty), ident.name);
+  if (ident.recv_ty)
+    return format("(%s).%s", type_to_string(ident.recv_ty), ident.name);
   return ident.name;
 }
 
 static Type *find_typedef(Token *tok) {
   if (tok->kind == TK_IDENT) {
-    Identifier ident = {.name = get_ident(tok), 0};
+    Identifier ident = {
+      .name = get_ident(tok),
+      .recv_ty = NULL,
+      .params_ty = NULL
+    };
     VarScope *sc = find_var(ident);
     if (sc)
       return sc->type_def;
@@ -2505,7 +2511,12 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__iadd__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__iadd__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -2536,7 +2547,12 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__isub__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__isub__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -2567,7 +2583,12 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__imul__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__imul__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -2598,7 +2619,12 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__idiv__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__idiv__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -2629,7 +2655,12 @@ static Node *assign(Token **rest, Token *tok) {
     add_type(rhs);
 
     /* Lookup method */
-    Identifier ident = {"__imod__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__imod__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -2770,7 +2801,12 @@ static Node *equality(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__eq__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__eq__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -2803,7 +2839,12 @@ static Node *equality(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__ne__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__ne__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -2848,7 +2889,12 @@ static Node *relational(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__lt__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__lt__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -2881,7 +2927,12 @@ static Node *relational(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__le__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__le__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -2914,7 +2965,12 @@ static Node *relational(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__gt__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__gt__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -2947,7 +3003,12 @@ static Node *relational(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__ge__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__ge__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3085,7 +3146,12 @@ static Node *add(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__add__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__add__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3118,7 +3184,12 @@ static Node *add(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__sub__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__sub__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3163,7 +3234,12 @@ static Node *mul(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__mul__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__mul__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3196,7 +3272,12 @@ static Node *mul(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__div__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__div__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3229,7 +3310,12 @@ static Node *mul(Token **rest, Token *tok) {
       add_type(rhs);
 
       /* Lookup method */
-      Identifier ident = {"__mod__", array_decay(node->ty)};
+      Identifier ident = {
+        .name = "__mod__",
+        .recv_ty = array_decay(node->ty),
+        .params_ty = NULL,
+      };
+
       Obj *fn = find_func(ident);
       if (!fn) {
         /* Safe check */
@@ -3291,7 +3377,11 @@ static Node *unary(Token **rest, Token *tok) {
     add_type(node);
 
     /* Lookup method */
-    Identifier ident = {"__pos__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__pos__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -3310,7 +3400,12 @@ static Node *unary(Token **rest, Token *tok) {
     add_type(node);
 
     /* Lookup method */
-    Identifier ident = {"__neg__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__neg__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -3352,7 +3447,12 @@ static Node *unary(Token **rest, Token *tok) {
     add_type(node);
 
     /* Lookup method */
-    Identifier ident = {"__del__", array_decay(node->ty)};
+    Identifier ident = {
+      .name = "__del__",
+      .recv_ty = array_decay(node->ty),
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -3860,13 +3960,18 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   char *name_str = get_ident(name_tok);
 
   /* Lookup method */
-  Identifier ident = {name_str, basety};
+  Identifier ident = {
+    .name = name_str,
+    .recv_ty = basety,
+    .params_ty = NULL,
+  };
+
   fnobj = find_func(ident);
   if (!fnobj)
     error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
 
   /* Check that is the type expected */
-  Type *impl_type = fnobj->recv.method_ty;
+  Type *impl_type = fnobj->recv.recv_ty;
   if (!same_type_value(basety, impl_type))
     error_tok(name_tok, "expected a method of type '%s'", basety_str);
 
@@ -4145,7 +4250,7 @@ static Obj *find_func(Identifier ident) {
     sc = sc->next;
 
   /* If method_ty, search for its overload */
-  if (ident.method_ty && ident.name) {
+  if (ident.recv_ty && ident.name) {
     /* Isn't quick method, but is */
     for (size_t i = 0; i < sc->vars.capacity; ++i) {
       HashEntry *ent = &sc->vars.buckets[i];
@@ -4153,12 +4258,12 @@ static Obj *find_func(Identifier ident) {
       VarScope *sc2 = ent->val;
 
       if (!sc2 || !sc2->var || !sc2->var->is_function ||
-          !sc2->var->recv.method_ty ||
+          !sc2->var->recv.recv_ty ||
           !sc2->var->recv.name)
         continue;
 
       /* Check if it's the same method by value, not by pointer */
-      if (!same_type_value(sc2->var->recv.method_ty, ident.method_ty))
+      if (!same_type_value(sc2->var->recv.recv_ty, ident.recv_ty))
         continue;
 
       /* Check if it's the method we are searching for */
@@ -4187,7 +4292,12 @@ static void mark_live(Obj *var) {
 
   for (int i = 0; i < var->refs.len; i++) {
     // Search function by name, no type
-    Identifier ident = {var->refs.data[i], NULL};
+    Identifier ident = {
+      .name = var->refs.data[i],
+      .recv_ty = NULL,
+      .params_ty = NULL,
+    };
+
     Obj *fn = find_func(ident);
     if (fn)
       mark_live(fn);
@@ -4588,7 +4698,11 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
   /* Save the method type and name */
-  Identifier ident = {name_str, recv};
+  Identifier ident = {
+    .name = name_str,
+    .recv_ty = recv,
+    .params_ty = NULL,
+  };
 
   /* Underlying identifier for methods is not the method name, it's uid */
   if (recv)
