@@ -18,12 +18,19 @@ int (int a) sum(int b) {
 int (short a) sum(short b) {
   return a + b - 1;
 }
+// Automatic symbol mangling 'sum$si'
+int (short a) sum(int b) {
+  return 100000;
+}
 
 int main() {
   ASSERT(-1, sum((int)1, (int)2));
   ASSERT(0,  sum((short)1, (short)2));
   ASSERT(3,  ((int)1).sum((int)2));
   ASSERT(2,  ((short)1).sum((short)2));
+  ASSERT(2,  ((short)1).sum((short)2));
+
+  ASSERT(100000, ((short)1).sum((int)2));
 
   // int (*foo)(int, int) = sum(int, int);
   // int (*bar)(int, int) = (int).sum(int);

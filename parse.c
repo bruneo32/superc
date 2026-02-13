@@ -2535,10 +2535,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
     Identifier ident = {
       .name = "__iadd__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -2546,7 +2552,8 @@ static Node *assign(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot add non-numeric types");
+        error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) += (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
     }
@@ -2560,10 +2567,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
     Identifier ident = {
       .name = "__isub__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -2571,7 +2584,8 @@ static Node *assign(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot subtract non-numeric types");
+        error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) -= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_sub(node, rhs, tok));
     }
@@ -2585,10 +2599,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
     Identifier ident = {
       .name = "__imul__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -2596,7 +2616,8 @@ static Node *assign(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot multiply non-numeric types");
+        error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) *= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MUL, node, rhs, tok));
     }
@@ -2610,10 +2631,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
     Identifier ident = {
       .name = "__idiv__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -2621,7 +2648,8 @@ static Node *assign(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot divide non-numeric types");
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) /= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_DIV, node, rhs, tok));
     }
@@ -2635,10 +2663,16 @@ static Node *assign(Token **rest, Token *tok) {
     Node *rhs = assign(rest, tok->next);
     add_type(rhs);
 
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
     /* Lookup method */
     Identifier ident = {
       .name = "__imod__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -2646,7 +2680,8 @@ static Node *assign(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-        error_tok(tok, "cannot divide non-numeric types");
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %%= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MOD, node, rhs, tok));
     }
@@ -2770,10 +2805,16 @@ static Node *equality(Token **rest, Token *tok) {
       Node *rhs = relational(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__eq__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2781,7 +2822,8 @@ static Node *equality(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) == (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_EQ, node, rhs, start);
         continue;
@@ -2797,10 +2839,16 @@ static Node *equality(Token **rest, Token *tok) {
       Node *rhs = relational(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__ne__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2808,7 +2856,8 @@ static Node *equality(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) != (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_NE, node, rhs, start);
         continue;
@@ -2836,10 +2885,16 @@ static Node *relational(Token **rest, Token *tok) {
       Node *rhs = shift(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__lt__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2847,7 +2902,8 @@ static Node *relational(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) < (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LT, node, rhs, start);
         continue;
@@ -2863,10 +2919,16 @@ static Node *relational(Token **rest, Token *tok) {
       Node *rhs = shift(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__le__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2874,7 +2936,8 @@ static Node *relational(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) <= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LE, node, rhs, start);
         continue;
@@ -2890,10 +2953,16 @@ static Node *relational(Token **rest, Token *tok) {
       Node *rhs = shift(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__gt__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2901,7 +2970,8 @@ static Node *relational(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) > (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison (inversion of ND_LT) */
         node = new_binary(ND_LT, rhs, node, start);
         continue;
@@ -2917,10 +2987,16 @@ static Node *relational(Token **rest, Token *tok) {
       Node *rhs = shift(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__ge__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -2928,7 +3004,8 @@ static Node *relational(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot compare non-numeric types");
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) >= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LE, rhs, node, start);
         continue;
@@ -3049,10 +3126,16 @@ static Node *add(Token **rest, Token *tok) {
       Node *rhs = mul(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__add__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -3060,7 +3143,8 @@ static Node *add(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot add non-numeric types");
+          error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) + (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
         continue;
@@ -3076,10 +3160,16 @@ static Node *add(Token **rest, Token *tok) {
       Node *rhs = mul(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__sub__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -3087,7 +3177,8 @@ static Node *add(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot subtract non-numeric types");
+          error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) - (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_sub(node, rhs, start);
         continue;
@@ -3115,10 +3206,16 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__mul__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -3126,7 +3223,8 @@ static Node *mul(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot multiply non-numeric types");
+          error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) * (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_MUL, node, rhs, start);
         continue;
@@ -3142,10 +3240,16 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__div__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -3153,7 +3257,8 @@ static Node *mul(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot divide non-numeric types");
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) / (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_DIV, node, rhs, start);
         continue;
@@ -3169,10 +3274,16 @@ static Node *mul(Token **rest, Token *tok) {
       Node *rhs = cast(&tok, tok->next);
       add_type(rhs);
 
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
       /* Lookup method */
       Identifier ident = {
         .name = "__mod__",
-        .params_ty = array_decay(node->ty),
+        .params_ty = pty,
         .is_method = true,
       };
 
@@ -3180,7 +3291,8 @@ static Node *mul(Token **rest, Token *tok) {
       if (!fn) {
         /* Safe check */
         if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
-          error_tok(tok, "cannot divide non-numeric types");
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %% (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
         /* Return normal arithmetic */
         node = new_binary(ND_MOD, node, rhs, start);
         continue;
@@ -3225,10 +3337,12 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
     Identifier ident = {
       .name = "__pos__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -3236,7 +3350,8 @@ static Node *unary(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot operate unary plus on non-numeric types");
+        error_tok(tok, "cannot operate unary plus on non-numeric types, no operator overload for +(%s)",
+                   type_to_string(pty));
       /* Return node */
       return node;
     }
@@ -3249,10 +3364,12 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
     Identifier ident = {
       .name = "__neg__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -3260,7 +3377,8 @@ static Node *unary(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot negate non-numeric types");
+        error_tok(tok, "cannot negate non-numeric types, no operator overload for -(%s)",
+                   type_to_string(pty));
       /* Return normal negation */
       return new_unary(ND_NEG, node, tok);
     }
@@ -3296,10 +3414,12 @@ static Node *unary(Token **rest, Token *tok) {
     Node *node = cast(rest, tok->next);
     add_type(node);
 
+    Type *pty = array_decay(node->ty);
+
     /* Lookup method */
     Identifier ident = {
       .name = "__del__",
-      .params_ty = array_decay(node->ty),
+      .params_ty = pty,
       .is_method = true,
     };
 
@@ -3307,7 +3427,8 @@ static Node *unary(Token **rest, Token *tok) {
     if (!fn) {
       /* Safe check */
       if (!is_arithmetic_type(node->ty))
-        error_tok(tok, "cannot invert non-numeric types");
+        error_tok(tok, "cannot invert non-numeric types, no operator overload for ~(%s)",
+                   type_to_string(pty));
       /* Return normal inversion */
       return new_unary(ND_BITNOT, node, tok);
     }

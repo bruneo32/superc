@@ -91,7 +91,7 @@ myint (myint a) __neg__() {
 }
 
 myint (myint a) __pos__() {
-  if (a < 0) // call __lt__ here
+  if (a < (int)0) // call __lt__ here
     a = -a;  // call __neg__ here
   return a;
 }
@@ -106,30 +106,30 @@ int main() {
   myint b = { .x = 5 };
 
   // Arithmetic operators
-  ASSERT(3, ({ myint c = a + 2; c.x; }) );
-  ASSERT(3, (a + 2).x ); // Same as above
+  ASSERT(3, ({ myint c = a + (int)2; c.x; }) );
+  ASSERT(3, (a + (int)2).x ); // Same as above
   ASSERT(1, a.x); // a unmodified
 
-  ASSERT(-1, ({ myint c = a - 2; c.x; }) );
-  ASSERT(-1, (a - 2).x );
+  ASSERT(-1, ({ myint c = a - (int)2; c.x; }) );
+  ASSERT(-1, (a - (int)2).x );
   ASSERT(1, a.x);
 
   a.x = 1;
-  ASSERT(2, ({ myint c = a * 2; c.x; }) );
-  ASSERT(2, (a * 2).x );
+  ASSERT(2, ({ myint c = a * (int)2; c.x; }) );
+  ASSERT(2, (a * (int)2).x );
   ASSERT(1, a.x );
   a.x = 2;
-  ASSERT(4, ({ myint c = a * 2; c.x; }) );
-  ASSERT(4, (a * 2).x );
+  ASSERT(4, ({ myint c = a * (int)2; c.x; }) );
+  ASSERT(4, (a * (int)2).x );
   ASSERT(2, a.x);
 
   a.x = 4;
-  ASSERT(2, ({ myint c = a / 2; c.x; }) );
-  ASSERT(2, (a / 2).x );
+  ASSERT(2, ({ myint c = a / (int)2; c.x; }) );
+  ASSERT(2, (a / (int)2).x );
   ASSERT(4, a.x );
   a.x = 1;
-  ASSERT(0, ({ myint c = a / 2; c.x; }) );
-  ASSERT(0, (a / 2).x );
+  ASSERT(0, ({ myint c = a / (int)2; c.x; }) );
+  ASSERT(0, (a / (int)2).x );
   ASSERT(1, a.x);
 
   // Assigment operators
@@ -153,22 +153,22 @@ int main() {
 
   // Comparison operators
   a.x = -4;
-  ASSERT(0, a == 1);
-  ASSERT(1, a == -4);
-  ASSERT(1, a != 100);
-  ASSERT(0, a != -4);
-  ASSERT(0, a < -5);
-  ASSERT(0, a < -4);
-  ASSERT(1, a < -3);
-  ASSERT(1, a > -5);
-  ASSERT(0, a > -4);
-  ASSERT(0, a > -3);
-  ASSERT(0, a <= -5);
-  ASSERT(1, a <= -4);
-  ASSERT(1, a <= -3);
-  ASSERT(1, a >= -5);
-  ASSERT(1, a >= -4);
-  ASSERT(0, a >= -3);
+  ASSERT(0, a == (int)1);
+  ASSERT(1, a == (int)-4);
+  ASSERT(1, a != (int)100);
+  ASSERT(0, a != (int)-4);
+  ASSERT(0, a <  (int)-5);
+  ASSERT(0, a <  (int)-4);
+  ASSERT(1, a <  (int)-3);
+  ASSERT(1, a >  (int)-5);
+  ASSERT(0, a >  (int)-4);
+  ASSERT(0, a >  (int)-3);
+  ASSERT(0, a <= (int)-5);
+  ASSERT(1, a <= (int)-4);
+  ASSERT(1, a <= (int)-3);
+  ASSERT(1, a >= (int)-5);
+  ASSERT(1, a >= (int)-4);
+  ASSERT(0, a >= (int)-3);
 
   // Unary operators
   ASSERT(4, -a.x);   // Unary negation of the member
