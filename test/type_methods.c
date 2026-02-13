@@ -39,8 +39,9 @@ int (Bar b) sum2(int a) {
 
 int main() {
   ASSERT(-1, sum(1, 2));
-  ASSERT(3, ((int)1).sum(2));
-  ASSERT(3, (int).sum(1, 2));
+  ASSERT(-1, sum(int, int)(1, 2));
+  ASSERT(3, ((int)1).sum((int)2));
+  ASSERT(3, (int).sum(int)(1, 2));
 
   struct cat mycat = { "Mr. Pants", 3 };
   (&mycat).roar();

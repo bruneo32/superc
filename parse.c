@@ -467,20 +467,50 @@ static Identifier consume_ident(Token** rest, Token *tok) {
   /* Select type methods as idenfiers `(int).sum` */
   if (equal(tok, "(") && is_typename(tok->next)) {
     /* Parse typename */
-    Type *ty = typename(&tok, tok->next);
+    Type *params = typename(&tok, tok->next);
 
     /* Convert array and function types to pointers */
-    ty = array_decay(ty);
+    params = array_decay(params);
 
     tok = skip(tok, ")");
 
     /* Parse after type */
     if (equal(tok, ".") && tok->next->kind == TK_IDENT) {
-      char *namestr = get_ident(tok->next);
-      *rest = tok->next->next;
+      tok = tok->next;
+      char *namestr = get_ident(tok);
+
+      /* Select methodcalls as identifiers `(int).foo(int)` */
+      if (equal(tok->next, "(") && is_typename(tok->next->next)) {
+        tok = tok->next->next;
+
+        /* Lookup parameter types */
+        Type *cur = params;
+        bool first = true;
+        while (!equal(tok, ")")) {
+          if (!first)
+            tok = skip(tok, ",");
+
+          // TODO: handle variadic
+
+          Type *pty = array_decay(typename(&tok, tok));
+          if (is_ty_original(pty))
+            // Clone to avoid list destruction
+            pty = copy_type(pty);
+
+          cur = cur->next = pty;
+          first = false;
+        }
+
+        // Terminate the parameter list
+        if (params && cur)
+          cur->next = NULL;
+      }
+
+      *rest = tok->next;
+
       return (Identifier){
         .name = namestr,
-        .params_ty = ty,
+        .params_ty = params,
         .is_method = true,
       };
     }
@@ -490,10 +520,44 @@ static Identifier consume_ident(Token** rest, Token *tok) {
 
   if (tok->kind == TK_IDENT) {
     char *namestr = get_ident(tok);
+
+    /* Select funcalls as identifiers `foo(int)` */
+    Type *params = NULL;
+    if (equal(tok->next, "(") && is_typename(tok->next->next)) {
+      tok = tok->next->next;
+
+      /* Lookup parameter types */
+      Type *cur = NULL;
+      bool first = true;
+      while (!equal(tok, ")")) {
+        if (!first)
+          tok = skip(tok, ",");
+
+        // TODO: handle variadic
+
+        Type *pty = array_decay(typename(&tok, tok));
+        if (is_ty_original(pty))
+          // Clone to avoid list destruction
+          pty = copy_type(pty);
+
+        if (!cur)
+          cur = params = pty;
+        else
+          cur = cur->next = pty;
+
+        first = false;
+      }
+
+      // Terminate the parameter list
+      if (params && cur)
+        cur->next = NULL;
+    }
+
     *rest = tok->next;
+
     return (Identifier){
       .name = namestr,
-      .params_ty = NULL,
+      .params_ty = params,
       .is_method = false,
     };
   }
