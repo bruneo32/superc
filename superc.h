@@ -108,8 +108,10 @@ struct Token {
 typedef struct Identifier Identifier;
 struct Identifier {
   char *name;
-  Type *recv_ty;
   Type *params_ty;
+  /* True if this is a type method `(int).sum`,
+   * False for a function */
+  bool is_method;
 };
 
 noreturn void error(char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -169,8 +171,8 @@ struct Obj {
   Relocation *rel;
 
   // Function
+  Identifier ident;
   bool is_inline;
-  Identifier recv;
   Obj *params;
   Node *body;
   Obj *locals;
@@ -442,6 +444,7 @@ extern Type *ty_float;
 extern Type *ty_double;
 extern Type *ty_ldouble;
 
+bool is_ty_original(Type *ty);
 bool is_integer(Type *ty);
 bool is_flonum(Type *ty);
 bool is_numeric(Type *ty);
@@ -456,9 +459,9 @@ Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
 bool same_type(Type *a, Type *b);
-bool same_type_value(Type *a, Type *b);
+bool same_type_value(Type *a, Type *b, bool recurse);
 char *type_to_string(Type *ty);
-char *type_to_asmident(Type *ty);
+char *type_to_asmident(Type *ty, bool recurse);
 
 //
 // codegen.c

@@ -88,6 +88,9 @@ struct StrArray {
   StrArray *next;
 };
 
+static const Identifier ident_none = {.name = NULL, .params_ty = NULL, .is_method = 0};
+#define IdentNamed(name_) ((Identifier){.name = (name_), .params_ty = NULL, .is_method = 0})
+
 // All local variable instances created during parsing are
 // accumulated to this list.
 static Obj *locals;
@@ -111,6 +114,12 @@ static char *cont_label;
 // Points to a node representing a switch if we are parsing
 // a switch statement. Otherwise, NULL.
 static Node *current_switch;
+
+/**
+ * Maps functions that have been overloaded.
+ * (char*)name => (size_t)count
+ */
+static HashMap map_func_ov = {0};
 
 static Obj *builtin_alloca;
 
@@ -207,31 +216,23 @@ static char *find_brk_label(size_t depth) {
 
 // Find a variable by name.
 static VarScope *find_var(Identifier ident) {
-  if (ident.recv_ty && ident.name) {
+  if (ident.params_ty && ident.name) {
     /* Isn't quick method, but is. */
     for (Scope *sc = scope; sc; sc = sc->next) {
       for (size_t i = 0; i < sc->vars.capacity; ++i) {
         HashEntry *ent = &sc->vars.buckets[i];
         if (!ent) continue;
         VarScope *sc2 = ent->val;
-        if (!sc2 || !sc2->var ||
-            !sc2->var->recv.recv_ty ||
-            !sc2->var->recv.name)
+        if (!sc2 || !sc2->var || !sc2->var->ident.name || !sc2->var->ident.params_ty ||
+            sc2->var->ident.is_method != ident.is_method)
           continue;
 
         /* Check if it's the same method by value, not by pointer*/
-        char *msg1 = type_to_asmident(sc2->var->recv.recv_ty);
-        char *msg2 = type_to_asmident(ident.recv_ty);
-        if (strcmp(msg1, msg2) != 0){
-          free(msg1);
-          free(msg2);
+        if (!same_type_value(sc2->var->ident.params_ty, ident.params_ty, true))
           continue;
-        }
-        free(msg1);
-        free(msg2);
 
         /* Check if it's the method we are searching for */
-        if (strcmp(sc2->var->recv.name, ident.name) == 0)
+        if (strcmp(sc2->var->ident.name, ident.name) == 0)
           return sc2;
       }
     }
@@ -380,20 +381,17 @@ static Initializer *new_initializer(Type *ty, bool is_flexible) {
   return init;
 }
 
-static Obj *new_var(char *name, Identifier *ident, Type *ty) {
+static Obj *new_var(char *name, Identifier ident, Type *ty) {
   Obj *var = calloc(1, sizeof(Obj));
   var->name = name;
   var->ty = ty;
   var->align = ty->align;
-  if (ident && ident->recv_ty)
-    var->recv = *ident;
-  else
-    var->recv = (Identifier){0, 0, 0};
+  var->ident = ident;
   push_scope(name)->var = var;
   return var;
 }
 
-static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_lvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->is_local = true;
   var->next = locals;
@@ -401,7 +399,7 @@ static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
   return var;
 }
 
-static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_gvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->next = globals;
   var->is_static = true;
@@ -416,7 +414,7 @@ static char *new_unique_name(void) {
 }
 
 static Obj *new_anon_gvar(Type *ty) {
-  return new_gvar(new_unique_name(), NULL, ty);
+  return new_gvar(new_unique_name(), ident_none, ty);
 }
 
 static Obj *new_string_literal(char *p, Type *ty) {
@@ -482,8 +480,8 @@ static Identifier consume_ident(Token** rest, Token *tok) {
       *rest = tok->next->next;
       return (Identifier){
         .name = namestr,
-        .recv_ty = ty,
-        .params_ty = NULL,
+        .params_ty = ty,
+        .is_method = true,
       };
     }
 
@@ -495,8 +493,8 @@ static Identifier consume_ident(Token** rest, Token *tok) {
     *rest = tok->next;
     return (Identifier){
       .name = namestr,
-      .recv_ty = NULL,
       .params_ty = NULL,
+      .is_method = false,
     };
   }
 
@@ -504,8 +502,35 @@ static Identifier consume_ident(Token** rest, Token *tok) {
 }
 
 static char *ident_to_string(Identifier ident) {
-  if (ident.recv_ty)
-    return format("(%s).%s", type_to_string(ident.recv_ty), ident.name);
+  if (ident.params_ty) {
+    StringBuilder sb;
+    sb_init(&sb);
+
+    Type *ty = ident.params_ty;
+
+    if (!ident.is_method) {
+      /* foo(int, short) */
+      sb_appendf(&sb, "%s(", ident.name);
+    } else {
+      /* (int).foo(short) */
+      char *recv_str = type_to_string(ty);
+      sb_appendf(&sb, "(%s).%s(", recv_str, ident.name);
+      free(recv_str);
+      ty = ty->next; // skip the receiver, and go for params
+    }
+
+    for (Type *pty = ty; pty; pty = pty->next) {
+      if (pty != ty)
+        sb_appendf(&sb, ", ");
+      char *tystr = type_to_string(pty);
+      sb_appendf(&sb, "%s", tystr);
+      free(tystr);
+    }
+
+    sb_append(&sb, ")");
+    return sb.buf;
+  }
+
   return ident.name;
 }
 
@@ -513,8 +538,8 @@ static Type *find_typedef(Token *tok) {
   if (tok->kind == TK_IDENT) {
     Identifier ident = {
       .name = get_ident(tok),
-      .recv_ty = NULL,
-      .params_ty = NULL
+      .params_ty = NULL,
+      .is_method = 0,
     };
     VarScope *sc = find_var(ident);
     if (sc)
@@ -1020,7 +1045,7 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
   else
     base_sz = new_num(ty->base->size, tok);
 
-  ty->vla_size = new_lvar("", NULL, ty_ulong);
+  ty->vla_size = new_lvar("", ident_none, ty_ulong);
   Node *expr = new_binary(ND_ASSIGN, new_var_node(ty->vla_size, tok),
                           new_binary(ND_MUL, ty->vla_len, base_sz, tok),
                           tok);
@@ -1074,7 +1099,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       // Variable length arrays (VLAs) are translated to alloca() calls.
       // For example, `int x[n+2]` is translated to `tmp = n + 2,
       // x = alloca(tmp)`.
-      Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+      Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
       Token *tok = ty->name;
       Node *expr = new_binary(ND_ASSIGN, new_vla_ptr(var, tok),
                               new_alloca(new_var_node(ty->vla_size, tok)),
@@ -1084,7 +1109,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       continue;
     }
 
-    Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
     if (attr && attr->align)
       var->align = attr->align;
 
@@ -2321,7 +2346,7 @@ static Node *to_assign(Node *binary) {
 
   // Convert `A.x op= C` to `tmp = &A, (*tmp).x = (*tmp).x op C`.
   if (binary->lhs->kind == ND_MEMBER) {
-    Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->lhs->ty));
+    Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->lhs->ty));
 
     Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                              new_unary(ND_ADDR, binary->lhs->lhs, tok), tok);
@@ -2356,10 +2381,10 @@ static Node *to_assign(Node *binary) {
     Node head = {};
     Node *cur = &head;
 
-    Obj *addr = new_lvar("", NULL, pointer_to(binary->lhs->ty));
-    Obj *val = new_lvar("", NULL, binary->rhs->ty);
-    Obj *old = new_lvar("", NULL, binary->lhs->ty);
-    Obj *new = new_lvar("", NULL, binary->lhs->ty);
+    Obj *addr = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
+    Obj *val = new_lvar("", ident_none, binary->rhs->ty);
+    Obj *old = new_lvar("", ident_none, binary->lhs->ty);
+    Obj *new = new_lvar("", ident_none, binary->lhs->ty);
 
     cur = cur->next =
       new_unary(ND_EXPR_STMT,
@@ -2406,7 +2431,7 @@ static Node *to_assign(Node *binary) {
   }
 
   // Convert `A op= B` to ``tmp = &A, *tmp = *tmp op B`.
-  Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->ty));
+  Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
 
   Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                            new_unary(ND_ADDR, binary->lhs, tok), tok);
@@ -2491,7 +2516,7 @@ static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", NULL, node->ty);
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
   return node;
 }
 
@@ -2513,8 +2538,8 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__iadd__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -2524,17 +2549,6 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot add non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_add(node, rhs, tok));
-    }
-
-    /* Check that rhs type is correct */
-    Type *ftyr = array_decay(rhs->ty);
-    if (!same_type_value(fn->ty->params->next, ftyr)) {
-      char *msg3 = type_to_string(fn->ty->params);
-      error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
-                msg3,
-                type_to_string(fn->ty->params->next),
-                msg3,
-                type_to_string(ftyr));
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2549,8 +2563,8 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__isub__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -2560,17 +2574,6 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot subtract non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_sub(node, rhs, tok));
-    }
-
-    /* Check that rhs type is correct */
-    Type *ftyr = array_decay(rhs->ty);
-    if (!same_type_value(fn->ty->params->next, ftyr)) {
-      char *msg3 = type_to_string(fn->ty->params);
-      error_tok(tok, "invalid right operand type; expected (%s) += (%s), but got (%s) += (%s)",
-                msg3,
-                type_to_string(fn->ty->params->next),
-                msg3,
-                type_to_string(ftyr));
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2585,8 +2588,8 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__imul__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -2596,17 +2599,6 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot multiply non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MUL, node, rhs, tok));
-    }
-
-    /* Check that rhs type is correct */
-    Type *ftyr = array_decay(rhs->ty);
-    if (!same_type_value(fn->ty->params->next, ftyr)) {
-      char *msg3 = type_to_string(fn->ty->params);
-      error_tok(tok, "invalid right operand type; expected (%s) *= (%s), but got (%s) *= (%s)",
-                msg3,
-                type_to_string(fn->ty->params->next),
-                msg3,
-                type_to_string(ftyr));
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2621,8 +2613,8 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__idiv__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -2632,17 +2624,6 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot divide non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_DIV, node, rhs, tok));
-    }
-
-    /* Check that rhs type is correct */
-    Type *ftyr = array_decay(rhs->ty);
-    if (!same_type_value(fn->ty->params->next, ftyr)) {
-      char *msg3 = type_to_string(fn->ty->params);
-      error_tok(tok, "invalid right operand type; expected (%s) /= (%s), but got (%s) /= (%s)",
-                msg3,
-                type_to_string(fn->ty->params->next),
-                msg3,
-                type_to_string(ftyr));
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2657,8 +2638,8 @@ static Node *assign(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__imod__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -2668,17 +2649,6 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot divide non-numeric types");
       /* Return normal arithmetic */
       return to_assign(new_binary(ND_MOD, node, rhs, tok));
-    }
-
-    /* Check that rhs type is correct */
-    Type *ftyr = array_decay(rhs->ty);
-    if (!same_type_value(fn->ty->params->next, ftyr)) {
-      char *msg3 = type_to_string(fn->ty->params);
-      error_tok(tok, "invalid right operand type; expected (%s) %%= (%s), but got (%s) %%= (%s)",
-                msg3,
-                type_to_string(fn->ty->params->next),
-                msg3,
-                type_to_string(ftyr));
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2715,7 +2685,7 @@ static Node *conditional(Token **rest, Token *tok) {
   if (equal(tok->next, ":")) {
     // [GNU] Compile `a ?: b` as `tmp = a, tmp ? tmp : b`.
     add_type(cond);
-    Obj *var = new_lvar("", NULL, cond->ty);
+    Obj *var = new_lvar("", ident_none, cond->ty);
     Node *lhs = new_binary(ND_ASSIGN, new_var_node(var, tok), cond, tok);
     Node *rhs = new_node(ND_COND, tok);
     rhs->cond = new_var_node(var, tok);
@@ -2803,8 +2773,8 @@ static Node *equality(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__eq__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -2815,17 +2785,6 @@ static Node *equality(Token **rest, Token *tok) {
         /* Return normal comparison */
         node = new_binary(ND_EQ, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) == (%s), but got (%s) == (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -2841,8 +2800,8 @@ static Node *equality(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__ne__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -2853,17 +2812,6 @@ static Node *equality(Token **rest, Token *tok) {
         /* Return normal comparison */
         node = new_binary(ND_NE, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) != (%s), but got (%s) != (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -2891,8 +2839,8 @@ static Node *relational(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__lt__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -2903,17 +2851,6 @@ static Node *relational(Token **rest, Token *tok) {
         /* Return normal comparison */
         node = new_binary(ND_LT, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) < (%s), but got (%s) < (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -2929,8 +2866,8 @@ static Node *relational(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__le__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -2941,17 +2878,6 @@ static Node *relational(Token **rest, Token *tok) {
         /* Return normal comparison */
         node = new_binary(ND_LE, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) <= (%s), but got (%s) <= (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -2967,8 +2893,8 @@ static Node *relational(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__gt__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -2979,17 +2905,6 @@ static Node *relational(Token **rest, Token *tok) {
         /* Return normal comparison (inversion of ND_LT) */
         node = new_binary(ND_LT, rhs, node, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) > (%s), but got (%s) > (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3005,8 +2920,8 @@ static Node *relational(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__ge__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3017,17 +2932,6 @@ static Node *relational(Token **rest, Token *tok) {
         /* Return normal comparison */
         node = new_binary(ND_LE, rhs, node, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) >= (%s), but got (%s) >= (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3148,8 +3052,8 @@ static Node *add(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__add__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3160,17 +3064,6 @@ static Node *add(Token **rest, Token *tok) {
         /* Return normal arithmetic */
         node = new_add(node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) + (%s), but got (%s) + (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3186,8 +3079,8 @@ static Node *add(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__sub__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3198,17 +3091,6 @@ static Node *add(Token **rest, Token *tok) {
         /* Return normal arithmetic */
         node = new_sub(node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) - (%s), but got (%s) - (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3236,8 +3118,8 @@ static Node *mul(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__mul__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3248,17 +3130,6 @@ static Node *mul(Token **rest, Token *tok) {
         /* Return normal arithmetic */
         node = new_binary(ND_MUL, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) * (%s), but got (%s) * (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3274,8 +3145,8 @@ static Node *mul(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__div__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3286,17 +3157,6 @@ static Node *mul(Token **rest, Token *tok) {
         /* Return normal arithmetic */
         node = new_binary(ND_DIV, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) / (%s), but got (%s) / (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3312,8 +3172,8 @@ static Node *mul(Token **rest, Token *tok) {
       /* Lookup method */
       Identifier ident = {
         .name = "__mod__",
-        .recv_ty = array_decay(node->ty),
-        .params_ty = NULL,
+        .params_ty = array_decay(node->ty),
+        .is_method = true,
       };
 
       Obj *fn = find_func(ident);
@@ -3324,17 +3184,6 @@ static Node *mul(Token **rest, Token *tok) {
         /* Return normal arithmetic */
         node = new_binary(ND_MOD, node, rhs, start);
         continue;
-      }
-
-      /* Check that rhs type is correct */
-      Type *ftyr = array_decay(rhs->ty);
-      if (!same_type_value(fn->ty->params->next, ftyr)) {
-        char *msg3 = type_to_string(fn->ty->params);
-        error_tok(start, "invalid right operand type; expected (%s) %% (%s), but got (%s) %% (%s)",
-                  msg3,
-                  type_to_string(fn->ty->params->next),
-                  msg3,
-                  type_to_string(ftyr));
       }
 
       node = operator_overload(fn, node, rhs, start);
@@ -3379,9 +3228,10 @@ static Node *unary(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__pos__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
+
     Obj *fn = find_func(ident);
     if (!fn) {
       /* Safe check */
@@ -3402,8 +3252,8 @@ static Node *unary(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__neg__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -3449,8 +3299,8 @@ static Node *unary(Token **rest, Token *tok) {
     /* Lookup method */
     Identifier ident = {
       .name = "__del__",
-      .recv_ty = array_decay(node->ty),
-      .params_ty = NULL,
+      .params_ty = array_decay(node->ty),
+      .is_method = true,
     };
 
     Obj *fn = find_func(ident);
@@ -3742,6 +3592,15 @@ static Node *struct_ref(Node *node, Token *tok) {
     error_tok(node->tok, "not a struct nor a union");
 
   Type *ty = node->ty;
+  if (!ty->members && ty->tagname) {
+    // Maybe the members are defined in a typedef.
+    char *tagname = get_ident(ty->tagname);
+    Identifier ident = {.name = tagname, 0};
+    VarScope *sc = find_var(ident);
+    if (sc)
+      ty = sc->type_def;
+    free(tagname);
+  }
 
   for (;;) {
     Member *mem = get_struct_member(ty, tok);
@@ -3787,7 +3646,7 @@ static Node *postfix(Token **rest, Token *tok) {
       return new_var_node(var, start);
     }
 
-    Obj *var = new_lvar("", NULL, ty);
+    Obj *var = new_lvar("", ident_none, ty);
     Node *lhs = lvar_initializer(rest, tok, var);
     Node *rhs = new_var_node(var, tok);
     return new_binary(ND_COMMA, lhs, rhs, start);
@@ -3936,7 +3795,7 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   // If a function returns a struct, it is caller's responsibility
   // to allocate a space for the return value.
   if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
-    node->ret_buffer = new_lvar("", NULL, node->ty);
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
   return node;
 }
 
@@ -3947,35 +3806,64 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   Token *name_tok = tok->next;
   Token *after_name = name_tok->next;
 
+  if (name_tok->kind != TK_IDENT)
+    error_tok(name_tok, "expected a method name");
+  char *name_str = get_ident(name_tok);
+
   add_type(recv);
 
   Type *basety = array_decay(recv->ty);
-
+  if (basety == ty_int)
+    error_tok(recv->tok, "method call does not allow ambiguous number types\nCast the number '%ld' to the desired type. For example, '(int)%ld'", recv->val, recv->val);
   char *basety_str = type_to_string(basety);
 
-  Obj *fnobj = NULL;
-  if (name_tok->kind != TK_IDENT)
-    error_tok(name_tok, "expected a method name");
+  /* Lookup parameter types */
+  tok = skip(after_name, "(");
+  Token *lookup_tok = tok;
+  Type *cur = basety;
 
-  char *name_str = get_ident(name_tok);
+  bool first = true;
+  while (!equal(lookup_tok, ")")) {
+    if (!first)
+      lookup_tok = skip(lookup_tok, ",");
+    Node *arg = assign(&lookup_tok, lookup_tok);
+    add_type(arg);
+    Type *pty = array_decay(arg->ty);
+
+    if (is_ty_original(pty))
+      // Clone to avoid list destruction
+      pty = copy_type(pty);
+
+    pty->name_pos = arg->tok;
+
+    cur = cur->next = pty;
+    first = false;
+  }
 
   /* Lookup method */
   Identifier ident = {
     .name = name_str,
-    .recv_ty = basety,
-    .params_ty = NULL,
+    .params_ty = basety,
+    .is_method = true,
   };
 
-  fnobj = find_func(ident);
+  /* Check if some of the arguments is an ambiguous literal
+    * only for overloaded functions */
+  void *is_func_ov = hashmap_get(&map_func_ov, ident.name);
+  if (is_func_ov != 0) {
+    for (Type *params_ty = ident.params_ty->next; params_ty; params_ty = params_ty->next)
+      if (params_ty->origin == ty_int && params_ty->name_pos->kind == TK_NUM)
+        // Ambiguous literal
+        error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
+  } else {
+    // If the function is not overloaded
+    // trim the parameters type for type auto casting
+    ident.params_ty = NULL;
+  }
+
+  Obj *fnobj = find_func(ident);
   if (!fnobj)
-    error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
-
-  /* Check that is the type expected */
-  Type *impl_type = fnobj->recv.recv_ty;
-  if (!same_type_value(basety, impl_type))
-    error_tok(name_tok, "expected a method of type '%s'", basety_str);
-
-  tok = skip(after_name, "(");
+    error_tok(name_tok, "unknown method '%s'", ident_to_string(ident));
 
   Node *fn = new_var_node(fnobj, name_tok);  // callee is an identifier
   fn->ty = fnobj->ty;
@@ -4170,7 +4058,7 @@ static Node *primary(Token **rest, Token *tok) {
     }
 
     if (equal(tok->next, "("))
-      error_tok(tok, "implicit declaration of a function");
+      error_tok(tok, "implicit declaration of a function '%s'", ident_to_string(ident));
     error_tok(tok, "undefined variable '%s'", ident_to_string(ident));
   }
 
@@ -4208,6 +4096,11 @@ static Token *parse_typedef(Token *tok, Type *basety) {
     Type *ty = declarator(&tok, tok, basety);
     if (!ty->name)
       error_tok(ty->name_pos, "typedef name omitted");
+
+    if (!ty->tagname && (ty->kind == TY_STRUCT || ty->kind == TY_UNION))
+      // Promote anonymous structs/unions to named structs.
+      ty->tagname = ty->name;
+
     push_scope(get_ident(ty->name))->type_def = ty;
   }
   return tok;
@@ -4218,7 +4111,7 @@ static void create_param_lvars(Type *param) {
     create_param_lvars(param->next);
     if (!param->name)
       error_tok(param->name_pos, "parameter name omitted");
-    new_lvar(get_ident(param->name), NULL, param);
+    new_lvar(get_ident(param->name), ident_none, param);
   }
 }
 
@@ -4249,27 +4142,27 @@ static Obj *find_func(Identifier ident) {
   while (sc->next)
     sc = sc->next;
 
-  /* If method_ty, search for its overload */
-  if (ident.recv_ty && ident.name) {
+  /* If params specified, search for its overload */
+  if (ident.params_ty && ident.name) {
     /* Isn't quick method, but is */
     for (size_t i = 0; i < sc->vars.capacity; ++i) {
       HashEntry *ent = &sc->vars.buckets[i];
       if (!ent) continue;
       VarScope *sc2 = ent->val;
 
-      if (!sc2 || !sc2->var || !sc2->var->is_function ||
-          !sc2->var->recv.recv_ty ||
-          !sc2->var->recv.name)
+      if (!sc2 || !sc2->var || !sc2->var->ident.name || !sc2->var->ident.params_ty ||
+          sc2->var->ident.is_method != ident.is_method)
         continue;
 
       /* Check if it's the same method by value, not by pointer */
-      if (!same_type_value(sc2->var->recv.recv_ty, ident.recv_ty))
+      if (!same_type_value(sc2->var->ident.params_ty, ident.params_ty, true))
         continue;
 
       /* Check if it's the method we are searching for */
-      if (strcmp(sc2->var->recv.name, ident.name) == 0)
+      if (strcmp(sc2->var->ident.name, ident.name) == 0)
           return sc2->var;
     }
+
     return NULL;
   }
 
@@ -4294,8 +4187,8 @@ static void mark_live(Obj *var) {
     // Search function by name, no type
     Identifier ident = {
       .name = var->refs.data[i],
-      .recv_ty = NULL,
       .params_ty = NULL,
+      .is_method = 0,
     };
 
     Obj *fn = find_func(ident);
@@ -4448,7 +4341,7 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
         get_ident(fty->params->name));
 
     /* Check if return type matches receiver type */
-    if (!same_type_value(fty->return_ty, fty->params)) {
+    if (!same_type_value(fty->return_ty, fty->params, false)) {
       char *recv_ty_str = type_to_string(fty->params);
       char *recv_id_str = get_ident(fty->params->name);
       char *param_ty_str = type_to_string(fty->params->next);
@@ -4513,7 +4406,7 @@ static void check_operator_overload_signature(Type *fty, char *name_str, Token *
         name_str, get_ident(fty->params->name));
 
     /* Check if return type matches receiver type */
-    if (!same_type_value(fty->return_ty, fty->params)) {
+    if (!same_type_value(fty->return_ty, fty->params, false)) {
       char *recv_ty_str = type_to_string(fty->params);
       char *recv_id_str = get_ident(fty->params->name);
       error_tok(name_tok, "invalid %s signature, return type does not match receiver type\nexpected '%s (%s %s) %s()', but got '%s (%s %s) %s()'",
@@ -4697,23 +4590,45 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       !strcmp(name_str, "__del__")))
     error_tok(name_tok, "operators cannot be overloaded for primitive types");
 
+  /* If there is an method implicit receiver, prepend it to param list */
+  if (recv) {
+    recv->next = ty->params;
+    ty->params = recv;
+  }
+
   /* Save the method type and name */
   Identifier ident = {
     .name = name_str,
-    .recv_ty = recv,
-    .params_ty = NULL,
+    .params_ty = ty->params,
+    .is_method = recv != NULL,
   };
 
-  /* Underlying identifier for methods is not the method name, it's uid */
+  /* Underlying identifier is not the name, it's uid */
+  char *name_fid = new_unique_name();
   if (recv)
-    name_str = new_unique_name();
+    name_str = name_fid;
 
   /* Check if its definition or declaration */
   Token *tok_attr = tok;
+  char *lookup_symbol = NULL;
   if (equal(tok, "__attribute__")) {
-    // Skip attributes to read the following '{'
-    tok = attribute_list(tok, NULL, NULL); // Pass NULL to just advance the token
+    // Skip attributes and lookup ((symbol)) for function name
+    Obj attr_lookup = {0};
+    tok = attribute_list(tok, NULL, &attr_lookup);
+    lookup_symbol = attr_lookup.symbol;
+    if (attr_lookup.symbol)
+      // If the function has a symbol attribute
+      // randomize name to allow function override
+      name_str = name_fid;
+  } else if (recv) {
+    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
+    char *type_cname = type_to_asmident(recv, true);
+    size_t newlen = strlen(ident.name) + strlen(type_cname) + 2;
+    lookup_symbol = malloc(newlen);
+    snprintf(lookup_symbol, newlen, "%s$%s", ident.name, type_cname);
+    free(type_cname);
   }
+
   const bool is_def = equal(tok, "{");
 
   Obj *fn = find_func(ident);
@@ -4727,32 +4642,52 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       error_tok(tok, "static declaration follows a non-static declaration");
     fn->is_definition = fn->is_definition || is_def;
   } else {
-    fn = new_gvar(name_str, &ident, ty);
+    /* Check if there is a function with the same name declared before */
+
+    /** Function overload counter */
+    size_t fn_ov_cx = 0;
+
+    /* Count all the other functions with the same name */
+    for (Obj *fn_ov = globals; fn_ov; fn_ov = fn_ov->next) {
+      /* Check if it's the same function name */
+      if (!fn_ov->is_function || strcmp(fn_ov->ident.name, ident.name) != 0)
+        continue;
+
+      /* Check that every overload has a different symbol */
+      char *fn_symbol = lookup_symbol ?: ident.name;
+      char *fn_ov_symbol = get_symbolname(fn_ov);
+      if (!strcmp(fn_ov_symbol, fn_symbol))
+        error_tok(name_tok, "'%s' and '%s' have the same symbol",
+          ident_to_string(ident),
+          ident_to_string(fn_ov->ident));
+
+      fn_ov_cx++;
+    }
+
+    if (fn_ov_cx) {
+      fn_ov_cx++; // Count this function
+      // Set the number of overloads in the map
+      hashmap_put(&map_func_ov, ident.name, (void*)fn_ov_cx);
+    }
+
+    // Create a new function as global variable
+    fn = new_gvar(name_str, ident, ty);
     fn->is_function = true;
     fn->is_definition = is_def;
     fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
     fn->is_inline = attr->is_inline;
   }
 
-  if (recv) {
-    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
-    char *type_cname = type_to_asmident(recv);
-    size_t newlen = strlen(fn->recv.name) + strlen(type_cname) + 2;
-    fn->symbol = malloc(newlen);
-    snprintf(fn->symbol, newlen, "%s$%s", fn->recv.name, type_cname);
-    free(type_cname);
-  }
+  if (recv)
+    fn->symbol = lookup_symbol;
 
   tok = attribute_list(tok_attr, NULL, fn);
 
   fn->is_root = !(fn->is_static && fn->is_inline);
 
-  /* If there is an method implicit receiver, prepend it to param list */
-  if (recv) {
-    recv->next = ty->params;
-    ty->params = recv;
+  /* Check if operator overload is well formed */
+  if (recv)
     check_operator_overload_signature(ty, ident.name, name_tok);
-  }
 
   /* Not a function definition, exit */
   if (consume(&tok, tok, ";"))
@@ -4768,13 +4703,13 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("", NULL, pointer_to(rty));
+    new_lvar("", ident_none, pointer_to(rty));
 
   fn->params = locals;
 
   if (ty->is_variadic)
-    fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));
-  fn->alloca_bottom = new_lvar("__alloca_size__", NULL, pointer_to(ty_char));
+    fn->va_area = new_lvar("__va_area__", ident_none, array_of(ty_char, 136));
+  fn->alloca_bottom = new_lvar("__alloca_size__", ident_none, pointer_to(ty_char));
 
   tok = skip(tok, "{");
 
@@ -4815,7 +4750,7 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
 
-    Obj *var = new_gvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_gvar(get_ident(ty->name), ident_none, ty);
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
@@ -4906,7 +4841,8 @@ static void scan_globals(void) {
 static void declare_builtin_functions(void) {
   Type *ty = func_type(pointer_to(ty_void));
   ty->params = copy_type(ty_int);
-  builtin_alloca = new_gvar("alloca", NULL, ty);
+  char *fname = "alloca";
+  builtin_alloca = new_gvar(fname, IdentNamed(fname), ty);
   builtin_alloca->is_definition = false;
 }
 
