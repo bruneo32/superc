@@ -1,12 +1,1 @@
-**/*~
-**/\#*
-**/*.o
-**/*.s
-**/a.out
-/tmp*
-/thirdparty
-/superc
-/version.h
-/test/*.exe
-/stage2
 .vscode
