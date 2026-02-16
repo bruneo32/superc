@@ -1,3 +1,7 @@
+---
+title: Where to get help
+---
+
 ## Where to get help
 
 If you think you've found a bug in the Minimal theme, please [check the existing issues](https://github.com/pages-themes/minimal/issues), and if no one has reported the problem, [open a new issue](https://github.com/pages-themes/minimal/issues/new).
