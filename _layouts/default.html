@@ -1,39 +1,42 @@
 <!DOCTYPE html>
 <html lang="{{ site.lang | default: "en-US" }}">
-  <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-{% seo %}
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
-    <!--[if lt IE 9]>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
-    <![endif]-->
-    {% include head-custom.html %}
-  </head>
-  <body>
-    <div class="wrapper">
-      <header>
-        <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
-        <ul>
-          {% assign doc_pages = site.pages | where_exp: "p", "p.path contains 'docs/'" | sort: "title" %}
-          {% for page in doc_pages %}
-            <li>
-              <a href="{{ page.url | relative_url }}">
-                {{ page.title | default: page.path | split: '/' | last }}
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      </header>
-      <section>
+  {% seo %}
+
+  <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+  <!--[if lt IE 9]>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+  <![endif]-->
+  {% include head-custom.html %}
+</head>
+
+<body>
+  <div class="wrapper">
+    <header>
+      <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
+      <ul style="padding:0;">
+        {% assign doc_pages = site.pages | where_exp: "p", "p.path contains 'docs/'" | sort: "title" %}
+        {% for page in doc_pages %}
+        <li>
+          <a href="{{ page.url | relative_url }}">
+            {{ page.title | default: page.path | split: '/' | last }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </header>
+    <section>
 
       {{ content }}
 
-      </section>
-    </div>
-    <script src="{{ "/assets/js/scale.fix.js" | relative_url }}"></script>
-  </body>
+    </section>
+  </div>
+  <script src="{{ "/assets/js/scale.fix.js" | relative_url }}"></script>
+</body>
+
 </html>
