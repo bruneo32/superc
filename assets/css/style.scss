@@ -1,4 +1,12 @@
 ---
 ---
 
+:root {
+  --bg-color: #eee;
+}
+
+[data-theme="dark"] {
+  --bg-color: #121212;
+}
+
 @import "jekyll-theme-minimal";

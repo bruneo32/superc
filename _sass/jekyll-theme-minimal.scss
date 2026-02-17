@@ -1,17 +1,17 @@
 @import "fonts";
 @import "rouge-github";
 
-* {
+*:not(link) {
   outline: none;
   margin: 0;
   padding: 0;
   max-width: 100%;
-  transition: 0.2s;
   box-sizing: border-box;
+  transition: 0.2s;
 }
 
 body {
-  background-color: #fff;
+  background-color: var(--bg-color);
   padding: 50px;
   font: 14px/1.5 "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: #727272;
@@ -41,7 +41,8 @@ dl {
   margin: 0 0 20px;
 }
 
-ul, ol {
+ul,
+ol {
   padding-left: 32px;
 }
 
@@ -87,6 +88,10 @@ a small {
 
 a:hover small {
   color: #777;
+}
+
+button {
+  cursor: pointer;
 }
 
 .wrapper {
@@ -191,6 +196,17 @@ hr {
   background: #e5e5e5;
   height: 1px;
   margin: 0 0 20px;
+}
+
+#toggle-theme {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 8px;
+  font-size: 20px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
 }
 
 @media print,
