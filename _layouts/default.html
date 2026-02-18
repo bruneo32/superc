@@ -11,16 +11,16 @@
   <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
   <script>
     initTheme();
+    function setThemeIconHTML(button) {
+      const theme = getTheme();
+      const isDark = theme == "dark";
+      button.innerHTML = !isDark ? "&#x1F533;" : "&#x1F506;";
+    }
     function toggleTheme(button) {
       const theme = getTheme();
       const isDark = theme == "dark";
       setTheme(isDark ? "light" : "dark");
       setThemeIconHTML(button);
-    }
-    function setThemeIconHTML(button) {
-      const theme = getTheme();
-      const isDark = theme == "dark";
-      button.innerHTML = !isDark ? "&#x1F533;" : "&#x1F506;";
     }
   </script>
 
