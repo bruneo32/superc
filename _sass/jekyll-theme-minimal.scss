@@ -160,11 +160,15 @@ kbd {
 }
 
 section {
+  position: relative;
+  left: 270px;
   width: calc(100% - 270px - 50px);
+  max-width: calc(100% - 270px - 50px);
+  min-width: calc(100% - 270px - 50px);
 }
 
 header {
-  position: relative;
+  position: fixed;
   width: 270px;
   margin-right: 24px;
   -webkit-font-smoothing: subpixel-antialiased;
@@ -199,7 +203,7 @@ hr {
 }
 
 #toggle-theme {
-  position: absolute;
+  position: fixed;
   top: 0;
   right: 0;
   padding: 8px;
