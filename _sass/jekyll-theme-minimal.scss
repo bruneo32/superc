@@ -14,7 +14,7 @@ body {
   background-color: var(--bg-color);
   padding: 50px;
   font: 14px/1.5 "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  color: #727272;
+  color: var(--text-color);
   font-weight: 400;
 }
 
@@ -24,7 +24,7 @@ h3,
 h4,
 h5,
 h6 {
-  color: #222;
+  color: var(--heading-color);
   margin: 0 0 20px;
 }
 
@@ -57,37 +57,37 @@ h1 {
 }
 
 h2 {
-  color: #393939;
+  color: var(--heading2-color);
 }
 
 h3,
 h4,
 h5,
 h6 {
-  color: #494949;
+  color: var(--heading3-color);
 }
 
 a {
-  color: #267CB9;
+  color: var(--link-color);
   text-decoration: none;
 }
 
 a:hover,
 a:focus {
-  color: #069;
+  color: var(--link-hover-color);
   /* Fake bold */
-  text-shadow: 0px 0px 1px black;
+  text-shadow: 0px 0px 1px var(--link-hover-shadow);
 }
 
 a small {
   font-size: 11px;
-  color: #777;
+  color: var(--link-small-color);
   margin-top: -0.3em;
   display: block;
 }
 
 a:hover small {
-  color: #777;
+  color: var(--link-small-color);
 }
 
 button {
@@ -100,7 +100,7 @@ button {
 }
 
 blockquote {
-  border-left: 1px solid #e5e5e5;
+  border-left: 1px solid var(--blockquote-border);
   margin: 0;
   padding: 0 0 0 20px;
   font-style: italic;
@@ -109,14 +109,14 @@ blockquote {
 code,
 pre {
   font-family: Monaco, Bitstream Vera Sans Mono, Lucida Console, Terminal, Consolas, Liberation Mono, DejaVu Sans Mono, Courier New, monospace;
-  color: #333;
+  color: var(--code-fg);
 }
 
 pre {
   padding: 8px 15px;
-  background: #f8f8f8;
+  background: var(--code-bg);
   border-radius: 5px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid var(--code-border);
   overflow-x: auto;
 }
 
@@ -129,16 +129,16 @@ th,
 td {
   text-align: left;
   padding: 5px 10px;
-  border-bottom: 1px solid #e5e5e5;
+  border-bottom: 1px solid var(--table-border);
 }
 
 dt {
-  color: #444;
+  color: var(--dt-color);
   font-weight: 700;
 }
 
 th {
-  color: #444;
+  color: var(--th-color);
 }
 
 img {
@@ -146,12 +146,12 @@ img {
 }
 
 kbd {
-  background-color: #fafbfc;
-  border: 1px solid #c6cbd1;
-  border-bottom-color: #959da5;
+  background-color: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  border-bottom-color: var(--kbd-border-bottom);
   border-radius: 3px;
-  box-shadow: inset 0 -1px 0 #959da5;
-  color: #444d56;
+  box-shadow: inset 0 -1px 0 var(--kbd-border-bottom);
+  color: var(--kbd-text);
   display: inline-block;
   font-size: 11px;
   line-height: 10px;
@@ -179,11 +179,11 @@ header ul li {
 }
 
 header ul li:hover {
-  background: #cdcdcd;
+  background: var(--header-hover-bg);
 }
 
 strong {
-  color: #222;
+  color: var(--strong-color);
   font-weight: 700;
 }
 
@@ -193,7 +193,7 @@ small {
 
 hr {
   border: 0;
-  background: #e5e5e5;
+  background: var(--hr-color);
   height: 1px;
   margin: 0 0 20px;
 }

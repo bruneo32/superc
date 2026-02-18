@@ -3,10 +3,83 @@
 
 :root {
   --bg-color: #eee;
+  --text-color: #727272;
+  --heading-color: #222;
+  --heading2-color: #393939;
+  --heading3-color: #494949;
+  --link-color: #267CB9;
+  --link-hover-color: #069;
+  --link-hover-shadow: #000;
+  --link-small-color: #777;
+  --blockquote-border: #e5e5e5;
+  --code-border: #e5e5e5;
+  --table-border: #e5e5e5;
+  --dt-color: #444;
+  --th-color: #444;
+  --kbd-bg: #fafbfc;
+  --kbd-border: #c6cbd1;
+  --kbd-border-bottom: #959da5;
+  --kbd-text: #444d56;
+  --header-hover-bg: #cdcdcd;
+  --hr-color: #e5e5e5;
+  --strong-color: #222;
+  --code-fg: #444444;
+  --code-bg: #ffffff;
+  --code-keyword: #0000FF;
+  --code-keyword-alt: #0000FF;
+  --code-type: #0000FF;
+  --code-constant: #C34E00;
+  --code-string: #C37A22;
+  --code-string-escape: #CC00A3;
+  --code-comment: #669d54;
+  --code-operator: #444444;
+  --code-namespace: #F81212;
+  --code-attribute: #009C00;
+  --code-symbol: #009C00;
+  --code-added: #009C00;
+  --code-removed: #FF0000;
+  --code-error: #FF0000;
 }
 
 [data-theme="dark"] {
   --bg-color: #121212;
+  --text-color: #aaa;
+  --heading-color: #eee;
+  --heading2-color: #ddd;
+  --heading3-color: #cdcdcd;
+  --link-color: #8ab4f8;
+  --link-hover-color: #bb86fc;
+  --link-hover-shadow: #fff;
+  --link-small-color: #a0a0a0;
+  --blockquote-border: #444;
+  --code-border: #444;
+  --table-border: #444;
+  --dt-color: #ccc;
+  --th-color: #ccc;
+  --kbd-bg: #2d2d2d;
+  --kbd-border: #555;
+  --kbd-border-bottom: #777;
+  --kbd-text: #ccc;
+  --header-hover-bg: #333;
+  --hr-color: #444;
+  --strong-color: #fff;
+
+  --code-fg: #fbf1c7;
+  --code-bg: #282828;
+  --code-keyword: #fb4934;
+  --code-keyword-alt: #fe8019;
+  --code-type: #fabd2f;
+  --code-constant: #d3869b;
+  --code-string: #b8bb26;
+  --code-string-escape: #fe8019;
+  --code-comment: #928374;
+  --code-operator: #ff4646;
+  --code-namespace: #8ec07c;
+  --code-attribute: #b8bb26;
+  --code-symbol: #83a598;
+  --code-added: #b8bb26;
+  --code-removed: #fb4934;
+  --code-error: #fb4934;
 }
 
 @import "jekyll-theme-minimal";
