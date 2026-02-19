@@ -8,6 +8,7 @@
   max-width: 100%;
   box-sizing: border-box;
   transition: 0.2s;
+  color: inherit;
 }
 
 body {
@@ -16,6 +17,22 @@ body {
   font: 14px/1.5 "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: var(--text-color);
   font-weight: 400;
+}
+
+input {
+  background-color: var(--header-hover-bg);
+  border-radius: 12px;
+  border: 1px solid transparent;
+}
+
+input:hover {
+  border: 1px solid var(--link-color);
+}
+
+input:focus {
+  color: var(--code-fg);
+  background-color: var(--code-bg);
+  border: 1px solid var(--link-color);
 }
 
 h1,
@@ -161,7 +178,7 @@ kbd {
 
 section {
   position: relative;
-  left: 270px;
+  left: 296px;
   width: calc(100% - 270px - 50px);
   max-width: calc(100% - 270px - 50px);
   min-width: calc(100% - 270px - 50px);
