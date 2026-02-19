@@ -23,6 +23,58 @@ static uint64_t fnv_hash(char *s, int len) {
   return hash;
 }
 
+static bool match(HashEntry *ent, char *key, int keylen) {
+  return ent->key && ent->key != TOMBSTONE &&
+         ent->keylen == keylen && memcmp(ent->key, key, keylen) == 0;
+}
+
+static HashEntry *get_or_insert_entry_impl(HashMap *map, char *key, int keylen)  {
+  uint64_t hash = fnv_hash(key, keylen);
+  HashEntry *tomb = NULL;
+
+  for (int i = 0; i < map->capacity; i++) {
+    HashEntry *ent = &map->buckets[(hash + i) % map->capacity];
+
+    if (match(ent, key, keylen))
+      return ent;
+
+    if (ent->key == TOMBSTONE && !tomb) {
+      tomb = ent;
+      continue;
+    }
+
+    if (!ent->key) {
+      HashEntry *target = tomb ?: ent;
+      target->key = key;
+      target->keylen = keylen;
+      map->used++;
+      return target;
+    }
+  }
+  unreachable();
+}
+
+static HashEntry *get_entry(HashMap *map, char *key, int keylen) {
+  if (!map->buckets)
+    return NULL;
+
+  uint64_t hash = fnv_hash(key, keylen);
+
+  for (int i = 0; i < map->capacity; i++) {
+    HashEntry *ent = &map->buckets[(hash + i) % map->capacity];
+    if (match(ent, key, keylen))
+      return ent;
+    if (ent->key == NULL)
+      return NULL;
+  }
+  unreachable();
+}
+
+void hashmap_put2_norehash(HashMap *map, char *key, int keylen, void *val) {
+  HashEntry *ent = get_or_insert_entry_impl(map, key, keylen);
+  ent->val = val;
+}
+
 // Make room for new entires in a given hashmap by removing
 // tombstones and possibly extending the bucket size.
 static void rehash(HashMap *map) {
@@ -45,32 +97,12 @@ static void rehash(HashMap *map) {
   for (int i = 0; i < map->capacity; i++) {
     HashEntry *ent = &map->buckets[i];
     if (ent->key && ent->key != TOMBSTONE)
-      hashmap_put2(&map2, ent->key, ent->keylen, ent->val);
+      hashmap_put2_norehash(&map2, ent->key, ent->keylen, ent->val);
   }
 
   assert(map2.used == nkeys);
+  free(map->buckets);
   *map = map2;
-}
-
-static bool match(HashEntry *ent, char *key, int keylen) {
-  return ent->key && ent->key != TOMBSTONE &&
-         ent->keylen == keylen && memcmp(ent->key, key, keylen) == 0;
-}
-
-static HashEntry *get_entry(HashMap *map, char *key, int keylen) {
-  if (!map->buckets)
-    return NULL;
-
-  uint64_t hash = fnv_hash(key, keylen);
-
-  for (int i = 0; i < map->capacity; i++) {
-    HashEntry *ent = &map->buckets[(hash + i) % map->capacity];
-    if (match(ent, key, keylen))
-      return ent;
-    if (ent->key == NULL)
-      return NULL;
-  }
-  unreachable();
 }
 
 static HashEntry *get_or_insert_entry(HashMap *map, char *key, int keylen) {
@@ -80,29 +112,7 @@ static HashEntry *get_or_insert_entry(HashMap *map, char *key, int keylen) {
   } else if ((map->used * 100) / map->capacity >= HIGH_WATERMARK) {
     rehash(map);
   }
-
-  uint64_t hash = fnv_hash(key, keylen);
-
-  for (int i = 0; i < map->capacity; i++) {
-    HashEntry *ent = &map->buckets[(hash + i) % map->capacity];
-
-    if (match(ent, key, keylen))
-      return ent;
-
-    if (ent->key == TOMBSTONE) {
-      ent->key = key;
-      ent->keylen = keylen;
-      return ent;
-    }
-
-    if (ent->key == NULL) {
-      ent->key = key;
-      ent->keylen = keylen;
-      map->used++;
-      return ent;
-    }
-  }
-  unreachable();
+  return get_or_insert_entry_impl(map, key, keylen);
 }
 
 void *hashmap_get(HashMap *map, char *key) {
@@ -129,8 +139,10 @@ void hashmap_delete(HashMap *map, char *key) {
 
 void hashmap_delete2(HashMap *map, char *key, int keylen) {
   HashEntry *ent = get_entry(map, key, keylen);
-  if (ent)
+  if (ent) {
     ent->key = TOMBSTONE;
+    map->used--;
+  }
 }
 
 void hashmap_test(void) {
