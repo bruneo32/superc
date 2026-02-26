@@ -23,6 +23,19 @@
       setThemeIconHTML(button);
     }
 
+    function toggleMenu(button) {
+      const header = document.querySelector("header");
+
+      if (header.classList.contains("expanded")) {
+        header.classList.remove("expanded");
+        button.innerHTML = "&#x1F4D5;";
+      } else {
+        header.classList.add("expanded");
+        button.innerHTML = "&#x274C;";
+      }
+
+    }
+
     const params = new URL(document.location.toString()).searchParams;
     const q_query = params.get("q");
   </script>
@@ -62,7 +75,8 @@
       {{ content }}
 
     </section>
-    <button id="toggle-theme" onclick="toggleTheme(this)"></button>
+    <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
+    <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
     <script>
       setThemeIconHTML(document.getElementById("toggle-theme"));
     </script>
