@@ -536,8 +536,6 @@ static Identifier consume_ident(Token** rest, Token *tok) {
           if (!first)
             tok = skip(tok, ",");
 
-          // TODO: handle variadic
-
           Type *pty;
           if (!as_types) {
             Node *arg = assign(&tok, tok);
@@ -600,8 +598,6 @@ static Identifier consume_ident(Token** rest, Token *tok) {
     while (!equal(tok, ")")) {
       if (!first)
         tok = skip(tok, ",");
-
-      // TODO: handle variadic
 
       Type *pty;
       if (!as_types) {
@@ -671,6 +667,7 @@ static char *ident_to_string(Identifier ident) {
     }
 
     sb_append(&sb, ")");
+
     return sb.buf;
   }
 
@@ -4928,10 +4925,24 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       if (ident.is_method && !same_type_value(fn_ov->ident.params_ty, ident.params_ty, false))
         continue;
 
+      /* Prohibit variadic function overload */
+      if (fn_ov->ty->is_variadic) {
+        char *ident_str = ident_to_string(fn_ov->ident);
+        ident_str[strlen(ident_str) - 1] = '\0';
+        // print identifier string with ", ...)"
+        error_tok(name_tok, "variadic function cannot be overloaded, see '%s%s...)'",
+          ident_str,
+          ident_str[strlen(ident_str) - 1] != '(' ? ", " : "");
+      }
+
       fn_ov_cx++;
     }
 
     if (fn_ov_cx) {
+      /* Prohibit variadic function overload */
+      if (ty->is_variadic)
+        error_tok(name_tok, "variadic function cannot be overloaded");
+
       fn_ov_cx++; // Count this function
       // Set the number of overloads in the map
       char *fn_oid = get_overload_id(ident);
