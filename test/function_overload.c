@@ -22,13 +22,21 @@ int (short a) sum(short b) {
 int (short a) sum(int b) {
   return 100000;
 }
+// Automatic symbol mangling 'sum$sd'
+int (short a) sum(double d) {
+  return (int)d;
+}
 
 int main() {
+  int x = 2;
   ASSERT(-1, sum((int)1, (int)2));
+  ASSERT(3,  ((int)1).sum(x));
+  ASSERT(3,  x.sum((int)1));
+  ASSERT(4,  x.sum(x));
   ASSERT(0,  sum((short)1, (short)2));
-  ASSERT(3,  ((int)1).sum((int)2));
   ASSERT(2,  ((short)1).sum((short)2));
   ASSERT(2,  ((short)1).sum((short)2));
+  ASSERT(3,  ((short)1).sum(3.14));
 
   ASSERT(100000, ((short)1).sum((int)2));
 

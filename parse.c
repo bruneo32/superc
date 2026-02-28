@@ -548,9 +548,9 @@ static Identifier consume_ident(Token** rest, Token *tok) {
             pty->name_pos = name_tok;
           }
 
-          if (is_ty_original(pty))
-            // Clone to avoid list destruction
-            pty = copy_type(pty);
+          // Clone to avoid list destruction
+          pty = copy_type(pty);
+          pty->next = NULL;
 
           cur = cur->next = pty;
 
@@ -611,9 +611,9 @@ static Identifier consume_ident(Token** rest, Token *tok) {
         pty->name_pos = name_tok;
       }
 
-      if (is_ty_original(pty))
-        // Clone to avoid list destruction
-        pty = copy_type(pty);
+      // Clone to avoid list destruction
+      pty = copy_type(pty);
+      pty->next = NULL;
 
       if (!cur)
         cur = params = pty;
@@ -958,9 +958,10 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
     }
 
     Type *ty2 = declspec(&tok, tok, NULL);
-    ty2 = array_decay(declarator(&tok, tok, ty2));
+    ty2 = copy_type(array_decay(declarator(&tok, tok, ty2)));
+    ty2->next = NULL;
 
-    cur = cur->next = copy_type(ty2);
+    cur = cur->next = ty2;
   }
 
   if (cur == &head)
@@ -1043,7 +1044,7 @@ static Type *declarator(Token **rest, Token *tok, Type *ty) {
     Type dummy = {};
     declarator(&tok, start->next, &dummy);
     tok = skip(tok, ")");
-    ty = type_suffix(rest, tok, ty);
+    ty = type_suffix(rest, tok, ty); // CAGALON
     return declarator(&tok, start->next, ty);
   }
 
@@ -4078,7 +4079,7 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   add_type(recv);
 
   Type *basety = array_decay(recv->ty);
-  if (basety == ty_int)
+  if (recv->kind != ND_VAR && basety == ty_int)
     error_tok(recv->tok, "method call does not allow ambiguous number types\nCast the number '%ld' to the desired type. For example, '(int)%ld'", recv->val, recv->val);
   char *basety_str = type_to_string(basety);
 
@@ -4091,14 +4092,14 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   while (!equal(lookup_tok, ")")) {
     if (!first)
       lookup_tok = skip(lookup_tok, ",");
+
     Node *arg = assign(&lookup_tok, lookup_tok);
     add_type(arg);
     Type *pty = array_decay(arg->ty);
 
-    if (is_ty_original(pty))
-      // Clone to avoid list destruction
-      pty = copy_type(pty);
-
+    // Clone to avoid list destruction
+    pty = copy_type(pty);
+    pty->next = NULL;
     pty->name_pos = arg->tok;
 
     cur = cur->next = pty;
