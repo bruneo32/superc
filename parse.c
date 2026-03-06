@@ -4917,10 +4917,62 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       /* Check that every overload has a different symbol */
       char *fn_symbol = lookup_symbol ?: ident.name;
       char *fn_ov_symbol = get_symbolname(fn_ov);
-      if (!strcmp(fn_ov_symbol, fn_symbol))
+      if (!strcmp(fn_ov_symbol, fn_symbol)) {
+
+        /* Allow opaque pointers, only for the first overload,
+         * for backwards C compatibility.
+         * eg., the following should be valid if
+         * there is only one definition for them:
+         *   int vsprintf(char*, char*, void*);
+         *   int vsprintf(char*, char*, __va_elem*)
+         */
+        if (!fn_ov_cx) {
+          int opaques_m = 0, opaques_f = 0;
+          Type *fty = fn_ov->ident.params_ty;
+          Type *mty = ident.params_ty;
+          for (; mty && fty; mty = mty->next, fty = fty->next) {
+            /* If parameters are compatible continue */
+            if (is_compatible(mty, fty))
+              continue;
+
+            /* Check if both are pointers and one of them is opaque (void*) */
+            if (mty->kind == TY_PTR && fty->kind == TY_PTR) {
+              bool is_opaque_decl_m = !is_def && mty->base->kind == TY_VOID;
+              bool is_opaque_decl_f = !fn_ov->is_definition && fty->base->kind == TY_VOID;
+              opaques_m += is_opaque_decl_m;
+              opaques_f += is_opaque_decl_f;
+              if (is_opaque_decl_m || is_opaque_decl_f)
+                continue;
+            }
+
+            /* If parameters are not compatible, error */
+            goto lbl_err_not_compatible;
+          }
+
+          /* Parameter length difference, check dangling extra parameters */
+          if (mty || fty)
+            goto lbl_err_not_compatible;
+
+          /* If all parameters are compatible, don't throw an error,
+           * this is an opaque pointer compatible overload */
+          if (opaques_m >= opaques_f) {
+            // Skip this function declaration, since is a forward
+            // declaration of another function already defined
+            fn = fn_ov;
+            goto lbl_ok_fwd_opaque_compatible;
+          }
+          // Previous overload is a forward declaration,
+          // so this has more weight
+          goto lbl_ok_opaque_compatible;
+        }
+
+        lbl_err_not_compatible:
         error_tok(name_tok, "'%s' and '%s' have the same symbol",
           ident_to_string(ident),
           ident_to_string(fn_ov->ident));
+      }
+
+      lbl_ok_opaque_compatible: ;
 
       /* Guard methods from colliding */
       if (ident.is_method && !same_type_value(fn_ov->ident.params_ty, ident.params_ty, false))
@@ -4970,6 +5022,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if operator overload is well formed */
   if (recv)
     check_operator_overload_signature(ty, ident.name, name_tok);
+
+  lbl_ok_fwd_opaque_compatible: ;
 
   /* Not a function definition, exit */
   if (consume(&tok, tok, ";"))
