@@ -36,6 +36,47 @@
 
     }
 
+    function buildTOC() {
+      const content = document.querySelector('section');
+      if (!content) return;
+
+      const toc = document.getElementById('toc-list');
+      toc.innerHTML = ''; // clear previous TOC
+      const stack = [{ ul: toc, level: 0 }]; // root level
+      const headings = content.querySelectorAll('h1, h2, h3');
+
+      headings.forEach(heading => {
+        const level = parseInt(heading.tagName[1]);
+        const text = heading.textContent;
+        const id = heading.id || text.replace(/\s+/g, '-').toLowerCase();
+        if (!heading.id) heading.id = id;
+
+        const li = document.createElement('li');
+        li.className = `toc-${heading.tagName.toLowerCase()}`;
+        const a = document.createElement('a');
+        a.href = `#${heading.id}`;
+        a.textContent = text;
+        li.appendChild(a);
+
+        // find parent UL based on heading level
+        while (stack.length > 0 && level <= stack[stack.length - 1].level) {
+          stack.pop();
+        }
+
+        let parentUl = stack[stack.length - 1].ul;
+
+        // if heading is deeper than parent, create new UL
+        if (level > stack[stack.length - 1].level) {
+          const newUl = document.createElement('ul');
+          parentUl.appendChild(newUl);
+          parentUl = newUl;
+          stack.push({ ul: newUl, level: level });
+        }
+
+        parentUl.appendChild(li);
+      });
+    }
+
     const params = new URL(document.location.toString()).searchParams;
     const q_query = params.get("q");
   </script>
@@ -50,15 +91,15 @@
 
 </head>
 
-<body>
-  <div class="wrapper">
-    <header>
-      <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
-      <input type="text" id="searchDocs" placeholder="Search docs..."
-        style="width:100%; padding:10px; margin-bottom:10px;">
-      <ul style="padding:0;">
-        {% assign doc_pages = site.pages | where_exp: "p", "p.path contains 'docs/'" | sort: "title" %}
-        {% for page in doc_pages %}
+<body onload="buildTOC()">
+  <header>
+    <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
+    <input type="text" id="searchDocs" placeholder="Search docs..."
+      style="width:100%; padding:10px; margin-bottom:10px;">
+    <ul style="padding:0;">
+      {% for path in site.docs_nav %}
+        {% assign page = site.pages | where: "path", path | first %}
+        {% if page %}
         <li
           style="padding:0;"
           class="doc-item"
@@ -69,21 +110,27 @@
             {{ page.title | default: page.path | split: '/' | last }}
           </a>
         </li>
-        {% endfor %}
-      </ul>
-    </header>
-    <section>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </header>
 
-      {{ content }}
+  <nav id="toc">
+    <h4>Contents</h4>
+    <ul id="toc-list"></ul>
+  </nav>
 
-    </section>
-    <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
-    <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
-    <button id="btn-playground" onclick="location.href = '/playground.html'">Playground</button>
-    <script>
-      setThemeIconHTML(document.getElementById("toggle-theme"));
-    </script>
-  </div>
+  <section>
+    {{ content }}
+  </section>
+
+  <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
+  <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
+  <button id="btn-playground" onclick="location.href = '/playground.html'">Playground</button>
+  <script>
+    setThemeIconHTML(document.getElementById("toggle-theme"));
+  </script>
+
   <script src="{{ "/assets/js/scale.fix.js" | relative_url }}"></script>
   <script>
     const items = document.querySelectorAll(".doc-item");

@@ -1,8 +1,11 @@
 function setTheme(theme) {
-	if (theme == 'dark')
+	if (theme == 'dark') {
 		document.documentElement.setAttribute('data-theme', 'dark');
-	else
+		document.body.style.colorScheme = 'dark';
+	} else {
 		document.documentElement.removeAttribute('data-theme');
+		document.body.style.colorScheme = 'light';
+	}
 	localStorage.setItem('theme', theme);
 }
 
@@ -21,4 +24,10 @@ function initTheme() {
 		document.documentElement.setAttribute('data-theme', 'dark');
 	else
 		document.documentElement.removeAttribute('data-theme');
+
+	function _initial_theme_scheme() {
+		window.removeEventListener('load', _initial_theme_scheme);
+		setTheme(getTheme());
+	}
+	window.addEventListener('load', _initial_theme_scheme);
 }

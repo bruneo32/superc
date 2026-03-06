@@ -8,6 +8,8 @@
 	box-sizing: border-box;
 	transition: 0.2s;
 	color: inherit;
+	scroll-behavior: smooth;
+  	vertical-align: middle;
 }
 
 body {
@@ -74,7 +76,7 @@ dl {
 
 ul,
 ol {
-	padding-left: 32px;
+	padding-left: 12px;
 }
 
 h1,
@@ -132,6 +134,14 @@ code,
 pre {
 	font-family: Monaco, Bitstream Vera Sans Mono, Lucida Console, Terminal, Consolas, Liberation Mono, DejaVu Sans Mono, Courier New, monospace;
 	color: var(--code-fg);
+}
+
+*:not(pre) > code {
+	background: var(--kbd-bg);
+	color: var(--strong-color);
+	padding: 3px 6px;
+	border-radius: 8px;
+	border: 1px solid var(--table-border);
 }
 
 pre {

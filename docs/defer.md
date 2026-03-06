@@ -96,3 +96,53 @@ int main() {
   return 0;
 }
 ```
+
+# Defer in loops
+Will execute the code stated right before the break/continue label of a for/while/do loop.
+At first glance it can look totally unnecessary, but for memory management scenarios can be very useful.
+
+### Examples
+```c
+#include <stdio.h>
+
+int main() {
+  for (int i = 0; i < 3; i++) {
+    defer printf("This will run when the functions is over. Nothing to do with the loop\n");
+    defer break printf("[%d] This will run right before loop break\n", i);
+    defer continue printf("[%d] This will run right before loop increment\n", i);
+  }
+
+  printf("OK\n");
+  // [0] This will run right before loop increment
+  // [1] This will run right before loop increment
+  // [2] This will run right before loop increment
+  // [3] This will run right before loop break
+  // OK
+  // This will run when the functions is over. Nothing to do with the loop
+  return 0;
+}
+```
+
+# Defer in scoped blocks
+> **Warning**: Scoped blocks are not implemented yet, are in development phase
+
+Sometimes is usefull to execute code after a scoped block, not only in loops.
+
+### Examples
+```c
+#include <stdio.h>
+
+int main() {
+  int x = 8;
+
+  {
+    int *mem = malloc(sizeof(int));
+    defer auto free(mem); // Will free 'mem' when the block is over, not the function
+    *mem = 42 + x;
+    printf("%d\n", *mem);
+  }
+  // mem is freed here
+
+  return 0;
+}
+```
