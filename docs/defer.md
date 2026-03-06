@@ -1,5 +1,6 @@
 ---
 title: Defer
+layout: blog
 ---
 
 # Defer

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: "en-US" }}">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  {% seo %}
+
+  <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
+  <script>
+    initTheme();
+    function setThemeIconHTML(button) {
+      const theme = getTheme();
+      const isDark = theme == "dark";
+      button.innerHTML = !isDark ? "&#x1F31A;" : "&#x1F31D;";
+    }
+    function toggleTheme(button) {
+      const theme = getTheme();
+      const isDark = theme == "dark";
+      setTheme(isDark ? "light" : "dark");
+      setThemeIconHTML(button);
+    }
+
+    const params = new URL(document.location.toString()).searchParams;
+    const q_query = params.get("q");
+  </script>
+
+  <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+  <link rel="stylesheet" href="{{ "/assets/css/playground.css?v=" | append: site.github.build_revision | relative_url }}">
+
+  <script>
+    function beforeUnload() {
+      return "Are you sure you want to leave?\nProgress will be lost.";
+    }
+  </script>
+
+  <!--[if lt IE 9]>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+  <![endif]-->
+  {% include head-custom.html %}
+
+</head>
+
+<body onbeforeunload="return beforeUnload()">
+  Playground page
+</body>
+
+</html>

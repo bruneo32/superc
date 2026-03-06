@@ -1,5 +1,6 @@
 ---
 title: Type methods
+layout: blog
 ---
 
 # Type methods

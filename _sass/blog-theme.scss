@@ -1,0 +1,134 @@
+@import "rouge-github";
+
+body {
+	background-color: var(--bg-color);
+	padding: 50px;
+	font: 14px/1.5 "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+	color: var(--text-color);
+	font-weight: 400;
+}
+
+.wrapper {
+	display: flex;
+	margin: 0 auto;
+}
+
+kbd {
+	background-color: var(--kbd-bg);
+	border: 1px solid var(--kbd-border);
+	border-bottom-color: var(--kbd-border-bottom);
+	border-radius: 3px;
+	box-shadow: inset 0 -1px 0 var(--kbd-border-bottom);
+	color: var(--kbd-text);
+	display: inline-block;
+	font-size: 11px;
+	line-height: 10px;
+	padding: 3px 5px;
+	vertical-align: middle;
+}
+
+section {
+	position: relative;
+	left: 296px;
+	width: calc(100% - 270px - 50px);
+	max-width: calc(100% - 270px - 50px);
+	min-width: calc(100% - 270px - 50px);
+}
+
+header {
+	z-index: 10;
+	position: fixed;
+	width: 270px;
+	margin-right: 24px;
+	-webkit-font-smoothing: subpixel-antialiased;
+}
+
+header ul li {
+	cursor: pointer;
+	list-style: none;
+	padding: 8px;
+	margin: 0;
+	border-radius: 10px;
+}
+
+header ul li:hover {
+	background: var(--header-hover-bg);
+}
+
+strong {
+	color: var(--strong-color);
+	font-weight: 700;
+}
+
+small {
+	font-size: 11px;
+}
+
+hr {
+	border: 0;
+	background: var(--hr-color);
+	height: 1px;
+	margin: 0 0 20px;
+}
+
+button.clean {
+	cursor: pointer;
+	font-size: 20px;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+}
+
+#toggle-theme {
+	z-index: 90;
+	position: fixed;
+	top: 0;
+	right: 0;
+	padding: 8px;
+}
+
+#toggle-menu {
+	z-index: 90;
+	display: none;
+	position: fixed;
+	top: 0;
+	left: 0;
+	padding: 8px;
+}
+
+button#btn-playground {
+	z-index: 90;
+	position: fixed;
+	top: 4px;
+	right: 48px;
+	padding: 8px;
+}
+
+@media print,
+screen and (max-width: 960px) {
+
+	header {
+		left: -100vw;
+		background: var(--bg-color);
+		top: 0;
+		width: 100vw;
+		height: 100vh;
+		padding: 50px;
+	}
+
+	header.expanded {
+		left: 0;
+	}
+
+	section {
+		max-width: 100%;
+		min-width: unset;
+		width: unset;
+		left: 0;
+	}
+
+	#toggle-menu {
+		display: block;
+	}
+
+}

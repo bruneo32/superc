@@ -1,5 +1,6 @@
 ---
 title: Symbol mangling
+layout: blog
 ---
 
 # Symbol mangling

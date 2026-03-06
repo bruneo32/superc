@@ -41,6 +41,8 @@
   </script>
 
   <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+  <link rel="stylesheet" href="{{ "/assets/css/blog.css?v=" | append: site.github.build_revision | relative_url }}">
+
   <!--[if lt IE 9]>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
   <![endif]-->
@@ -77,6 +79,7 @@
     </section>
     <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
     <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
+    <button id="btn-playground" onclick="location.href = '/playground.html'">Playground</button>
     <script>
       setThemeIconHTML(document.getElementById("toggle-theme"));
     </script>
