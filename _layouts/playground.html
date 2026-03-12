@@ -31,6 +31,21 @@
   <link rel="stylesheet" href="{{ "/assets/css/playground.css?v=" | append: site.github.build_revision | relative_url }}">
 
   <script>
+    var vs_editor;
+    initTheme();
+    function setThemeIconHTML(button) {
+      const theme = getTheme();
+      const isDark = theme == "dark";
+      button.innerHTML = !isDark ? "&#x1F31A;" : "&#x1F31D;";
+    }
+    function toggleTheme(button) {
+      const theme = getTheme();
+      const isDark = theme == "dark";
+      setTheme(isDark ? "light" : "dark");
+      monaco.editor.setTheme(isDark ? "vs" : "vs-dark");
+      setThemeIconHTML(button);
+    }
+
     function beforeUnload() {
       return "Are you sure you want to leave?\nProgress will be lost.";
     }
@@ -44,7 +59,49 @@
 </head>
 
 <body onbeforeunload="return beforeUnload()">
-  Playground page
+
+  <header>
+    <h3>SuperC Playground</h3>
+    <a href="{{ '/' | relative_url }}">Documentation</a>
+  </header>
+
+  <div id="vs-editor"></div>
+  <div id="term_container"></div>
+
+  <footer>Powered by <a target="_blank" href="https://bellard.org/jslinux/">https://bellard.org/jslinux/</a></footer>
+  <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
+  <script>
+    setThemeIconHTML(document.getElementById("toggle-theme"));
+  </script>
+
+  <!-- Monaco loader -->
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+  <script>
+    require.config({
+      paths: {
+        vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs"
+      }
+    });
+
+    require(["vs/editor/editor.main"], () => {
+      vs_editor = monaco.editor.create(document.getElementById("vs-editor"), {
+        value: [
+          "#include <stdio.h>",
+          "",
+          "int main() {",
+          "  printf(\"Hello World!\\n\");",
+          "  return 0;",
+          "}"
+        ].join("\n"),
+        language: "c",
+        theme: getTheme() == "dark" ? "vs-dark" : "vs"
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      vs_editor.layout();
+    });
+  </script>
 </body>
 
 </html>

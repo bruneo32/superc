@@ -1,0 +1,67 @@
+#vs-editor,
+#vs-editor * {
+	transition: 0s !important;
+}
+
+#vs-editor {
+	position: fixed;
+	top: 48px;
+	left: 0;
+	width: 50vw;
+	height: calc(100vh - 48px - 32px);
+}
+
+header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 48px;
+	white-space: nowrap;
+}
+
+header * {
+	display: inline-block;
+	padding: 14px 8px;
+	margin: 0 12px;
+}
+
+header a:hover {
+	color: var(--hr-color);
+	background: var(--link-color);
+}
+
+footer {
+	transition: 0s;
+	z-index: 90;
+	width: 100vw;
+	text-align: center;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	padding: 4px;
+}
+
+button.clean {
+	cursor: pointer;
+	font-size: 20px;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+}
+
+#toggle-theme {
+	z-index: 90;
+	position: fixed;
+	top: 0;
+	right: 0;
+	padding: 8px;
+}
+
+@media print,
+screen and (max-width: 960px) {
+	#vs-editor {
+		width: 100vw;
+		height: calc(50vh - 48px - 32px);
+	}
+}
