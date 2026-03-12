@@ -1,5 +1,5 @@
 ---
-title: Symbol mangling
+title: Symbols & Aliases
 layout: blog
 ---
 
@@ -47,6 +47,65 @@ int main(void) {
   // ext1 = 32
   // OK
   printf("OK\n");
+  return 0;
+}
+```
+
+# Aliases
+Symbol mangling can be used to create syntax aliases to existing variables and functions in the compiled binary.
+Sure you can do `#define def abc`, but you cannot use preprocessor for [type methods](methods.md), so this is a useful feature of the symbol mangling.
+
+### Examples
+```c
+#include <stdio.h>
+#include <string.h>
+
+/* Silly GCC headers
+ * destroy __attribute__ */
+#ifdef __attribute__
+#undef __attribute__
+#endif
+
+int abc = 32;
+/* def is an alias of abc does not create a new variable */
+extern int def __attribute__((symbol("abc")));
+
+/* Use symbol mangling to create a function alias string.concat -> strcat */
+char *(char *s1) concat(char *s2) __attribute__((symbol("strcat")));
+
+int main(void) {
+  char str_hello[100] = "Hello";
+  str_hello.concat(" World").concat("!");
+  printf("%d\n%s\n", def, str_hello);
+  // 32
+  // Hello World!
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+/*
+ * Question: How can I alias an inline function?
+ * Answer: Inline the inliner
+ */
+
+inline int inline1(int n) { return n + 3; }
+inline int (int i) inline2() { return inline1(i); }
+
+/* Since both functions are inlined,
+ * the binary result is the same as
+ * calling just inline1(), so this
+ * is an alias of inline1() */
+
+int main(void) {
+  /*
+    binary result is exactly the same as
+    printf("%d\n", 10 + 3);
+    so this is an inline function alias
+  */
+  printf("%d\n", ((int)10).inline2());
+  // 13
   return 0;
 }
 ```

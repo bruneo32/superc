@@ -77,6 +77,31 @@
       });
     }
 
+    function scrollUp() {
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+      });
+    }
+
+    function _handleBodyScroll(event) {
+      const btnUp = document.getElementById("btn-scroll-up");
+      if (window.scrollY > 100) {
+        if (btnUp.style.display != "block") {
+          btnUp.style.opacity = "0";
+          btnUp.style.display = "block";
+          setTimeout(() => {
+            btnUp.style.opacity = "1";
+          }, 10);
+        }
+      } else if (btnUp.style.opacity != "0") {
+        btnUp.style.opacity = "0";
+        setTimeout(() => {
+          btnUp.style.display = "none";
+        }, 200);
+      }
+    }
+
     const params = new URL(document.location.toString()).searchParams;
     const q_query = params.get("q");
   </script>
@@ -91,7 +116,15 @@
 
 </head>
 
-<body onload="buildTOC()">
+<body onload="buildTOC()" onscroll="_handleBodyScroll(event)">
+  {% assign nav_index = -1 %}
+  {% for item in site.docs_nav %}
+    {% if item == page.path %}
+      {% assign nav_index = forloop.index0 %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
+
   <header>
     <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
     <input type="text" id="searchDocs" placeholder="Search docs..."
@@ -122,11 +155,31 @@
 
   <section>
     {{ content }}
+
+    {% if nav_index != -1 %}
+      {% assign prev_idx = nav_index | minus: 1 %}
+      {% assign prev_path = site.docs_nav[prev_idx] %}
+      {% assign prev_page = site.pages | where: "path", prev_path | first %}
+
+      {% assign next_idx = nav_index | plus: 1 %}
+      {% assign next_path = site.docs_nav[next_idx] %}
+      {% assign next_page = site.pages | where: "path", next_path | first %}
+
+      <a class="docnav" style="float:left;" href="{{ prev_page.url | relative_url }}">
+        <h4>Previous</h4>
+        <h5>{{ prev_page.title }}</h5>
+      </a>
+      <a class="docnav" style="float:right;" href="{{ next_page.url | relative_url }}">
+        <h4>Next</h4>
+        <h5>{{ next_page.title }}</h5>
+      </a>
+    {% endif %}
   </section>
 
   <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
   <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
   <!-- <button id="btn-playground" onclick="location.href = '/playground.html'">Playground</button> -->
+  <button id="btn-scroll-up" class="clean" onclick="scrollUp()">&#x1F51D;</button>
   <script>
     setThemeIconHTML(document.getElementById("toggle-theme"));
   </script>

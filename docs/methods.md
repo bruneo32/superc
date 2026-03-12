@@ -6,7 +6,7 @@ layout: blog
 # Type methods
 Extends a type with implicit function calls.
 It is equivalent to passing the caller as the first argument.
-- Function is registered as `(type).name` *(the symbol is mangled, see [symbols](#symbol-mangling))*.
+- Function is registered as `(type).name` *(the symbol is mangled, see [symbols](symbols.md))*.
 - **i.e.** `mycat.meow()` is exactly the same to `(Cat).meow(mycat)`.
 
 ### Examples

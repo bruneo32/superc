@@ -9,7 +9,6 @@
 	transition: 0.2s;
 	color: inherit;
 	scroll-behavior: smooth;
-  	vertical-align: middle;
 }
 
 body {
@@ -49,6 +48,10 @@ input:focus {
 	color: var(--code-fg);
 	background-color: var(--code-bg);
 	border: 1px solid var(--link-color);
+}
+
+table {
+	width: unset !important;
 }
 
 h1,

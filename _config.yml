@@ -1,9 +1,13 @@
 title: SuperC documentation
-logo: /assets/img/logo.png
 google_analytics:
 theme: jekyll-theme-minimal
 
 docs_nav:
+  - index.md
   - docs/defer.md
   - docs/methods.md
   - docs/symbols.md
+  - docs/break_n.md
+  - docs/operator_overload.md
+  - docs/nullish_coalescing.md
+  - docs/function_overload.md
