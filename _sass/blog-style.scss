@@ -59,7 +59,7 @@ nav {
 
 nav ul {
 	list-style-type: disc;
-	margin-bottom: 8px;
+	margin-bottom: 0;
 }
 
 nav li {
@@ -138,6 +138,7 @@ button.clean {
 
 a.docnav {
     display: block;
+	font-size: min(2vw, 14px);
 	border-radius: 8px;
 	text-align: center;
     background: var(--code-comment);
