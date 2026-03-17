@@ -10,8 +10,15 @@ eval "$(rbenv init -)" # ~/.bashrc
 
 # Local build and test
 ```sh
-./script/bootstrap
+./_script/bootstrap
 bundle exec jekyll serve
 ```
 
+### Enable playground in local build
+```sh
+mkdir -p _site/assets/jslinux/os/files
+tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
+```
+
 > Based on [Jekyll Minimal Theme](https://github.com/pages-themes/minimal)
+> Note: **_jslinux_files.tar.xz** build with `tar -cJf _jslinux_files.tar.xz assets/jslinux/os/files/*`

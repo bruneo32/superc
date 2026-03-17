@@ -9,6 +9,7 @@
   {% seo %}
 
   <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
+  <script src="{{ "/assets/js/hashes.min.js" | relative_url }}"></script>
   <script>
     initTheme();
     function setThemeIconHTML(button) {
@@ -24,12 +25,14 @@
     }
 
     const params = new URL(document.location.toString()).searchParams;
-    const q_query = params.get("q");
+
+    const SHA256 = new Hashes.SHA256();
   </script>
 
   <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
   <link rel="stylesheet" href="{{ "/assets/css/playground.css?v=" | append: site.github.build_revision | relative_url }}">
 
+  {% assign first_c_file = "main.c" %}
   <script>
     var vs_editor;
     initTheme();
@@ -49,6 +52,148 @@
     function beforeUnload() {
       return "Are you sure you want to leave?\nProgress will be lost.";
     }
+
+    let ed_file = "{{ first_c_file }}";
+    let __guard_started = false;
+    function start_jslinux(f) {
+      /* Start VM if not started */
+      if (!__guard_started) {
+        __guard_started = true;
+        toastWarn(`Starting JSLinux for the first time...`);
+        start_vm(null, null, f);
+        return;
+      }
+      if (f) { f(); }
+    }
+
+    function ed_run() {
+      start_jslinux(() => {
+        /* Save file before run! */
+        ed_save();
+        setTimeout(() => {
+          /* Run CC command */
+          toastInfo(`Building: ${ed_file}`);
+          run_command(`gcc /root/${ed_file} && /root/a.out`)
+        }, window.is_jslinux_running ? 300 : 1200);
+        // JSLinux takes a while to save the file the first time
+      });
+    }
+
+    let __last_ed_file_hash = ""
+    function ed_save() {
+      /* Exit if the file has not changed */
+      const val = vs_editor.getValue().toString();
+      const curr_hash = SHA256.hex(val);
+      if (curr_hash == __last_ed_file_hash) { return; }
+      __last_ed_file_hash = curr_hash;
+
+      start_jslinux(() => {
+        run_command_silent(`rm -f /root/${ed_file}`);
+        setTimeout(() => {
+          jslinux_upload_file_from_str(ed_file, val);
+          toastSuccess(`Saved: ${ed_file}`);
+        }, window.is_jslinux_running ? 100 : 1000);
+        // JSLinux takes a while to save the file the first time
+      });
+    }
+
+    function ed_load(fname) {
+      if (!fname) { return; }
+      ed_file = fname;
+      document.getElementById("editor-title").innerText = ed_file;
+      const data = ""; // FIXME: Cannot fetch data currently
+      vs_editor.setValue(data);
+      __last_ed_file_hash = SHA256.hex(data);
+      /* If file is empty, don't show success message */
+      if (data) { toastSuccess(`Loaded: ${ed_file}`); }
+    }
+
+    function _changedFile() {
+      const prev_file = ed_file;
+      const editor_title = document.getElementById("editor-title");
+
+      function cancel() {
+        ed_file = prev_file;
+        editor_title.innerText = prev_file;
+      }
+
+      let new_name = editor_title.innerText.toString().trim();
+      if (!new_name) {
+        /* If file name is empty, don't change file */
+        cancel();
+        return;
+      }
+
+      if (new_name.lastIndexOf("/") != -1) {
+        alert("Cannot write to another directory yet, sorry");
+        cancel();
+        return;
+      }
+
+      if (new_name.indexOf(".") == -1) {
+        new_name += ".c";
+      }
+
+      /* Nothing to do */
+      if (new_name == ed_file) {
+        cancel();
+        return;
+      }
+
+      if (!window.is_jslinux_running) {
+        /* Still not saved the first time, just changing the name */
+        ed_file = new_name;
+        return;
+      }
+
+      if (confirm("Do you want to save the current file?")) {
+        ed_save();
+      }
+
+      ed_load(new_name);
+    }
+
+    function _changedFileKbd(event) {
+      if (event.key == "Escape") {
+        /* Cancel */
+        document.getElementById("editor-title").innerText = ed_file;
+        return;
+      }
+
+      if (event.key != "Enter") { return; }
+      event.preventDefault();
+      event.stopPropagation();
+      _changedFile();
+    }
+
+    function _toast(msg, color, time) {
+      const newToast = document.createElement("div");
+      newToast.innerHTML = msg;
+      newToast.style.background = color;
+      document.getElementById("toast-container").appendChild(newToast);
+      setTimeout(() => { newToast.style.opacity = "1"; }, 10);
+
+      if (time < 10) { time = 10; }
+      setTimeout(() => {
+        newToast.style.opacity = "0";
+      }, time - 200); // 0.2s of transition
+      setTimeout(() => {
+        newToast.remove();
+      }, time);
+    }
+
+    function toastInfo(msg) {
+      _toast(msg, "#1e90ff", 6000);
+    }
+    function toastSuccess(msg) {
+      _toast(msg, "#43ba07", 6000);
+    }
+    function toastWarn(msg) {
+      _toast(msg, "#a9a945", 6000);
+    }
+    function toastError(msg) {
+      _toast(msg, "#ce1a1a", 6000);
+    }
   </script>
 
   <!--[if lt IE 9]>
@@ -65,14 +210,29 @@
     <a href="{{ '/' | relative_url }}">Documentation</a>
   </header>
 
+  <div id="editor-hbar">
+    <button onclick="ed_save()" title="Save file [Ctrl+S]">&#x1F4BE;</button>
+    <h1 id="editor-title" onkeydown="_changedFileKbd(event)" onblur="_changedFile()"
+        contenteditable="plaintext-only" spellcheck="false" notranslate="true"
+      >{{ first_c_file }}</h1>
+    <button onclick="ed_run()" title="Save and run" style="float:right;">Run</button>
+  </div>
+
   <div id="vs-editor"></div>
-  <div id="term_container"></div>
+
+  <div id="term_wrap">
+    <div id="term_container">
+    </div>
+    <progress id="net_progress"></progress>
+  </div>
 
   <footer>Powered by <a target="_blank" href="https://bellard.org/jslinux/">https://bellard.org/jslinux/</a></footer>
   <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
   <script>
     setThemeIconHTML(document.getElementById("toggle-theme"));
   </script>
+
+  <div id="toast-container"></div>
 
   <!-- Monaco loader -->
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
@@ -83,15 +243,18 @@
       }
     });
 
+    const b64 = params.get("c");
+
     require(["vs/editor/editor.main"], () => {
       vs_editor = monaco.editor.create(document.getElementById("vs-editor"), {
-        value: [
+        value: b64 ? atob(b64.toString().trim().replace(/\s/g, "+")) : [
           "#include <stdio.h>",
           "",
           "int main() {",
           "  printf(\"Hello World!\\n\");",
           "  return 0;",
-          "}"
+          "}",
+          ""
         ].join("\n"),
         language: "c",
         theme: getTheme() == "dark" ? "vs-dark" : "vs"
@@ -101,7 +264,20 @@
     window.addEventListener("resize", () => {
       vs_editor.layout();
     });
+
+    window.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "s") {
+        event.preventDefault();
+        ed_save();
+      }
+    });
   </script>
+
+  <script>
+    window.__jslinux_base_url__ = "{{ '/assets/jslinux' | relative_url }}"
+  </script>
+  <script src="{{ "/assets/jslinux/term.js" | relative_url }}"></script>
+  <script src="{{ "/assets/jslinux/jslinux.js" | relative_url }}"></script>
 </body>
 
 </html>

@@ -1,6 +1,10 @@
 title: SuperC documentation
 google_analytics:
 theme: jekyll-theme-minimal
+incremental: true
+
+keep_files:
+  - assets/jslinux/os/files
 
 docs_nav:
   - index.md
