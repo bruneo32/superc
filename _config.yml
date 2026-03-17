@@ -15,3 +15,4 @@ docs_nav:
   - docs/operator_overload.md
   - docs/nullish_coalescing.md
   - docs/function_overload.md
+  - docs/c_backwards_compat.md
