@@ -29,6 +29,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Extract jslinux files before Jekyll work
+        run: |
+          mkdir -p _site/assets/jslinux/os/files
+          tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build with Jekyll
@@ -36,10 +40,6 @@ jobs:
         with:
           source: ./
           destination: ./_site
-      - name: Extract jslinux files
-        run: |
-          mkdir -p _site/assets/jslinux/os/files
-          tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
 
