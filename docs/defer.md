@@ -4,7 +4,11 @@ layout: blog
 ---
 
 # Defer
-Will execute the code stated right before exiting a function
+Will execute the code stated right before exiting a function.
+
+It is encouraged, because it does not produce duplicated code, and does not create function calls.
+
+> Note: Defers are executed in LIFO order. **i.e.**, the last defer will be executed first.
 
 ### Examples
 ```c
@@ -97,36 +101,14 @@ int main() {
 }
 ```
 
-# Defer in loops
-Will execute the code stated right before the break/continue label of a for/while/do loop.
-At first glance it can look totally unnecessary, but for memory management scenarios can be very useful.
-
-### Examples
-```c
-#include <stdio.h>
-
-int main() {
-  for (int i = 0; i < 3; i++) {
-    defer printf("This will run when the functions is over. Nothing to do with the loop\n");
-    defer break printf("[%d] This will run right before loop break\n", i);
-    defer continue printf("[%d] This will run right before loop increment\n", i);
-  }
-
-  printf("OK\n");
-  // [0] This will run right before loop increment
-  // [1] This will run right before loop increment
-  // [2] This will run right before loop increment
-  // [3] This will run right before loop break
-  // OK
-  // This will run when the functions is over. Nothing to do with the loop
-  return 0;
-}
-```
-
 # Defer in scoped blocks
-> **Warning**: Scoped blocks are not implemented yet, are in development phase
+> **Warning**: `defer auto` is **not implemented yet**, it is in development phase
 
 Sometimes is usefull to execute code after a scoped block, not only in loops.
+
+This can be done using `defer auto`, it will always execute the deferred code even if there's a branching code like `goto`.
+
+This also applies for [break n](break_n.md).
 
 ### Examples
 ```c
@@ -137,12 +119,106 @@ int main() {
 
   {
     int *mem = malloc(sizeof(int));
-    defer auto free(mem); // Will free 'mem' when the block is over, not the function
+    defer auto {
+      free(mem);
+      printf("mem is freed here\n");
+    }
+
     *mem = 42 + x;
     printf("%d\n", *mem);
   }
-  // mem is freed here
 
+  printf("OK\n");
+
+  // 50
+  // mem is freed here
+  // OK
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+
+int main() {
+  int x = 8;
+
+  {
+    defer auto printf("I am unavoidable\n");
+    // Try to escape defer execution
+    goto lbl_end;
+    printf("Unreachable\n");
+  }
+
+  lbl_end:
+  printf("OK\n");
+
+  // I am unavoidable
+  // OK
+  return 0;
+}
+```
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+int main() {
+  while (true) {
+    defer auto printf("A\n");
+    while (true) {
+      defer auto printf("B\n");
+      while (true) {
+        defer auto printf("C\n");
+        // Exit 3 loops
+        // Executing defers in LIFO order
+        break 3;
+      }
+    }
+  }
+
+  printf("OK\n");
+  // C
+  // B
+  // A
+  // OK
+  return 0;
+}
+```
+
+# Defer in loops
+> **Warning**: `defer auto` is **not implemented yet**, it is in development phase
+
+In addition, `defer auto` has a special behavior in loops.
+
+It runs also before the `continue`/`break` statements. So the defer statement is executed at the end of every iteration.
+
+### Examples
+```c
+#include <stdio.h>
+
+int main() {
+
+  for (int i = 0; i < 5; i++) {
+    char *str = malloc(100); // 100 chars max
+    defer auto free(str);
+
+    if (i == 1)
+      continue; // defer runs here
+
+    sprintf(str, "Number: %d", i);
+    printf("%s\n", str);
+
+    if (i == 3)
+      break; // defer runs here
+
+    // defer runs here
+  }
+
+  printf("OK\n");
+
+  // Number: 0
+  // Number: 2
+  // Number: 3
+  // OK
   return 0;
 }
 ```
