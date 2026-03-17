@@ -151,7 +151,8 @@ pre {
 	color: var(--code-fg);
 }
 
-*:not(pre) > code {
+*:not(pre)>code {
+	word-break: break-word;
 	background: var(--kbd-bg);
 	color: var(--strong-color);
 	padding: 3px 6px;
