@@ -11,9 +11,9 @@
   --link-hover-color: #069;
   --link-hover-shadow: #000;
   --link-small-color: #777;
-  --blockquote-border: #e5e5e5;
-  --code-border: #e5e5e5;
-  --table-border: #e5e5e5;
+  --blockquote-border: #ccc;
+  --code-border: #ccc;
+  --table-border: #ccc;
   --dt-color: #444;
   --th-color: #444;
   --kbd-bg: #fafbfc;
@@ -21,7 +21,7 @@
   --kbd-border-bottom: #959da5;
   --kbd-text: #444d56;
   --header-hover-bg: #cdcdcd;
-  --hr-color: #e5e5e5;
+  --hr-color: #ccc;
   --strong-color: #222;
 
   --code-fg: #444444;
@@ -45,9 +45,9 @@
 [data-theme="dark"] {
   --bg-color: #121212;
   --text-color: #cdcdcd;
-  --heading-color: #eee;
-  --heading2-color: #ddd;
-  --heading3-color: #cdcdcd;
+  --heading-color: #ddd;
+  --heading2-color: #cdcdcd;
+  --heading3-color: #ccc;
   --link-color: #8ab4f8;
   --link-hover-color: #bb86fc;
   --link-hover-shadow: #fff;
@@ -63,7 +63,7 @@
   --kbd-text: #ccc;
   --header-hover-bg: #333;
   --hr-color: #444;
-  --strong-color: #fff;
+  --strong-color: #ddd;
 
   --code-fg: #bebebe;
   --code-bg: #282828;

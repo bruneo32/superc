@@ -76,22 +76,6 @@ section {
 	min-width: calc(100% - 270px - 200px - 50px);
 }
 
-strong {
-	color: var(--strong-color);
-	font-weight: 700;
-}
-
-small {
-	font-size: 11px;
-}
-
-hr {
-	border: 0;
-	background: var(--hr-color);
-	height: 1px;
-	margin: 0 0 20px;
-}
-
 button.clean {
 	cursor: pointer;
 	font-size: 20px;
