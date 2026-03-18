@@ -4,7 +4,7 @@ title: C backwards compatibility
 ---
 
 # SuperC is a superset of C
-What does it mean that **SuperC** is a superset of **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)**?
+What does it mean that **SuperC** is a superset of **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)**{:target="_blank"}?
 
 **SuperC** adds new rich features to C without breaking compatibility with C11.
 - **SuperC** can compile old **C** code without problems

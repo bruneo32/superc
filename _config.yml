@@ -14,5 +14,6 @@ docs_nav:
   - docs/break_n.md
   - docs/operator_overload.md
   - docs/nullish_coalescing.md
+  - docs/switch_ranges.md
   - docs/function_overload.md
   - docs/c_backwards_compat.md

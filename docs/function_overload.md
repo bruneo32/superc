@@ -10,7 +10,7 @@ When a **function call** is made in **SuperC**, the compiler will not search the
 
 This means that the collision of the **symbols** only happen in the linker, so if you have two functions with the same symbol, the linker will throw an **error**; but the compiler won't throw an error if they have the same name, but different **symbols** *(and signature of course)*.
 
-> This is what [_Generic](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)#Changes_from_C99>) does in C11, but made easy.
+> This is what [_Generic](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)#Changes_from_C99>){:target="_blank"} does in C11, but made easy.
 
 > Note: Variadic functions cannot be overloaded
 
