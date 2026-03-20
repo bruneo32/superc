@@ -14,7 +14,9 @@ This means that the collision of the **symbols** only happen in the linker, so i
 
 > Note: Variadic functions cannot be overloaded
 
-### Examples
+{% tabs example1 %}
+
+{% tab example1 SuperC %}
 ```c
 #include <stdio.h>
 
@@ -38,6 +40,37 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+
+{% tab example1 C11 %}
+```c
+#include <stdio.h>
+
+#define foo(a) _Generic((a), \
+  int: foo_i(a), \
+  float: foo_f(a))
+
+void foo_f(float a) {
+  printf("FLOAT: %f\n", a);
+}
+
+void foo_i(int a) {
+  printf("INT: %d\n", a);
+}
+
+int main(void) {
+  foo((int)   10);
+  foo((float) 3.1415);
+  // INT: 10
+  // FLOAT: 3.141500
+  return 0;
+}
+```
+{% endtab %}
+
+{% endtabs %}
+
+### Examples
 ```c
 #include <stdio.h>
 
