@@ -11,6 +11,7 @@ keep_files:
 docs_nav:
   - index.md
   - docs/defer.md
+  - docs/defer_auto.md
   - docs/methods.md
   - docs/symbols.md
   - docs/break_n.md

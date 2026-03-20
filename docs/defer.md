@@ -4,24 +4,37 @@ layout: blog
 ---
 
 # Defer
-Will execute the code stated right before exiting a function.
+> Will execute the code stated right before exiting a function.
 
-It is encouraged, because it does not produce duplicated code, and does not create function calls.
-
-> Note: Defers are executed in LIFO order. **i.e.**, the last defer will be executed first.
+- Very useful for *dynamic memory management*, *resource cleanup* and *error handling*.
+- Easier to read the program since all the code for the cleanup is near the declaration.
+- Defers are executed in **LIFO** order. **i.e.**, the last defer will be executed first.
+- It is **encouraged** to use defer instead of manual management when possible, because it does not produce duplicated code, and does not create function calls. (See [assembly code generation](#assembly-code-generation))
 
 ### Examples
+{% tabs defer1 %}
+{% tab defer1 SuperC %}
 ```c
 #include <stdio.h>
 
 int main() {
   defer printf("This will print after OK\n");
   printf("OK\n");
-  // OK
-  // This will print after OK
   return 0;
 }
 ```
+{% endtab %}
+
+{% tab defer1 Output %}
+```
+OK
+This will print after OK
+```
+{% endtab %}
+{% endtabs %}
+
+{% tabs defer2 %}
+{% tab defer2 SuperC %}
 ```c
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,11 +55,41 @@ int main() {
     return 1;
   }
 
+  /* Write to file test.txt */
   fprintf(f, "Hello world!\n");
 
+  printf("OK!\n");
   return 0;
 }
 ```
+{% endtab %}
+
+{% tab defer2 Output 1 %}
+**test.txt**:
+```
+Hello world!
+```
+**Output**:
+```
+OK!
+File closed!
+```
+{% endtab %}
+
+{% tab defer2 Output 2 %}
+**test.txt**:
+```
+```
+**Output**:
+```
+No need to call fclose(), because the defer executes before the return.
+File closed!
+```
+{% endtab %}
+{% endtabs %}
+
+{% tabs defer3 %}
+{% tab defer3 SuperC %}
 ```c
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,14 +120,29 @@ int main() {
   defer SDL_DestroyRenderer(game_renderer);
 
   /*
-   * This example shows a basic usage of defer.
+   * This example shows a basic usage of defer in a real scenario.
    * If function returns early, it will execute the defer statements before
    * exiting the function.
    * i.e.:
    *   - If game_renderer is NULL, SDL_DestroyWindow and SDL_Quit will be called
    *     (in that order, reverse to declaration), but SDL_DestroyRenderer won't.
    *     Because the return happens before the defer is declared.
-   *
+   */
+
+  printf("OK\n");
+  return 0;
+}
+```
+{% endtab %}
+{% endtabs %}
+
+{% tabs defer4 %}
+{% tab defer4 SuperC %}
+```c
+#include <stdio.h>
+
+int main() {
+  /*
    * [!!!]
    * Beware that defer statements are related to the function, not the block of code.
    * This means that even though the following if statement never runs,
@@ -97,128 +155,157 @@ int main() {
   }
 
   printf("OK\n");
+  // OK
+  // Actual defer execution
   return 0;
 }
 ```
+{% endtab %}
 
-# Defer in scoped blocks
-> **Warning**: `defer auto` is **not implemented yet**, it is in development phase
+{% tab defer4 Output %}
+```
+OK
+Actual defer execution
+```
+{% endtab %}
+{% endtabs %}
 
-Sometimes is usefull to execute code after a scoped block, not only in loops.
+## Assembly code generation
+Defer in **SuperC** is not a function call, or a rewriting the code before each return, it is **simpler** and **clever** than that.
 
-This can be done using `defer auto`, it will always execute the deferred code even if there's a branching code like `goto`.
+- This implementation makes defer works as **zero-cost overhead** because it's just natural program flow, no hidden function calls.
+- This implementation **avoids code duplication** by jumping to the deferred code. No rewriting code at each `return`.
 
-This also applies for [break n](break_n.md).
+Below is a pseudo assembly example of how the **SuperC** compiler emits defer statements.
 
-### Examples
+> Can you guess what `x` will be at the end of the program?<br>
+> **a.** 10<br>
+> **b.** 99<br>
+> **c.** 20<br>
+> **d.** stack garbage
+
+{% tabs defer-ass %}
+{% tab defer-ass SuperC %}
 ```c
 #include <stdio.h>
 
 int main() {
-  int x = 8;
+  int x;
+  defer printf("x: %d\n", x);
 
-  {
-    int *mem = malloc(sizeof(int));
-    defer auto {
-      free(mem);
-      printf("mem is freed here\n");
-    }
+  x = 10;
 
-    *mem = 42 + x;
-    printf("%d\n", *mem);
+  if (x < 10)
+    return 1;
+
+  defer {
+    x = 99;
   }
 
-  printf("OK\n");
+  x = 20;
 
-  // 50
-  // mem is freed here
-  // OK
   return 0;
 }
 ```
+{% endtab %}
+
+{% tab defer-ass pseudo-assembly %}
+```s
+.LC0:
+  .string "x: %d\n"
+  .text
+  .globl main
+  .type main, @function
+
+main:
+  # -- function begin --
+  push rbp
+  mov rbp, rsp
+  sub rsp, 24
+
+  # -- function body --
+
+  # x = 10
+  mov DWORD PTR -20[rbp], 10
+
+  # if (x < 10)
+  cmp DWORD PTR -20[rbp], 10
+  jge .L2 # --> jump to .L2 if (x >= 10)
+  # return 1
+  push DWORD 1
+  jmp .__defer0
+
+.L2:
+  # x = 20
+  mov DWORD PTR -20[rbp], 20
+
+  # return 0
+  push DWORD 0
+  jmp .__defer1 # Optimized out
+
+.__defer1:
+  # x = 99
+  mov DWORD PTR -20[rbp], 99
+
+.__defer0:
+  # printf("x: %d\n", x)
+  mov eax, DWORD PTR -20[rbp]
+  mov esi, eax
+  lea rax, .LC0[rip]
+  mov rdi, rax
+  mov eax, 0
+  call printf@PLT
+
+  # -- function end --
+  # return code is in eax
+  pop eax  # restore the return code
+  leave
+  ret
+```
+{% endtab %}
+
+{% tab defer-ass pseudo-c %}
 ```c
 #include <stdio.h>
 
 int main() {
-  int x = 8;
+  int __retval__;
 
-  {
-    defer auto printf("I am unavoidable\n");
-    // Try to escape defer execution
-    goto lbl_end;
-    printf("Unreachable\n");
+  int x;
+  // register __defer0
+
+  x = 10;
+
+  if (x < 10) {
+    // return 1;
+    __retval__ = 1;
+    // if program reaches this goto, it's jumping to __defer0
+    // so it skips __defer1 because it has not been registered yet
+    goto __defer0;
   }
 
-  lbl_end:
-  printf("OK\n");
+  // register __defer1
 
-  // I am unavoidable
-  // OK
-  return 0;
+  x = 20;
+
+  // return 0;
+  __retval__ = 0;
+  goto __defer1;
+
+  __defer1:
+  x = 99;
+
+  __defer0:
+  printf("x: %d\n", x);
+
+  return __retval__;
 }
 ```
-```c
-#include <stdio.h>
-#include <stdbool.h>
+{% endtab %}
 
-int main() {
-  while (true) {
-    defer auto printf("A\n");
-    while (true) {
-      defer auto printf("B\n");
-      while (true) {
-        defer auto printf("C\n");
-        // Exit 3 loops
-        // Executing defers in LIFO order
-        break 3;
-      }
-    }
-  }
-
-  printf("OK\n");
-  // C
-  // B
-  // A
-  // OK
-  return 0;
-}
+{% tab defer-ass Output %}
 ```
-
-# Defer in loops
-> **Warning**: `defer auto` is **not implemented yet**, it is in development phase
-
-In addition, `defer auto` has a special behavior in loops.
-
-It runs also before the `continue`/`break` statements. So the defer statement is executed at the end of every iteration.
-
-### Examples
-```c
-#include <stdio.h>
-
-int main() {
-
-  for (int i = 0; i < 5; i++) {
-    char *str = malloc(100); // 100 chars max
-    defer auto free(str);
-
-    if (i == 1)
-      continue; // defer runs here
-
-    sprintf(str, "Number: %d", i);
-    printf("%s\n", str);
-
-    if (i == 3)
-      break; // defer runs here
-
-    // defer runs here
-  }
-
-  printf("OK\n");
-
-  // Number: 0
-  // Number: 2
-  // Number: 3
-  // OK
-  return 0;
-}
+x: 99
 ```
+{% endtab %}
+{% endtabs %}

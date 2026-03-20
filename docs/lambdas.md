@@ -3,7 +3,7 @@ title: (DRAFT) Lambda Expressions & Closures
 layout: blog
 ---
 
-> ⚠️ This is a **PROPOSAL DRAFT**. Lambdas are currently not implemented. Syntax may change
+> ⚠️ This is a **PROPOSAL DRAFT**. Lambdas are currently **not implemented**. Syntax may change
 
 # Lambda Expressions & Closures
 Lambdas and closures only differ at assembly level, it's nice if you learn the difference, but you don't have to.
