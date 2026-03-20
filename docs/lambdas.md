@@ -13,9 +13,9 @@ In **SuperC**, you can write both as lambdas without worrying about capture. In 
 - A ***lambda*** is an **anonymous function** that can be assigned to a variable.
 - A ***closure***, is a lambda that **captures** local variables from its environment.
 
-{% tabs example1 %}
+{% tabs lambdas1 %}
 
-{% tab example1 SuperC %}
+{% tab lambdas1 SuperC %}
 ```c
 #include <stdio.h>
 
@@ -50,7 +50,7 @@ int main() {
 ```
 {% endtab %}
 
-{% tab example1 clang %}
+{% tab lambdas1 clang %}
 > Note: Actually, clang compiler does not support **fastcall** for x86-64, this code emits a warning.<br>
 > <span style="color:fuchsia;">warning:</span> 'fastcall' calling convention is not supported for this target  [-Wignored-attributes]
 

@@ -14,9 +14,9 @@ This means that the collision of the **symbols** only happen in the linker, so i
 
 > Note: Variadic functions cannot be overloaded
 
-{% tabs example1 %}
+{% tabs fnov1 %}
 
-{% tab example1 SuperC %}
+{% tab fnov1 SuperC %}
 ```c
 #include <stdio.h>
 
@@ -42,7 +42,7 @@ int main(void) {
 ```
 {% endtab %}
 
-{% tab example1 C11 %}
+{% tab fnov1 C11 %}
 ```c
 #include <stdio.h>
 
