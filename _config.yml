@@ -2,6 +2,8 @@ title: SuperC documentation
 google_analytics:
 theme: jekyll-theme-minimal
 incremental: true
+plugins:
+  - jekyll-tabs
 
 keep_files:
   - assets/jslinux/os/files
@@ -17,3 +19,4 @@ docs_nav:
   - docs/switch_ranges.md
   - docs/function_overload.md
   - docs/c_backwards_compat.md
+  - docs/lambdas.md

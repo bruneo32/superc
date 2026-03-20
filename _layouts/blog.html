@@ -107,6 +107,7 @@
 
   <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
   <link rel="stylesheet" href="{{ "/assets/css/blog.css?v=" | append: site.github.build_revision | relative_url }}">
+  <link rel="stylesheet" href="{{ "/assets/css/tabs.css?v=" | append: site.github.build_revision | relative_url }}">
 
   <!--[if lt IE 9]>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
@@ -187,6 +188,7 @@
     setThemeIconHTML(document.getElementById("toggle-theme"));
   </script>
 
+  <script src="{{ "/assets/js/tabs.js" | relative_url }}"></script>
   <script src="{{ "/assets/js/scale.fix.js" | relative_url }}"></script>
   <script>
     const items = document.querySelectorAll(".doc-item");
@@ -207,6 +209,18 @@
           item.style.display = "none";
         }
       });
+    });
+
+    jekyllTabs.init({
+        syncTabsWithSameLabels: false,
+        activateTabFromUrl: true,
+        addCopyToClipboardButtons: true,
+        copyToClipboardSettings: {
+            buttonHTML: '<button>&#x1F4CB;</button>',
+            showToastMessageOnCopy: true,
+            toastMessage: 'Copied!',
+            toastDuration: 3000,
+        }
     });
   </script>
 </body>
