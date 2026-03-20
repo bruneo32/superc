@@ -35,15 +35,19 @@ jobs:
         run: |
           mkdir -p _site/assets/jslinux/os/files
           tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
         with:
-          source: ./
-          destination: ./_site
+          ruby-version: 3.1.2
+          bundler-cache: true
+      - name: Build site
+        run: |
+          ./_script/bootstrap
+          bundle exec jekyll build -d _site
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./_site"
 
   # Deployment job
   deploy:
