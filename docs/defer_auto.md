@@ -3,12 +3,13 @@ title: (DRAFT) Defer auto
 layout: blog
 ---
 
-> ⚠️ This is a **PROPOSAL DRAFT**. Defer auto is currently **not implemented**. Syntax may change
+> ⚠️ This is a **PROPOSAL DRAFT**. Defer auto is currently **not implemented**. Syntax may change<br>
+> Development is not going to advance until [LLVM backend](/#roadmap) is minimally stable.
 
 # Defer in scoped blocks
 > Will execute the code stated right before exiting a syntactical scope.
 
-Sometimes ti's useful to execute code after a scoped block, not only in a function scope.
+Sometimes it's useful to execute code after a scoped block, not only in a function scope.
 
 > `defer auto` runs at...
 > - the block scope end
@@ -125,66 +126,6 @@ int main() {
   // Number: 2
   // Number: 3
   // OK
-  return 0;
-}
-```
-
-# Possible cancellation points
-> This is still up to debate, we cover ***goto***, we have not talked about ***[longjmp](<https://gist.github.com/MangaD/b10d6a4c50e80712bc582e5968ae8bd0>)***, ***_Noreturn*** functions or signals.
-
-The current idea *(and this can be changed)* is that the user *may* or *may not* want to run defers at some cancellation points, because maybe the user wants to fast-fail among other things.
-
-Also, some cancellation points are easy to catch, but some are impossible, like [signals](<https://www.geeksforgeeks.org/c/signals-c-language/>){:target="_blank"}.
-
-Nowadays, the design leverage is to use a `__builtin_unwind_defers` function that unwinds all the defers and the user can call it.
-
-```c
-if (fatal) {
-  if (should_cleanup) {
-    __builtin_unwind_defers();
-  }
-  panic("fatal error");
-}
-```
-
-```c
-#include <stdio.h>
-#include <setjmp.h>
-#include <stdlib.h>
-
-jmp_buf env;
-
-void deep_function() {
-  int *str = malloc(sizeof(int));
-  defer free(p);
-
-  FILE *f = fopen("data.txt", "r");
-  defer fclose(f);
-
-  ...
-
-  {
-    ...
-    // throw error
-    // Without __builtin_unwind_defers(), defers are lost
-    longjmp(env, 1);
-    ...
-  }
-
-  ...
-
-}
-
-int main() {
-  if (setjmp(env) == 0) {
-    // try
-    deep_function();
-    printf("No error\n");
-  } else {
-    // catch
-    printf("Error via longjmp!\n");
-    exit(1);
-  }
   return 0;
 }
 ```

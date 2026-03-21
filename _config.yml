@@ -21,3 +21,4 @@ docs_nav:
   - docs/function_overload.md
   - docs/c_backwards_compat.md
   - docs/lambdas.md
+  - docs/defer_edge_cases.md
