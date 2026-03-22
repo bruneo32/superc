@@ -88,6 +88,12 @@ example_string.c
 #include <stdio.h>
 #include <string.h>
 
+/* Silly GCC headers
+ * destroy __attribute__ */
+#ifdef __attribute__
+#undef __attribute__
+#endif
+
 #define string char*
 
 /* s1.length() is strlen(s1) */
