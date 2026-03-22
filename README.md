@@ -1,4 +1,5 @@
 # SuperC documentation pages
+[![Pages Status](https://img.shields.io/github/actions/workflow/status/bruneo32/superc/gh-pages.yml?branch=gh-pages)](https://github.com/bruneo32/superc/actions)
 
 # Get Ruby
 ```sh
