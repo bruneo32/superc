@@ -40,15 +40,16 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
 
 ## Roadmap
 - **Documentation**
-  - Keep [these pages](</>) up-to-date.
+  - Keep [documentation](</>) up-to-date.
   - Provide dual-track explanations: by-the-hand guides for beginners, and straight forward documentation for experienced developers.
   - Use examples *(at least the following)*: simple usage, real usage, and edge cases.
 - **Compiler**
    1. Complete **LLVM** backend
       - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
-   2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>){:target="_blank"}** syntax
+   2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>){:target="_blank"}** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>){:target="_blank"}** syntax
    3. Complete new language features:
       - Struct inheritance/composition
+      - defer auto
       - Lambdas
       - (?) Namespaces
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>){:target="_blank"}
@@ -69,7 +70,7 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
   - This implies new syntax.
   - And library functions.
 - **Tooling & Editor Extensions**
-  1. A language cannot survive today without first-class tooling. Developing a highly responsive VSCode extension powered by a robust Language Server Protocol (LSP) is a top priority.
+  1. A language cannot survive today without first-class tooling. Developing a highly responsive **VSCode** extension powered by a robust Language Server Protocol *(LSP)* is a top priority.
   2. Other editors are welcome as well *(Neovim, Emacs, JetBrains, ...)*.
 
 ## Source code
