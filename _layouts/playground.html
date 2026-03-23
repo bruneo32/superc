@@ -64,11 +64,11 @@
         toastWarn(`Starting JSLinux for the first time...`);
         start_vm(null, null, () => {
           // Fetch superc
-          run_command_silent(`wget ${window.location.host}/${window.__jslinux_base_url__}/bin/superc_jslinux.tar.xz -O /root/superc_jslinux.tar.xz`)
-          run_command_silent("tar xJf /root/superc_jslinux.tar.xz -C /")
-          run_command_silent("rm /root/superc_jslinux.tar.xz")
-          run_command_silent("alias superc='superc -include /usr/local/include/stdarg.h '")
-
+          run_command_silent("wget http://" + window.location.host + "/" + window.__jslinux_base_url__
+            + "/bin/superc_jslinux.tar.xz -O /root/superc_jslinux.tar.xz"
+            + " && tar xJf /root/superc_jslinux.tar.xz -C /"
+            + " && rm /root/superc_jslinux.tar.xz"
+            + " && alias superc='superc -include /usr/local/include/stdarg.h '")
           f();
         });
         return;
