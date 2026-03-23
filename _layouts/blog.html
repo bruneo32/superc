@@ -156,6 +156,7 @@
   <section>
     {{ content }}
     <br>
+    <div class="docnav">
     {% if nav_index != -1 %}
       {% assign prev_idx = nav_index | minus: 1 %}
       {% assign prev_path = site.docs_nav[prev_idx] %}
@@ -166,18 +167,19 @@
       {% assign next_page = site.pages | where: "path", next_path | first %}
 
       {% if prev_idx >= 0 %}
-      <a class="docnav" style="float:left;" href="{{ prev_page.url | relative_url }}">
+      <a class="_prev" href="{{ prev_page.url | relative_url }}">
         <h4>Previous</h4>
         <h5>{{ prev_page.title }}</h5>
       </a>
       {% endif %}
       {% if next_path %}
-      <a class="docnav" style="float:right;" href="{{ next_page.url | relative_url }}">
+      <a class="_next" href="{{ next_page.url | relative_url }}">
         <h4>Next</h4>
         <h5>{{ next_page.title }}</h5>
       </a>
       {% endif %}
     {% endif %}
+    </div>
   </section>
 
   <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>

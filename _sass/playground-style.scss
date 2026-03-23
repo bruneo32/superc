@@ -89,9 +89,9 @@ header * {
 }
 
 header a:hover {
-	color: var(--hr-color);
+	color: var(--hr-color) !important;
 	background: var(--link-color);
-	text-shadow: none;
+	text-shadow: none !important;
 }
 
 footer {

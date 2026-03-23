@@ -48,24 +48,39 @@
 	display: block;
 }
 
+.jekyll-tabs-copy-to-clipboard {
+	cursor: pointer;
+	padding: 6px 4px;
+	margin: 8px;
+	border: 1px solid var(--code-border);
+	color: var(--code-fg);
+	background: transparent;
+	border-radius: 8px;
+}
+
+.jekyll-tabs-copy-to-clipboard:hover {
+	box-shadow: 0 0 6px 0px var(--link-color);
+}
+
 /* The 2 following blocks can be removed if the script is not configured to show the toast message */
 #jekyll-tabs-copy-to-clipboard-message {
 	visibility: hidden;
-	min-width: 250px;
-	margin-left: -125px;
-	background-color: #333;
-	color: #fff;
+	z-index: 1;
+	position: fixed;
+	transition: 0.3s;
+	top: -128px;
+	left: 50%;
+	transform: translateX(-50%);
+
 	text-align: center;
+	min-width: 256px;
+	color: var(--code-bg);
+	background-color: var(--code-fg);
 	border-radius: 2px;
 	padding: 16px;
-	position: fixed;
-	z-index: 1;
-	right: 50%;
-	bottom: 30px;
 }
 
 #jekyll-tabs-copy-to-clipboard-message.show {
 	visibility: visible;
-	-webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
-	animation: fadein 0.5s, fadeout 0.5s 2.5s;
+	top: 30px;
 }

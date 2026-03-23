@@ -120,28 +120,40 @@ button.clean {
 	padding: 8px;
 }
 
-a.docnav {
-    display: block;
-	font-size: min(2vw, 14px);
-	border-radius: 8px;
-	text-align: center;
-    background: var(--code-comment);
-    padding: 2em 3em 1.2em 3em;
-	margin-bottom: 2em;
+.docnav {
+	display: flex;
+	justify-content: space-between;
+	flex-wrap: nowrap;
+	flex-direction: row;
+	width: 100%;
 }
 
-a.docnav:hover,
-a.docnav:focus {
-	background: var(--code-string);
+.docnav:has(> ._next):not(:has(> ._prev)) {
+	flex-direction: row-reverse;
+}
+
+.docnav a {
+	display: block;
+	border-radius: 8px;
+	text-align: center;
+	background: var(--docnav-bg);
+	padding: 2em 3em 1.2em 3em;
+	margin: 6px;
+}
+
+.docnav a:hover,
+.docnav a:focus {
+	background: var(--docnav-hover);
 	text-shadow: none;
 }
 
-a.docnav h4,h5 {
+.docnav a h4,
+.docnav a h5 {
 	margin: 0 0 0.8em 0;
 	font-size: 1.17em;
 }
 
-a.docnav h4 {
+.docnav a h4 {
 	color: var(--heading-color);
 }
 
@@ -177,6 +189,10 @@ screen and (max-width: 960px) {
 
 	#toggle-menu {
 		display: block;
+	}
+
+	.docnav {
+		flex-direction: column-reverse;
 	}
 
 }

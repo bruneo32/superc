@@ -20,7 +20,7 @@ int main() {
     for (int i = 0; i < 10; i++) {
       if (i == 5 && j == 2)
         break 2; /* Break both for loops */
-      printf(" %d\n", i);
+      printf(" %d", i);
     }
     putchar('\n');
   }

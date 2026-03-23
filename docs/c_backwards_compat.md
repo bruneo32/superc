@@ -88,14 +88,14 @@ Like [GCC](<https://gcc.gnu.org/onlinedocs/gcc/Function-Names.html>){:target="_b
 #include <stdio.h>
 
 int add(int a, int b) __attribute__((symbol("myadd_function"))) {
-  printf("%s(%d, %d)", __FUNCTION__, a, b);
+  printf("%s(%d, %d)\n", __FUNCTION__, a, b);
   return a + b;
 }
 
 // automatic symbol is "sum$ii"
 int (int a) sum(int b) {
   // __func__ is exactly the same as __FUNCTION__
-  printf("%s(%d, %d)", __func__, a, b);
+  printf("%s(%d, %d)\n", __func__, a, b);
   return a + b;
 }
 
