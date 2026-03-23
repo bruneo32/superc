@@ -620,18 +620,7 @@ function start_vm(user, pwd, _onload) {
 
 			/* Little timeout */
 			setTimeout(() => {
-				run_command_silent("export HISTCONTROL=ignoreboth");
-				run_command_silent("cd /root/");
-				run_command_silent("rm -f *");
-
-				run_command_silent("alias l='ls -CF'");
-				run_command_silent("alias la='ls -A'");
-				run_command_silent("alias ll='ls -hAlF'");
-
 				if (_onload) { _onload(); }
-
-				/* Mark as running at the end of the workflow */
-				window.is_jslinux_running = true;
 			}, 333)
 		}
 	}, 100);

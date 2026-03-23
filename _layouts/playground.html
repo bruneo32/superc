@@ -10,33 +10,10 @@
 
   <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
   <script src="{{ "/assets/js/hashes.min.js" | relative_url }}"></script>
+  <script src="{{ "/assets/jslinux/init.sh.js" | relative_url }}"></script>
   <script>
     window.__jslinux_base_url__ = "{{ '/assets/jslinux' | relative_url }}"
 
-    initTheme();
-    function setThemeIconHTML(button) {
-      const theme = getTheme();
-      const isDark = theme == "dark";
-      button.innerHTML = !isDark ? "&#x1F31A;" : "&#x1F31D;";
-    }
-    function toggleTheme(button) {
-      const theme = getTheme();
-      const isDark = theme == "dark";
-      setTheme(isDark ? "light" : "dark");
-      setThemeIconHTML(button);
-    }
-
-    const params = new URL(document.location.toString()).searchParams;
-
-    const SHA256 = new Hashes.SHA256();
-  </script>
-
-  <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
-  <link rel="stylesheet" href="{{ "/assets/css/playground.css?v=" | append: site.github.build_revision | relative_url }}">
-
-  {% assign first_c_file = "main.c" %}
-  <script>
-    var vs_editor;
     initTheme();
     function setThemeIconHTML(button) {
       const theme = getTheme();
@@ -51,6 +28,18 @@
       setThemeIconHTML(button);
     }
 
+    const params = new URL(document.location.toString()).searchParams;
+    const b64 = params.get("c");
+
+    const SHA256 = new Hashes.SHA256();
+  </script>
+
+  <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+  <link rel="stylesheet" href="{{ "/assets/css/playground.css?v=" | append: site.github.build_revision | relative_url }}">
+
+  {% assign first_c_file = "main.c" %}
+  <script>
+    var vs_editor;
     function beforeUnload() {
       return "Are you sure you want to leave?\nProgress will be lost.";
     }
@@ -64,18 +53,15 @@
         toastWarn(`Starting JSLinux for the first time...`);
         start_vm(null, null, () => {
           // Fetch superc
-          run_command_silent("wget http://" + window.location.host + window.__jslinux_base_url__
-            + "/bin/superc_jslinux.tar.xz -O /root/superc_jslinux.tar.xz"
-            + " && tar xJf /root/superc_jslinux.tar.xz -C /"
-            + " && rm /root/superc_jslinux.tar.xz"
-            + " && alias superc='superc -include /usr/local/include/stdarg.h '")
-          f();
+          jslinux_upload_file_from_str(".init.sh", _jslinux_init_sh_str);
+          run_command_silent("source /root/.init.sh");
         });
         return;
       }
       if (f) { f(); }
     }
 
+    let __first_run = true;
     function ed_run() {
       start_jslinux(() => {
         /* Save file before run! */
@@ -84,7 +70,11 @@
           /* Run CC command */
           toastInfo(`Building: ${ed_file}`);
           run_command(`superc /root/${ed_file} && /root/a.out`)
-        }, window.is_jslinux_running ? 300 : 1200);
+          if (__first_run) {
+            __first_run = false;
+            toastWarn("Compile time is slow due to frontend virtualization!");
+          }
+        }, 500);
         // JSLinux takes a while to save the file the first time
       });
     }
@@ -95,14 +85,15 @@
       const val = vs_editor.getValue().toString();
       const curr_hash = SHA256.hex(val);
       if (curr_hash == __last_ed_file_hash) { return; }
-      __last_ed_file_hash = curr_hash;
 
       start_jslinux(() => {
+        __last_ed_file_hash = curr_hash;
+        // First time, don't delete
         run_command_silent(`rm -f /root/${ed_file}`);
         setTimeout(() => {
           jslinux_upload_file_from_str(ed_file, val);
           toastSuccess(`Saved: ${ed_file}`);
-        }, window.is_jslinux_running ? 100 : 1000);
+        }, 100);
         // JSLinux takes a while to save the file the first time
       });
     }
@@ -199,7 +190,7 @@
       _toast(msg, "#43ba07", 6000);
     }
     function toastWarn(msg) {
-      _toast(msg, "#a9a945", 6000);
+      _toast(msg, "#999933", 6000);
     }
     function toastError(msg) {
       _toast(msg, "#ce1a1a", 6000);
@@ -252,8 +243,6 @@
         vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs"
       }
     });
-
-    const b64 = params.get("c");
 
     require(["vs/editor/editor.main"], () => {
       vs_editor = monaco.editor.create(document.getElementById("vs-editor"), {

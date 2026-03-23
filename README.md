@@ -17,9 +17,8 @@ bundle exec jekyll serve
 
 ### Enable playground in local build
 ```sh
-mkdir -p _site/assets/jslinux/os/files _site/assets/jslinux/bin
+mkdir -p _site/assets/jslinux/os/files
 tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
-cp _bin/* _site/assets/jslinux/bin
 ```
 
 > Based on [Jekyll Minimal Theme](https://github.com/pages-themes/minimal)

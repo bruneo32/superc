@@ -33,9 +33,8 @@ jobs:
           lfs: true
       - name: Extract jslinux files before Jekyll work
         run: |
-          mkdir -p _site/assets/jslinux/os/files _site/assets/jslinux/bin
+          mkdir -p _site/assets/jslinux/os/files
           tar -xJf _jslinux_files.tar.xz -C _site/assets/jslinux/os/files
-          cp _bin/* _site/assets/jslinux/bin
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:

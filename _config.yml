@@ -6,7 +6,6 @@ plugins:
   - jekyll-tabs
 
 keep_files:
-  - assets/jslinux/bin
   - assets/jslinux/os/files
 
 docs_nav:
