@@ -11,6 +11,8 @@
   <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
   <script src="{{ "/assets/js/hashes.min.js" | relative_url }}"></script>
   <script>
+    window.__jslinux_base_url__ = "{{ '/assets/jslinux' | relative_url }}"
+
     initTheme();
     function setThemeIconHTML(button) {
       const theme = getTheme();
@@ -60,7 +62,15 @@
       if (!__guard_started) {
         __guard_started = true;
         toastWarn(`Starting JSLinux for the first time...`);
-        start_vm(null, null, f);
+        start_vm(null, null, () => {
+          // Fetch superc
+          run_command_silent(`wget ${window.__jslinux_base_url__}/bin/superc_jslinux.tar.xz -O /root/superc_jslinux.tar.xz`)
+          run_command_silent("tar xJf /root/superc_jslinux.tar.xz -C /")
+          run_command_silent("rm /root/superc_jslinux.tar.xz")
+          run_command_silent("alias superc=\"superc -include /usr/local/include/stdarg.h \"")
+
+          f();
+        });
         return;
       }
       if (f) { f(); }
@@ -73,7 +83,7 @@
         setTimeout(() => {
           /* Run CC command */
           toastInfo(`Building: ${ed_file}`);
-          run_command(`gcc /root/${ed_file} && /root/a.out`)
+          run_command(`superc /root/${ed_file} && /root/a.out`)
         }, window.is_jslinux_running ? 300 : 1200);
         // JSLinux takes a while to save the file the first time
       });
@@ -273,9 +283,6 @@
     });
   </script>
 
-  <script>
-    window.__jslinux_base_url__ = "{{ '/assets/jslinux' | relative_url }}"
-  </script>
   <script src="{{ "/assets/jslinux/term.js" | relative_url }}"></script>
   <script src="{{ "/assets/jslinux/jslinux.js" | relative_url }}"></script>
 </body>
