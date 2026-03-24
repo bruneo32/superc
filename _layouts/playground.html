@@ -8,6 +8,7 @@
 
   {% seo %}
 
+  <script src="{{ "/assets/js/misc.js" | relative_url }}"></script>
   <script src="{{ "/assets/js/theme.js" | relative_url }}"></script>
   <script src="{{ "/assets/js/hashes.min.js" | relative_url }}"></script>
   <script src="{{ "/assets/jslinux/init.sh.js" | relative_url }}"></script>
@@ -107,6 +108,14 @@
       __last_ed_file_hash = SHA256.hex(data);
       /* If file is empty, don't show success message */
       if (data) { toastSuccess(`Loaded: ${ed_file}`); }
+    }
+
+    function ed_share() {
+      shareLink(window.location.origin + window.location.pathname + "?c="
+        + btoa(vs_editor.getValue().toString().trim()),
+        "SuperC Playground",
+        "Try this SuperC code",
+        toastSuccess);
     }
 
     function _changedFile() {
@@ -212,6 +221,7 @@
   </header>
 
   <div id="editor-hbar">
+    <button onclick="ed_share()" title="Share">&#x1F517;</button>
     <button onclick="ed_save()" title="Save file [Ctrl+S]">&#x1F4BE;</button>
     <h1 id="editor-title" onkeydown="_changedFileKbd(event)" onblur="_changedFile()"
         contenteditable="plaintext-only" spellcheck="false" notranslate="true"

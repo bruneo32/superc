@@ -127,7 +127,7 @@
 
   <header>
     <h3><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h3>
-    <input type="text" id="searchDocs" placeholder="Search docs..."
+    <input type="text" id="searchDocs" placeholder="🔍 Search docs..."
       style="width:100%; padding:10px; margin-bottom:10px;">
     <ul style="padding:0;">
       {% for path in site.docs_nav %}
@@ -184,7 +184,7 @@
 
   <button id="toggle-theme" class="clean" onclick="toggleTheme(this)"></button>
   <button id="toggle-menu" class="clean" onclick="toggleMenu(this)">&#x1F4D5;</button>
-  <!-- <button id="btn-playground" onclick="location.href = '/playground.html'">Playground</button> -->
+  <a id="btn-playground" target="_blank" href="{{ "/playground" | relative_url }}">Playground</a>
   <button id="btn-scroll-up" class="clean" onclick="scrollUp()">&#x1F51D;</button>
   <script>
     setThemeIconHTML(document.getElementById("toggle-theme"));
