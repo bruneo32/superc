@@ -10,6 +10,7 @@ A backwards-compatible extension of **C** with modern ergonomics like *defer*, *
 ### Index
 
 - [Why SuperC?](#why-superc)
+  - [Memory management](#memory-management)
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Roadmap](#roadmap)
@@ -29,6 +30,57 @@ A backwards-compatible extension of **C** with modern ergonomics like *defer*, *
 - **Great documentation** - tutorials, examples, and edge cases all organized.<br>No need to spend hours reading random forum posts or blindly pasting AI responses.
 
 > Read more about vision and scope [here](<https://bruneo32.github.io/superc/#what-is-superc>).
+
+## Memory management
+- Unlike *Rust*, *Java* or *C++*, memory management in **SuperC** is ***manually*** managed.
+- Unlike *C*, memory management in **SuperC** is easy and simple.
+- No suprises, manual control, no hidden workflows.
+
+**SuperC** introduces some optional safety features that makes it easier and safer to write dynamically allocated code.
+
+> Both achieve the same end result, resources are released in order at compile time.<br>
+> But Rust makes it implicitly, while SuperC makes it explicitly.
+
+```rs
+// Rust
+
+fn main() {
+  let a = Box::new(1);
+  let b = Box::new(2);
+  let c = Box::new(3);
+
+  let sum = *a + *b + *c;
+
+  assert_eq!(sum, 6);
+  // a, b, and c are dropped
+}
+```
+```c
+// SuperC
+
+inline int *box_new(int val) {
+  int *x = malloc(sizeof(int));
+  // no defer, x survives
+  *x = val;
+  return x;
+}
+
+int main() {
+  int *a = box_new(1);
+  defer free(a); // drop a on function's exit
+
+  int *b = box_new(2);
+  defer free(b);
+
+  int *c = box_new(3);
+  defer free(c);
+
+  int sum = *a + *b + *c;
+
+  assert(sum == 6);
+  // a, b, and c are dropped
+}
+```
 
 # Features
 - Current developed features
