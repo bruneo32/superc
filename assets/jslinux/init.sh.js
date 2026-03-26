@@ -8,9 +8,10 @@ var _jslinux_init_sh_str =
 	"alias l='ls -CF'" + "\n" +
 	"alias la='ls -A'" + "\n" +
 	"alias ll='ls -hAlF'" + "\n" +
+	"export PS1='\\[\\e[91m\\]\\h\\[\\e[0m\\]:\\w\\$ '" + "\n" +
 	"echo \"Waiting for connection...\"" + "\n" +
 	"while ! ping -c 1 github.com >/dev/null 2>&1; do" + "\n" +
-	"  sleep 1" + "\n" +
+	"  sleep 0.2" + "\n" +
 	"done" + "\n" +
 	"echo \"Getting SuperC compiler...\"" + "\n" +
 	"wget http://github.com/bruneo32/superc/raw/refs/heads/gh-pages/_bin/superc_jslinux.tar.xz \\" + "\n" +

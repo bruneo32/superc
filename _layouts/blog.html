@@ -213,6 +213,26 @@
       });
     });
 
+    const c_codes = document.querySelectorAll("ul.tab-content div.language-c.highlighter-rouge");
+    c_codes.forEach(div => {
+      const code = div.children[0].textContent.slice(0, -1 /* remove x1F4CB */).trim();
+      const code_b64 = btoa(code);
+
+      const btn_play = document.createElement("button");
+      btn_play.innerHTML = "&#x23E9;";
+      btn_play.title = "Try it!";
+      btn_play.classList.add("jekyll-tabs-copy-to-clipboard");
+      btn_play.style.position = "absolute";
+      btn_play.style.right = "32px";
+      btn_play.style.top = "0";
+      btn_play.addEventListener("click", () => {
+        window.open(
+          "{{ '/playground' | absolute_url }}" + "?c=" + code_b64
+        , "_blank");
+      })
+      div.children[0].appendChild(btn_play);
+    });
+
     jekyllTabs.init({
         syncTabsWithSameLabels: false,
         activateTabFromUrl: true,

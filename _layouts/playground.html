@@ -111,7 +111,7 @@
     }
 
     function ed_share() {
-      shareLink(window.location.origin + window.location.pathname + "?c="
+      shareLink("{{ page.url | absolute_url }}" + "?c="
         + btoa(vs_editor.getValue().toString().trim()),
         "SuperC Playground",
         "Try this SuperC code",
@@ -221,8 +221,8 @@
   </header>
 
   <div id="editor-hbar">
-    <button onclick="ed_share()" title="Share">&#x1F517;</button>
     <button onclick="ed_save()" title="Save file [Ctrl+S]">&#x1F4BE;</button>
+    <button onclick="ed_share()" title="Share current code">&#x1F517;</button>
     <h1 id="editor-title" onkeydown="_changedFileKbd(event)" onblur="_changedFile()"
         contenteditable="plaintext-only" spellcheck="false" notranslate="true"
       >{{ first_c_file }}</h1>
