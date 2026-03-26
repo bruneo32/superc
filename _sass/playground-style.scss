@@ -106,14 +106,6 @@ footer {
 	padding: 4px;
 }
 
-button.clean {
-	cursor: pointer;
-	font-size: 20px;
-	border-radius: 50%;
-	background: transparent;
-	border: none;
-}
-
 #toggle-theme {
 	z-index: 90;
 	position: fixed;
@@ -141,7 +133,7 @@ button.clean {
 }
 
 .term {
-	font-family: monospace, courier, fixed, swiss, sans-serif;
+	font-family: 'Noto Sans Mono', monospace;
 	font-weight: normal;
 	font-variant-ligatures: none;
 	color: var(--code-fg);

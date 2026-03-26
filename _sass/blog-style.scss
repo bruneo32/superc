@@ -78,14 +78,6 @@ section {
 	min-width: calc(100% - 270px - 200px - 50px);
 }
 
-button.clean {
-	cursor: pointer;
-	font-size: 20px;
-	border-radius: 50%;
-	background: transparent;
-	border: none;
-}
-
 #toggle-theme {
 	z-index: 90;
 	position: fixed;
