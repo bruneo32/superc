@@ -100,9 +100,12 @@ int main() {
 
 # Quick start
 Right now the compiler is not reliable enough to showcase, but sure you can try to test the new features.
+
 > ⚠️ **Reminder**: the compiler is unstable right now. **Expect bugs**.
 
 ## Installation
+> ⏩ **Recomendation**: Try **[SuperC online playground](<https://bruneo32.github.io/superc/playground>)** before installing
+>
 ```sh
 # Clone
 git clone https://github.com/bruneo32/superc.git
