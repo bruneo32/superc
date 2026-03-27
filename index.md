@@ -20,7 +20,7 @@ If you landed here, you probably are one of the following...
 # What is SuperC
 > **SuperC** is a **C** superset language, fully backwards compatible with **C**, but with **modern** language ergonomics.
 
-Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to the **modern** world, inspired by Go, Rust and Zig.
+Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to the **modern** world, inspired by languages like *Go*, *Rust* and *Zig* among others.
 
 1. *1972* - **[C](<https://en.wikipedia.org/wiki/C_(programming_language)>){:target="_blank"}** gives you a pistol, very useful, but makes it easy to shoot yourself in the foot.
 2. *1997* - **[C++](<https://en.wikipedia.org/wiki/C++>){:target="_blank"}** makes it harder to shoot yourself in the foot, but when you do it blows your whole leg off.

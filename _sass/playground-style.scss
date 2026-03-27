@@ -12,7 +12,7 @@
 	top: 74px;
 	left: 0;
 	width: 50vw;
-	height: calc(100vh - 74px - 32px);
+	height: calc(100dvh - 74px - 32px);
 }
 
 #editor-hbar {
@@ -71,7 +71,7 @@
 	right: 0;
 	top: 48px;
 	width: 50vw;
-	height: calc(100vh - 48px - 32px);
+	height: calc(100dvh - 48px - 32px);
 }
 
 header {
@@ -224,7 +224,7 @@ footer {
 screen and (max-width: 960px) {
 	#vs-editor {
 		width: 100vw;
-		height: calc(50vh - 74px);
+		height: calc(50dvh - 74px);
 	}
 
 	#editor-hbar {
@@ -232,8 +232,8 @@ screen and (max-width: 960px) {
 	}
 
 	#term_wrap {
-		top: 50vh;
+		top: 50dvh;
 		width: 100vw;
-		height: calc(50vh - 32px);
+		height: calc(50dvh - 32px);
 	}
 }
