@@ -26,6 +26,7 @@ A backwards-compatible extension of **C** with modern ergonomics like *defer*, *
 - **Zero‑cost abstractions** - sometimes even more efficient than hand-written C.
 - **No runtime overhead** - no hidden allocations, no vtables.
 - **Full C compatibility** - use any existing C library without wrappers.
+- **Defined behavior** - **SuperC** tries to standardize or reject undefined behavior where necessary.
 - **Multiplatform** - write once, run on Linux, Windows, macOS with minimal `#ifdef`.
 - **Great documentation** - tutorials, examples, and edge cases all organized.<br>No need to spend hours reading random forum posts or blindly pasting AI responses.
 
@@ -105,7 +106,7 @@ Right now the compiler is not reliable enough to showcase, but sure you can try 
 
 ## Installation
 > ⏩ **Recomendation**: Try **[SuperC online playground](<https://bruneo32.github.io/superc/playground>)** before installing
->
+
 ```sh
 # Clone
 git clone https://github.com/bruneo32/superc.git
