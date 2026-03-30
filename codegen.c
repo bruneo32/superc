@@ -11,6 +11,7 @@ static count_t emit_llvm(LLVM *llvm);
 LLVM *fn_retval_ll = NULL;
 Label fn_label_ret = {};
 
+static bool _is_reachable_code;
 static count_t ssa_id;
 #define new_ssa ssa_id++
 
@@ -177,9 +178,20 @@ static bool is_noundef(Obj *var) {
   }
 }
 
+static LLVM *gen_label(Label *label) {
+  /* Emit even if unreachable */
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_LABEL;
+  llvm->label = label;
+  _is_reachable_code = true;
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_jmp(Label *label) {
-  /* Don't emit if the previous is an unconditional jump */
-  if (_emit_cur->kind == LL_JMP)
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
     return NULL;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -190,15 +202,11 @@ static LLVM *gen_jmp(Label *label) {
   return llvm;
 }
 
-static LLVM *gen_label(Label *label) {
-  LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_LABEL;
-  llvm->label = label;
-  advance_emit(llvm);
-  return llvm;
-}
-
 static LLVM *gen_addr(Type *ty, Obj *var) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_VAR;
   llvm->ty   = ty;
@@ -207,6 +215,10 @@ static LLVM *gen_addr(Type *ty, Obj *var) {
 }
 
 static LLVM *gen_inum(Type *ty, int64_t val) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUM;
   llvm->ty = ty;
@@ -215,6 +227,10 @@ static LLVM *gen_inum(Type *ty, int64_t val) {
 };
 
 static LLVM *gen_fnum(Type *ty, flt_number val) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUMF;
   llvm->ty = ty;
@@ -223,12 +239,20 @@ static LLVM *gen_fnum(Type *ty, flt_number val) {
 }
 
 static inline LLVM *gen_num(Type *ty, Node *node) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   if (is_flonum(ty))
     return gen_fnum(ty, node->fval);
   return gen_inum(ty, node->val);
 }
 
 static LLVM *gen_alloca(Type *ty, int64_t val) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_ALLOCA;
   llvm->ty = ty;
@@ -247,6 +271,10 @@ static LLVM *builtint_alloca(count_t size) {
 static LLVM *gen_load(Type *ty, LLVM *src) {
   assert(src);
 
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LOAD;
   llvm->ty = ty;
@@ -257,6 +285,10 @@ static LLVM *gen_load(Type *ty, LLVM *src) {
 }
 
 static LLVM *gen_store(Type *ty, LLVM *src, LLVM *dst) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_STORE;
   llvm->ty = ty;
@@ -296,6 +328,10 @@ static LLKind cast_table[][12] = {
 };
 
 static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
 
   switch (from->kind) {
@@ -330,6 +366,10 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
 }
 
 static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FADD : LL_ADD;
   llvm->ty = ty;
@@ -341,6 +381,10 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
 }
 
 static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FMUL : LL_MUL;
   llvm->ty = ty;
@@ -352,6 +396,10 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
 }
 
 static LLVM *gen_funcall(Node *fn, LLVM *args) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_FUNCALL;
   llvm->ty = fn->ty;
@@ -363,6 +411,10 @@ static LLVM *gen_funcall(Node *fn, LLVM *args) {
 }
 
 static LLVM *gen_expr(Node *node) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
   switch (node->kind) {
     case ND_NULL_EXPR:
       return NULL;
@@ -462,9 +514,11 @@ static LLVM *gen_expr(Node *node) {
   unreachable();
 }
 
-static bool statement_unreachable = false;
-
 static void gen_stmt(Node *node, bool is_root_block) {
+  /* Don't emit if unreachable (except for LABELS that recover the reachability) */
+  if (!_is_reachable_code && node->kind != ND_LABEL)
+    return;
+
   switch (node->kind) {
     case ND_BLOCK:
       size_t count = 0;
@@ -476,8 +530,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
         if (is_block_terminator_ll(_emit_cur)) {
           if (!is_root_block)
             break;
-          statement_unreachable = true;
-          return;
+          _is_reachable_code = false;
         }
       }
 
@@ -1068,6 +1121,8 @@ static void emit_text(Obj *prog) {
     memset(&ll_head, 0, sizeof(LLVM));
     _emit_cur = &ll_head;
 
+    _is_reachable_code = true;
+
     current_fn = fn;
     const char *symbol = get_symbol(fn);
 
@@ -1127,7 +1182,6 @@ static void emit_text(Obj *prog) {
     /* ==== BODY ==== */
 
     /* Generate LLVM IR AST */
-    statement_unreachable = false;
     gen_stmt(fn->body, true);
 
     if (fn_header_last->next && fn_header_last->next->kind == LL_LABEL) {
@@ -1168,18 +1222,19 @@ static void emit_text(Obj *prog) {
       ll_body = ll_body->next;
     }
 
-    if (!statement_unreachable) {
-      /* ==== Epilogue ==== */
-      // TODO: Defers
-      emit_label(&fn_label_ret);
+    /* Recover reachability */
+    _is_reachable_code = true;
 
-      if (ret_ty->kind == TY_VOID)
-        emitf("  ret void");
-      else
-        emitf("  ret %s %%%ld", llvm_type(ret_ty),
-              emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
-      emitln;
-    }
+    /* ==== Epilogue ==== */
+    // TODO: Defers
+    emit_label(&fn_label_ret);
+
+    if (ret_ty->kind == TY_VOID)
+      emitf("  ret void");
+    else
+      emitf("  ret %s %%%ld", llvm_type(ret_ty),
+            emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
+    emitln;
 
     emitc('}');
     emitln;
@@ -1205,6 +1260,8 @@ void codegen(Obj *prog, FILE *out) {
   emitln;
 
   llvmty_usize = llvm_type(ty_usize);
+
+  _is_reachable_code = true;
 
   emit_union_structs_decl();
   emitln;

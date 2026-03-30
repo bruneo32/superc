@@ -1,7 +1,5 @@
 LLCFLAGS=-O2 -mtriple=x86_64-pc-linux-gnu
 
-all: simple.exe simple.s
-
 %.exe: %.o
 	ld.lld -o $@ -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
 		-L/usr/lib/x86_64-linux-gnu \

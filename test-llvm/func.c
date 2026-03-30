@@ -28,7 +28,7 @@ wtf: ;
 	return 33 + a + (int)b;
 }
 
-// static inline int foobar() { return 2; }
+static inline int foobar() { return 2; }
 
 // inline static const char *foobar2() {
 // 	return __func__;
@@ -63,7 +63,7 @@ first:
 int main() {
 	alloca(7);
 
-// goto test_label;
+	goto test_label;
 
 	foo();
 
