@@ -22,3 +22,5 @@ docs_nav:
   - docs/c_backwards_compat.md
   - docs/lambdas.md
   - docs/defer_edge_cases.md
+  - docs/struct_embedding.md
+  - docs/soft_objects.md

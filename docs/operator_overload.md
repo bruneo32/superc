@@ -24,7 +24,7 @@ There are some rules that the compiler follows:
 ### Binary arithmetic operators
 
 | Operator |         Method         |
-|:--------:|:-----------------------|
+|:--------:|:---------------------- |
 |   `+`    | `__add__(self, other)` |
 |   `-`    | `__sub__(self, other)` |
 |   `*`    | `__mul__(self, other)` |
@@ -34,7 +34,7 @@ There are some rules that the compiler follows:
 ### Comparison operators
 
 | Operator |         Method         |
-|:--------:|:-----------------------|
+|:--------:|:---------------------- |
 |   `<`    | `__lt__(self, other)`  |
 |   `>`    | `__gt__(self, other)`  |
 |   `<=`   | `__le__(self, other)`  |
@@ -45,7 +45,7 @@ There are some rules that the compiler follows:
 ### Assignment operators
 
 | Operator |          Method         |
-|:--------:|:------------------------|
+|:--------:|:----------------------- |
 |   `+=`   | `__iadd__(self, other)` |
 |   `-=`   | `__isub__(self, other)` |
 |   `*=`   | `__imul__(self, other)` |
@@ -55,10 +55,12 @@ There are some rules that the compiler follows:
 ### Unary operators
 
 | Operator |      Method     |
-|:--------:|:----------------|
+|:--------:|:--------------- |
 |   `-`    | `__neg__(self)` |
 |   `+`    | `__pos__(self)` |
 |   `~`    | `__del__(self)` |
+
+> Note: operator `~` is mostly used as [object destructor](soft_objects.md#constructors-and-destructors), rather than **arithmetic inversion**. That is why it is called \_\_del\_\_ instead of \_\_inv\_\_.
 
 ### Examples
 ```c

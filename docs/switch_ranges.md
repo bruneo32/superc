@@ -56,7 +56,7 @@ int main() {
 When you state `int x = 'A'`, the compiler just translates it to `int x = 65`.
 
 |  @  | Decimal | Hexadecimal |
-|-----|---------|-------------|
+| --- | ------- | ----------- |
 | ... |   ...   |     ...     |
 |  A  |   65    |    0x41     |
 |  B  |   66    |    0x42     |

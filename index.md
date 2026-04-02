@@ -13,7 +13,7 @@ Hi everyone! Welcome to **SuperC** documentation.
 If you landed here, you probably are one of the following...
 
 | You are... | What to do with **SuperC**? |
-|------------|-----------------------------|
+| ---------- | --------------------------- |
 | Curious, just casually looking<br>for new programming languages | Go ahead and try it! Just keep in mind that **SuperC** is still in **beta**<br>Help us focusing on what it *could become*, not what it is today. |
 | A *low-level* enjoyer, but **C** is already 50+ years old,<br>and the new low-level languages are too weird or too complex.<br><br>So, you want to take a look at **SuperC**,<br>hoping that this is the one you have been searching for. | Well, right now **SuperC** is unripe, but since you are a **C** guru,<br>we need your help **improving** the *compiler*, *documentation*, *library*, etc.<br><br>**Just** take your time, and **read** some [issues](<https://github.com/bruneo32/superc/issues>){:target="_blank"} or **create** new ones!<br>I do *personally* **thank you**.<br><br>> Thanks to you, this project can become a reality. |
 
@@ -53,7 +53,7 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
       - Lambdas
       - (?) Namespaces
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>){:target="_blank"}
-      - (?) Switch `goto` in-switch labels.
+      - (?) Switch `goto default`.
    4. Better error messages, help, and man pages.
    5. Multiplatform support *(write similar code in Linux, Windows and MacOS, etc)*
       - Allow the same *(safe)* **SuperC** code to compile and run across platforms without much modification.
