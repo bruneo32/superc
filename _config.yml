@@ -24,3 +24,4 @@ docs_nav:
   - docs/defer_edge_cases.md
   - docs/struct_embedding.md
   - docs/soft_objects.md
+  - docs/namespaces.md
