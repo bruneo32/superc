@@ -113,7 +113,6 @@ int main() {
     // defer auto printf("A\n");
 
     while (true) {
-      // type inference
       // defer auto printf("B\n");
 
       while (true) {
@@ -210,6 +209,6 @@ int main() {
 ### Optimizations
 Some possible optimizations to this approach are:
 - If the defer statement is only a simple statement, like arithmetic, it can be inlined.
-- If the defer statement is only a function call, we might register this function call instead of the closure.
+- If the defer statement is only one function call, we might register this function call instead of the closure.
 - If the defer is never used early *(i.e., no goto, no break, etc)*, don't need to emit a closure, just write the defer statement in the program flow ***(normal [defer](defer.md#assembly-code-generation) execution)***
 - To reduce code duplication, if a defer is used multiple times, we can call the closure too in the normal execution path instead of inlining it.

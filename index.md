@@ -15,16 +15,16 @@ If you landed here, you probably are one of the following...
 | You are... | What to do with **SuperC**? |
 | ---------- | --------------------------- |
 | Curious, just casually looking<br>for new programming languages | Go ahead and try it! Just keep in mind that **SuperC** is still in **beta**<br>Help us focusing on what it *could become*, not what it is today. |
-| A *low-level* enjoyer, but **C** is already 50+ years old,<br>and the new low-level languages are too weird or too complex.<br><br>So, you want to take a look at **SuperC**,<br>hoping that this is the one you have been searching for. | Well, right now **SuperC** is unripe, but since you are a **C** guru,<br>we need your help **improving** the *compiler*, *documentation*, *library*, etc.<br><br>**Just** take your time, and **read** some [issues](<https://github.com/bruneo32/superc/issues>){:target="_blank"} or **create** new ones!<br>I do *personally* **thank you**.<br><br>> Thanks to you, this project can become a reality. |
+| A *low-level* enjoyer, but **C** is already 50+ years old,<br>and the new low-level languages are too weird or too complex.<br><br>So, you want to take a look at **SuperC**,<br>hoping that this is the one you have been searching for. | Well, right now **SuperC** is unripe, but since you are a **C** guru,<br>we need your help **improving** the *compiler*, *documentation*, *library*, etc.<br><br>**Just** take your time, and **read** some [issues](<https://github.com/bruneo32/superc/issues>){:target="_blank"} or **create** new ones!<br>> Thanks to you, this project can become a reality. |
 
 # What is SuperC
 > **SuperC** is a **C** superset language, fully backwards compatible with **C**, but with **modern** language ergonomics.
 
 Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to the **modern** world, inspired by languages like *Go*, *Rust* and *Zig* among others.
 
-1. *1972* - **[C](<https://en.wikipedia.org/wiki/C_(programming_language)>){:target="_blank"}** gives you a pistol, very useful, but makes it easy to shoot yourself in the foot.
+1. *1972* - **[C](<https://en.wikipedia.org/wiki/C_(programming_language)>){:target="_blank"}** gives you a pistol, but makes it easy to shoot yourself in the foot.
 2. *1997* - **[C++](<https://en.wikipedia.org/wiki/C++>){:target="_blank"}** makes it harder to shoot yourself in the foot, but when you do it blows your whole leg off.
-3. *2026* - **SuperC** gives you a pistol with silencer, laser pointer, and better magazine. Why would you shoot yourself in the foot? Just learn to use a pistol!
+3. *2026* - **SuperC** gives you a pistol with silencer, laser pointer, and better magazine. Why would you shoot yourself in the foot? Just learn how to use a pistol!
 
 ### Vision
 - SuperC attempts to be a **C** successor, improving modern features and zero-cost overhead.
@@ -48,7 +48,7 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
       - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
    2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>){:target="_blank"}** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>){:target="_blank"}** syntax
    3. Complete new language features:
-      - Struct inheritance/composition
+      - Struct embedding
       - defer auto
       - Lambdas
       - Namespaces

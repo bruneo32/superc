@@ -19,14 +19,14 @@ layout: blog
 | **Use case**        | Systems code | Flexible architectures        |
 
 # Soft objects
-A **soft object** is a sweet point between composition and inheritance, just a clever use of [type methods](methods.md), and [struct embedding](struct_embedding.md)
+A **soft object** is a sweet point between composition and inheritance, just a clever use of [type methods](methods.md), and [struct embedding](struct_embedding.md).
 
 Does not comply with the official definition of *OOP*, but is close enough for most scenarios and introduces no runtime cost.
 
-This can bring objects closer to low-level programming or speeding up game runtime.
+This can bring objects closer to low-level programming, speed up games runtime, etc.
 
 ## Constructors and destructors
-```c
+```cpp
 #include <stdio.h>
 
 // class Animal
@@ -38,7 +38,7 @@ struct Car {
 };
 
 // constructor
-inline Car *Car_new(int doors, int wheels) {
+inline Car *Car::new(int doors, int wheels) {
   Car *c = malloc(sizeof(Car));
 
   c->doors = doors;
@@ -54,7 +54,7 @@ void (Car *c) __del__() {
 }
 
 int main() {
-  Car *mycar = Car_new(4, 4);
+  Car *mycar = Car::new(4, 4);
   defer ~mycar; // destroy mycar at the end
 
   ...
@@ -88,7 +88,7 @@ struct A {
 };
 
 // getter for __fgh
-inline int (struct A a) fgh() {
+int (struct A a) fgh() {
   return __fgh;
 }
 ```
@@ -97,8 +97,8 @@ inline int (struct A a) fgh() {
 
 ## Soft polymorphism - static dispatch
 You can inherit [type methods](methods.md) from struct parent's members and override them.
-- Since the method is related to the type, polymorphism can be lost when casting to parent.
-- But maybe you wanted this kind of polymorphism.
+- Since a **method** is binded to a **type**, polymorphism can be lost when casting to parent *(different type)*.
+- But **maybe** you wanted this kind of polymorphism.
 
 ```c
 #include <stdio.h>
@@ -218,7 +218,7 @@ struct Car {
 ## Full polymorphism - dynamic dispatch
 Instead of soft polymorphism, you can write full polymorphism with **dynamic dispatch**.
 
-```c
+```cpp
 #include <stdio.h>
 
 // class Animal
@@ -247,7 +247,7 @@ void Cat_grow(Cat *c) {
 }
 
 // Cat constructor
-inline Cat *Cat_new(char *name, int age, float weight, int speed) {
+inline Cat *Cat::new(char *name, int age, float weight, int speed) {
   Cat *c = malloc(sizeof(Cat));
 
   c->name = name;
@@ -267,7 +267,7 @@ void (Cat *c) __del__() {
 }
 
 int main() {
-  Cat *mycat = Cat_new("Mr. Pants", 3, 5.0, 10);
+  Cat *mycat = Cat::new("Mr. Pants", 3, 5.0, 10);
   defer ~mycat;
 
   mycat.grow();             // Call Cat.grow

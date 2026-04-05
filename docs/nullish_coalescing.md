@@ -4,7 +4,7 @@ layout: blog
 ---
 
 # Nullish coalescing operator
-> This is already implemented in [GNU C](<https://gcc.gnu.org/onlinedocs/gcc/Conditionals.html>){:target="_blank"}, `??` would have been prettier, but this is nice anyway.
+> This is already implemented in [GNU C](<https://gcc.gnu.org/onlinedocs/gcc/Conditionals.html>){:target="_blank"}
 
 The nullish coalescing operator is a ternary operator that returns its **right** operand if the left operand is *NULL*, and its **left** operand otherwise.
 
@@ -41,8 +41,7 @@ int main(void) {
   print_first_word(str_hello);
   // Hello
 
-  str_hello = NULL;
-  print_first_word(str_hello);
+  print_first_word(NULL);
   // unknown
 
   printf("x: %d\n", always_5());

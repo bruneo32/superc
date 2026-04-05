@@ -4,12 +4,12 @@ layout: blog
 ---
 
 # Defer
-> Will execute the code stated right before exiting a function.
+Will execute the code stated right before exiting a function.
 
 - Very useful for *dynamic memory management*, *resource cleanup* and *error handling*.
 - Easier to read the program since all the code for the cleanup is near the declaration.
 - Defers are executed in **LIFO** order. **i.e.**, the last defer will be executed first.
-- It is **encouraged** to use defer instead of manual management when possible, because it does not produce duplicated code, and does not create function calls. (See [assembly code generation](#assembly-code-generation))
+- It is **encouraged** to use defer when possible, since it's generally safer and faster. (See [assembly code generation](#assembly-code-generation))
 
 ### Examples
 {% tabs defer1 %}

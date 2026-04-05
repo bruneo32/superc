@@ -30,14 +30,12 @@ int main() {
 
   int x = 10;
   auto add_to_x = void (int y) {
-    // 'x' is a local from 'main'
-
     // This function is a closure,
-    // because it captures 'x'.
+    // because it captures 'x' from 'main'
     x += y;
 
     // If 'x' was global, it would be a lambda,
-    // because it would not need to capture it.
+    // because globals do not need capture
   }
 
   add_to_x(6);
@@ -64,7 +62,10 @@ static int __lambda0__(int a, int b) {
 }
 
 /**
- * There's no native way to make a closure in C
+ * There's no native way to make a closure in C.
+ * We will do what most languages use, but have in mind
+ * that this is not what SuperC does under the hood.
+ *
  * Most language uses a struct to pass the
  * captured environment to the function
  */

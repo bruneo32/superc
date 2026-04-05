@@ -8,11 +8,11 @@ layout: blog
 # Struct embedding
 Struct embedding refers to the ability of a struct to:
 - copy members from another struct ***(composition)***
-- inherit behaviour from another struct ***(inheritance)***.
+- inherit behaviour from another struct ***(inheritance)***
 
 ## Struct composition
-- A struct can copy members from another *(or more)* struct. **Anonymous members**
-- You can specify the *[offset](<https://www.geeksforgeeks.org/c/structure-member-alignment-padding-and-data-packing/>){:target="_blank"}* where the *anonymous members* will be placed.
+- A struct can copy members from another *(or more)* struct as an ***anonymous member***.
+- You can specify the *[offset](<https://www.geeksforgeeks.org/c/structure-member-alignment-padding-and-data-packing/>){:target="_blank"}* where the *anonymous member* will be placed.
 - All the *anonymous members* of a struct are considered ***parents*** of the struct. See [struct inheritance](#struct-inheritance).
 
 {% tabs struct_inheritance1 %}

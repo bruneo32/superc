@@ -5,8 +5,8 @@ layout: blog
 
 # Symbol mangling
 Allows the user to change the output symbol of a variable or function.
-- New attribute `__attribute__((symbol("new_symbol_name")))` -> changes the output symbol at assembly level of the variable or function.
-- New keyword `symbolof(identifier)` -> returns the expected symbol name of the variable or function as a string literal.
+- New attribute `__attribute__((symbol("new_symbol_name")))`; changes the output symbol at assembly level of the variable or function.
+- New keyword `symbolof(identifier)`; returns the expected symbol name of the variable or function as a string literal.
 
 ### Examples
 ```c
@@ -16,7 +16,7 @@ int foo __attribute__((symbol("bar"))) = 123;
 int bar2 = 456; // No symbol change.
 
 int sum(int a, int b) __attribute__((symbol("abc")));
-int (int a) sum(int b) __attribute__((symbol("def"))); // was "sum$i"
+int (int a) sum(int b) __attribute__((symbol("def"))); // was "sum$ii"
 
 // void abc(); // Link error: redefinition of symbol 'abc'
 
@@ -53,6 +53,7 @@ int main(void) {
 
 # Aliases
 Symbol mangling can be used to create syntax aliases to existing variables and functions in the compiled binary.
+
 Sure you can do `#define def abc`, but you cannot use preprocessor for [type methods](methods.md), so this is a useful feature of the symbol mangling.
 
 ### Examples
@@ -60,14 +61,8 @@ Sure you can do `#define def abc`, but you cannot use preprocessor for [type met
 #include <stdio.h>
 #include <string.h>
 
-/* Silly GCC headers
- * destroy __attribute__ */
-#ifdef __attribute__
-#undef __attribute__
-#endif
-
 int abc = 32;
-/* def is an alias of abc does not create a new variable */
+/* def is an alias of abc, so this does not create a new variable */
 extern int def __attribute__((symbol("abc")));
 
 /* Use symbol mangling to create a function alias string.concat -> strcat */
@@ -76,9 +71,10 @@ char *(char *s1) concat(char *s2) __attribute__((symbol("strcat")));
 int main(void) {
   char str_hello[100] = "Hello";
   str_hello.concat(" World").concat("!");
-  printf("%d\n%s\n", def, str_hello);
-  // 32
-  // Hello World!
+  printf("def: %d\n", def);
+  printf("str_hello: %s\n", str_hello);
+  // def: 32
+  // str_hello: Hello World!
   return 0;
 }
 ```
@@ -92,11 +88,6 @@ int main(void) {
 
 inline int inline1(int n) { return n + 3; }
 inline int (int i) inline2() { return inline1(i); }
-
-/* Since both functions are inlined,
- * the binary result is the same as
- * calling just inline1(), so this
- * is an alias of inline1() */
 
 int main(void) {
   /*

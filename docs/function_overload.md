@@ -5,14 +5,13 @@ layout: blog
 
 # Function overload
 **SuperC** allows function overload with manual symbol mangling.
+> This is what [_Generic](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)#Changes_from_C99>){:target="_blank"} does in **C11**, but made easy.
 
-When a **function call** is made in **SuperC**, the compiler will not search the function only by name, it will search the function by name and signature, which means that when you have two functions with the same name but different type of parameters, the compiler will call the one that matches *(in name, and parameter types; but not return type)*.
+When a **function call** is made in **SuperC**, the compiler will not search the function only by name, it will also search by parameter types; which means that when you have two functions with the same name but different type of parameters, the compiler will call the one that matches *(in name, and parameter types)*.
 
 This means that the collision of the **symbols** only happen in the linker, so if you have two functions with the same symbol, the linker will throw an **error**; but the compiler won't throw an error if they have the same name, but different **symbols** *(and signature of course)*.
 
-> This is what [_Generic](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)#Changes_from_C99>){:target="_blank"} does in C11, but made easy.
-
-> Note: Variadic functions cannot be overloaded
+> **Note**: No [variadic function](<https://en.wikipedia.org/wiki/Variadic_function#In_C>){:target="_blank"} can be overloaded
 
 {% tabs fnov1 %}
 
@@ -113,7 +112,7 @@ int sum(int a, int b) {
   return add(a, b);
 }
 
-int sum(short a, short b) {
+int sum(short a, short b) __attribute__((symbol("sum_shorts"))) {
   return a - b;
 }
 

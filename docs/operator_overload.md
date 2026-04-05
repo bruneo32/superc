@@ -4,7 +4,7 @@ layout: blog
 ---
 
 # Operator overload
-You can map an operator (+, +=, etc) to a type method call.
+You can map an operator (+, +=, etc) to a [type method](methods.md) call.
 
 This can be very useful to avoid a headache when working with complex data types like strings and arrays.
 
@@ -82,6 +82,7 @@ int main(void) {
 ```c
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 typedef struct Point Point;
 struct Point {
@@ -109,13 +110,18 @@ int main(void) {
   Point p1 = {1, 2};
   Point p2 = {3, 4};
   Point p3 = p1 + p2;
-  printf("%d %d\n", p3.x, p3.y);
+
+  if (p3 == p1 + p2) {
+    printf("%d %d\n", p3.x, p3.y);
+  }
+
   // 4 6
   return 0;
 }
 ```
 ```c
 #include <stdio.h>
+#include <string.h>
 
 char *(char *s1) __iadd__(const char *s2) {
   char *s3 = strdup(s1);
@@ -128,17 +134,7 @@ char *(char *s1) __iadd__(const char *s2) {
 int main(void) {
   char str_hello[100] = "Hello";
   str_hello += " World";
-  str_hello += "!";
-  printf("%s\n", str_hello);
-  return 0;
-}
-
-int main(void) {
-  Point p1 = {1, 2};
-  Point p2 = {3, 4};
-  Point p3 = p1 + p2;
-  printf("%d %d\n", p3.x, p3.y);
-  // 4 6
+  printf("%s\n", str_hello += "!");
   return 0;
 }
 ```
