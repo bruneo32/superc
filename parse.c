@@ -65,6 +65,9 @@ struct LabelArray {
   LabelArray *next;
 };
 
+static const Identifier ident_none = {.name = NULL, .params_ty = NULL, .is_method = 0};
+#define IdentNamed(name_) ((Identifier){.name = (name_), .params_ty = NULL, .is_method = 0})
+
 // All local variable instances created during parsing are
 // accumulated to this list.
 static Obj *locals;
@@ -88,6 +91,12 @@ static Label *cont_label;
 // Points to a node representing a switch if we are parsing
 // a switch statement. Otherwise, NULL.
 static Node *current_switch;
+
+/**
+ * Maps functions that have been overloaded.
+ * (char*)name => (size_t)count
+ */
+static HashMap map_func_ov = {0};
 
 static Obj *builtin_alloca;
 
@@ -140,9 +149,10 @@ static Node *primary(Token **rest, Token *tok);
 static Token *parse_typedef(Token *tok, Type *basety);
 static bool is_function(Token *tok);
 static bool is_type_method(Token *tok);
+static Type *func_params(Token **rest, Token *tok, Type *ty);
 static Token *function(Token *tok, Type *basety, VarAttr *attr);
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
-static Obj *find_func(Identifier ident);
+static Obj *find_func(Identifier ident, bool only_check_recv);
 static Identifier consume_ident(Token** rest, Token *tok);
 static char *ident_to_string(Identifier ident);
 
@@ -175,43 +185,78 @@ static Label *find_brk_label(size_t depth) {
   return (!search) ? NULL : search->label;
 }
 
-// Find a variable by name.
-static VarScope *find_var(Identifier ident) {
-  if (ident.method_ty && ident.name) {
-    /* Isn't quick method, but is. */
-    for (Scope *sc = scope; sc; sc = sc->next) {
-      for (size_t i = 0; i < sc->vars.capacity; ++i) {
-        HashEntry *ent = &sc->vars.buckets[i];
-        if (!ent) continue;
-        VarScope *sc2 = ent->val;
-        if (!sc2 || !sc2->var ||
-            !sc2->var->recv.method_ty ||
-            !sc2->var->recv.name)
-          continue;
+static char *get_overload_id(Identifier ident) {
+  if (!ident.is_method)
+    return strdup(ident.name);
 
-        /* Check if it's the same method by value, not by pointer*/
-        char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
-        char *msg2 = type_to_asmident(ident.method_ty);
-        if (strcmp(msg1, msg2) != 0){
-          free(msg1);
-          free(msg2);
-          continue;
-        }
-        free(msg1);
-        free(msg2);
+  /* Calculate default symbol as 'id$type_asm' 'sum$int' */
+  char *type_cname = type_to_asmident(ident.params_ty, false);
+  size_t newlen = strlen(ident.name) + strlen(type_cname) + 2;
+  char *oid = malloc(newlen);
+  snprintf(oid, newlen, "%s$%s", ident.name, type_cname);
+  free(type_cname);
 
-        /* Check if it's the method we are searching for */
-        if (strcmp(sc2->var->recv.name, ident.name) == 0)
-          return sc2;
-      }
-    }
-    return NULL;
+  return oid;
+}
+
+static size_t guard_and_count_overloads(Identifier ident) {
+  char *fn_oid = get_overload_id(ident);
+  void *is_func_ov = hashmap_get(&map_func_ov, fn_oid);
+  free(fn_oid);
+  if (is_func_ov != 0) {
+    for (Type *params_ty = ident.params_ty; params_ty; params_ty = params_ty->next)
+      if (params_ty->origin == ty_int && params_ty->name_pos->kind == TK_NUM)
+        // Ambiguous literal
+        error_tok(params_ty->name_pos, "ambiguous literal for overloaded function '%s'\nCast the number '%ld' to the desired type. For example, '(int)%ld'", ident.name, params_ty->name_pos->val, params_ty->name_pos->val);
   }
+  return (size_t)is_func_ov;
+}
+
+static VarScope *find_var(Identifier ident) {
+  /* Check if some of the arguments is an ambiguous literal
+   * only for overloaded functions */
+  bool only_check_recv = !guard_and_count_overloads(ident);
 
   for (Scope *sc = scope; sc; sc = sc->next) {
-    VarScope *sc2 = hashmap_get(&sc->vars, ident.name);
-    if (sc2)
-      return sc2;
+    for (size_t i = 0; i < sc->vars.capacity; ++i) {
+      HashEntry *ent = &sc->vars.buckets[i];
+      if (!ent || !ent->key || ent->key == ((void *)-1))
+        continue;
+
+      VarScope *sc2 = ent->val;
+      if (!sc2)
+        continue;
+
+      // Handle Typedefs and Enums (Obj is NULL)
+      if (!sc2->var) {
+        // If we are looking for a function/method specifically, skip
+        if (ident.params_ty)
+          continue;
+        // Check name
+        if (strcmp(ident.name, ent->key) == 0)
+            return sc2;
+        continue;
+      }
+
+      /* == Handle Variables and Functions == */
+      if (sc2->var->ident.is_method != ident.is_method)
+        continue;
+
+      // If we are searching for a function/method (params_ty is set)
+      if (ident.params_ty) {
+        // Skip if this isn't a function
+        if (!sc2->var->ident.params_ty)
+          continue;
+        // Check signature match
+        if (!same_type_value(sc2->var->ident.params_ty, ident.params_ty, !only_check_recv))
+          continue;
+      }
+
+      // Final name check for variables/functions
+      char *sc2_name = sc2->var->ident.name ?: ent->key;
+      if (sc2_name && strcmp(ident.name, sc2_name) == 0)
+          return sc2;
+    }
   }
   return NULL;
 }
@@ -223,6 +268,20 @@ static Type *find_tag(Token *tok) {
       return ty;
   }
   return NULL;
+}
+
+static void add_func_ref(Obj *fn, Obj *ref) {
+  if (fn)
+    strarray_push(&fn->refs, ref->name); // No symbolname
+  else
+    ref->is_root = true;
+}
+
+static bool is_arithmetic_type(Type *ty) {
+  if (ty->kind != TY_ARRAY && ty->kind != TY_VLA &&
+      ty->kind != TY_PTR && !is_numeric(ty))
+    return false;
+  return true;
 }
 
 /** If name is NULL, the label is anonymous and unique by codegen */
@@ -280,6 +339,8 @@ static Node *new_var_node(Obj *var, Token *tok) {
   Node *node = new_node(ND_VAR, tok);
   node->var = var;
   add_type(node);
+  if (current_fn && var && var->is_function && !var->is_local)
+    add_func_ref(current_fn, var);
   return node;
 }
 
@@ -348,20 +409,17 @@ static Initializer *new_initializer(Type *ty, bool is_flexible) {
   return init;
 }
 
-static Obj *new_var(char *name, Identifier *ident, Type *ty) {
+static Obj *new_var(char *name, Identifier ident, Type *ty) {
   Obj *var = calloc(1, sizeof(Obj));
   var->name = name;
   var->ty = ty;
   var->align = ty->align;
-  if (ident && ident->method_ty)
-    var->recv = *ident;
-  else
-    var->recv = (Identifier){0, 0};
+  var->ident = ident;
   push_scope(name)->var = var;
   return var;
 }
 
-static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_lvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->is_local = true;
   var->next = locals;
@@ -369,7 +427,7 @@ static Obj *new_lvar(char *name, Identifier *ident, Type *ty) {
   return var;
 }
 
-static Obj *new_gvar(char *name, Identifier *ident, Type *ty) {
+static Obj *new_gvar(char *name, Identifier ident, Type *ty) {
   Obj *var = new_var(name, ident, ty);
   var->is_static = true;
   var->is_definition = true;
@@ -388,7 +446,7 @@ static char *new_unique_name(void) {
 }
 
 static Obj *new_anon_gvar(Type *ty) {
-  return new_gvar(new_unique_name(), NULL, ty);
+  return new_gvar(new_unique_name(), ident_none, ty);
 }
 
 static void
@@ -423,7 +481,7 @@ static Obj *new_string_literal(const char *p, Type *ty) {
   Initializer *init = new_initializer(array_of(ty->base, ty->array_len), false);
   fulfill_string_initializer(init, NULL, p, ty->array_len);
 
-  Obj *var = new_gvar(new_unique_name_str(), NULL, ty);
+  Obj *var = new_gvar(new_unique_name_str(), ident_none, ty);
   var->is_puc_addr = true;
   var->init = init;
   return var;
@@ -449,32 +507,88 @@ static bool is_identifier(Token *tok) {
   return tok->kind == TK_IDENT;
 }
 
+static Type *array_decay(Type *ty) {
+  if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
+    // array decay
+    // "array of T" is converted to "pointer to T" only in the receiver
+    // context. For example, *argv[] is converted to **argv by this.
+    Type *ret = pointer_to(ty->base);
+    ret->name = ty->name;
+    ret->name_pos = ty->name_pos;
+    return ret;
+  } else if (ty->kind == TY_FUNC) {
+    // Likewise, a function is converted to a pointer to a function
+    // only in the receiver context.
+    Type *ret = pointer_to(ty);
+    ret->name = ty->name;
+    ret->name_pos = ty->name_pos;
+    return ret;
+  }
+  return ty;
+}
+
 static Identifier consume_ident(Token** rest, Token *tok) {
   /* Select type methods as idenfiers `(int).sum` */
   if (equal(tok, "(") && is_typename(tok->next)) {
     /* Parse typename */
-    Type *ty = typename(&tok, tok->next);
+    Type *params = typename(&tok, tok->next);
 
     /* Convert array and function types to pointers */
-    if (ty->kind == TY_ARRAY || ty->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      ty = pointer_to(ty->base);
-    } else if (ty->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      ty = pointer_to(ty);
-    }
+    params = array_decay(params);
 
     tok = skip(tok, ")");
 
     /* Parse after type */
     if (equal(tok, ".") && tok->next->kind == TK_IDENT) {
-      char *namestr = get_ident(tok->next);
-      *rest = tok->next->next;
+      tok = tok->next;
+      char *namestr = get_ident(tok);
+      *rest = tok->next;
+
+      /* Select methodcalls as identifiers `(int).foo(int)` */
+      if (equal(tok->next, "(")) {
+        tok = tok->next->next;
+        bool as_types = is_typename(tok);
+
+        /* Lookup parameter types */
+        Type *cur = params;
+        bool first = true;
+        while (!equal(tok, ")")) {
+          if (!first)
+            tok = skip(tok, ",");
+
+          Type *pty;
+          if (!as_types) {
+            Node *arg = assign(&tok, tok);
+            add_type(arg);
+            pty = array_decay(arg->ty);
+            pty->name_pos = arg->tok;
+          } else {
+            Token *name_tok = tok;
+            pty = array_decay(typename(&tok, tok));
+            pty->name_pos = name_tok;
+          }
+
+          // Clone to avoid list destruction
+          pty = copy_type(pty);
+          pty->next = NULL;
+
+          cur = cur->next = pty;
+
+          first = false;
+        }
+
+        tok = skip(tok, ")");
+
+        // If we are parsing only the types,
+        // we must advance past the ")"
+        if (as_types)
+          *rest = tok;
+      }
+
       return (Identifier){
         .name = namestr,
-        .method_ty = ty,
+        .params_ty = params,
+        .is_method = true,
       };
     }
 
@@ -484,9 +598,62 @@ static Identifier consume_ident(Token** rest, Token *tok) {
   if (tok->kind == TK_IDENT) {
     char *namestr = get_ident(tok);
     *rest = tok->next;
+
+    /* Simple identifiers */
+    if (!equal(tok->next, "(")) {
+      return (Identifier){
+        .name = namestr,
+        .params_ty = NULL,
+        .is_method = false,
+      };
+    }
+
+    tok = tok->next->next;
+    bool as_types = is_typename(tok);
+
+    /* Lookup parameter types */
+    Type *params = NULL;
+    Type *cur = NULL;
+    bool first = true;
+    while (!equal(tok, ")")) {
+      if (!first)
+        tok = skip(tok, ",");
+
+      Type *pty;
+      if (!as_types) {
+        Node *arg = assign(&tok, tok);
+        add_type(arg);
+        pty = array_decay(arg->ty);
+        pty->name_pos = arg->tok;
+      } else {
+        Token *name_tok = tok;
+        pty = array_decay(typename(&tok, tok));
+        pty->name_pos = name_tok;
+      }
+
+      // Clone to avoid list destruction
+      pty = copy_type(pty);
+      pty->next = NULL;
+
+      if (!cur)
+        cur = params = pty;
+      else
+        cur = cur->next = pty;
+
+      first = false;
+    }
+
+    tok = skip(tok, ")");
+
+    // If we are parsing only the types,
+    // we must advance past the ")"
+    if (as_types)
+      *rest = tok;
+
     return (Identifier){
       .name = namestr,
-      .method_ty = NULL,
+      .params_ty = params,
+      .is_method = false,
     };
   }
 
@@ -494,14 +661,46 @@ static Identifier consume_ident(Token** rest, Token *tok) {
 }
 
 static char *ident_to_string(Identifier ident) {
-  if (ident.method_ty)
-    return format("(%s).%s", type_to_string(ident.method_ty), ident.name);
+  if (ident.params_ty) {
+    StringBuilder sb;
+    sb_init(&sb);
+
+    Type *ty = ident.params_ty;
+
+    if (!ident.is_method) {
+      /* foo(int, short) */
+      sb_appendf(&sb, "%s(", ident.name);
+    } else {
+      /* (int).foo(short) */
+      char *recv_str = type_to_string(ty);
+      sb_appendf(&sb, "(%s).%s(", recv_str, ident.name);
+      free(recv_str);
+      ty = ty->next; // skip the receiver, and go for params
+    }
+
+    for (Type *pty = ty; pty; pty = pty->next) {
+      if (pty != ty)
+        sb_appendf(&sb, ", ");
+      char *tystr = type_to_string(pty);
+      sb_appendf(&sb, "%s", tystr);
+      free(tystr);
+    }
+
+    sb_append(&sb, ")");
+
+    return sb.buf;
+  }
+
   return ident.name;
 }
 
 static Type *find_typedef(Token *tok) {
   if (tok->kind == TK_IDENT) {
-    Identifier ident = {.name = get_ident(tok), 0};
+    Identifier ident = {
+      .name = get_ident(tok),
+      .params_ty = NULL,
+      .is_method = false,
+    };
     VarScope *sc = find_var(ident);
     if (sc)
       return sc->type_def;
@@ -552,6 +751,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     UNSIGNED = 1 << 18,
   };
 
+  Qualifiers_t quals = Q_NONE;
   Type *ty = ty_usize;
   int counter = 0;
   bool is_atomic = false;
@@ -582,11 +782,26 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
       continue;
     }
 
+    // Parse qualifiers
+    if (consume(&tok, tok, "const")) {
+      quals |= Q_CONST;
+      continue;
+    }
+    if (consume(&tok, tok, "volatile")) {
+      quals |= Q_VOLATILE;
+      continue;
+    }
+    if (consume(&tok, tok, "restrict") ||
+        consume(&tok, tok, "__restrict") ||
+        consume(&tok, tok, "__restrict__")) {
+      quals |= Q_RESTRICT;
+      continue;
+    }
+
     // These keywords are recognized but ignored.
-    if (consume(&tok, tok, "const") || consume(&tok, tok, "volatile") ||
-        consume(&tok, tok, "auto") || consume(&tok, tok, "register") ||
-        consume(&tok, tok, "restrict") || consume(&tok, tok, "__restrict") ||
-        consume(&tok, tok, "__restrict__") || consume(&tok, tok, "_Noreturn"))
+    if (consume(&tok, tok, "auto") ||
+        consume(&tok, tok, "register") ||
+        consume(&tok, tok, "_Noreturn"))
       continue;
 
     if (equal(tok, "_Atomic")) {
@@ -730,6 +945,11 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     ty->is_atomic = true;
   }
 
+  if (quals != 0) {
+    ty = copy_type(ty);
+    ty->quals = quals;
+  }
+
   *rest = tok;
   return ty;
 }
@@ -758,24 +978,14 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
     }
 
     Type *ty2 = declspec(&tok, tok, NULL);
-    ty2 = declarator(&tok, tok, ty2);
+    ty2 = copy_type(array_decay(declarator(&tok, tok, ty2)));
+    ty2->next = NULL;
 
-    Token *name = ty2->name;
-
-    if (ty2->kind == TY_ARRAY || ty2->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the parameter
-      // context. For example, *argv[] is converted to **argv by this.
-      ty2 = pointer_to(ty2->base);
-      ty2->name = name;
-    } else if (ty2->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the parameter context.
-      ty2 = pointer_to(ty2);
-      ty2->name = name;
-    }
-
-    cur = cur->next = copy_type(ty2);
+    cur = cur->next = ty2;
   }
+
+  if (cur == &head)
+    is_variadic = true;
 
   ty = func_type(ty);
   ty->params = head.next;
@@ -821,9 +1031,25 @@ static Type *type_suffix(Token **rest, Token *tok, Type *ty) {
 static Type *pointers(Token **rest, Token *tok, Type *ty) {
   while (consume(&tok, tok, "*")) {
     ty = pointer_to(ty);
-    while (equal(tok, "const") || equal(tok, "volatile") || equal(tok, "restrict") ||
-           equal(tok, "__restrict") || equal(tok, "__restrict__"))
-      tok = tok->next;
+    // Add qualifiers
+    bool check_again = true;
+    while (check_again) {
+      check_again = false;
+      if (consume(&tok, tok, "const")) {
+        check_again = true;
+        ty->quals |= Q_CONST;
+      }
+      if (consume(&tok, tok, "volatile")) {
+        check_again = true;
+        ty->quals |= Q_VOLATILE;
+      }
+      if (consume(&tok, tok, "restrict") ||
+          consume(&tok, tok, "__restrict") ||
+          consume(&tok, tok, "__restrict__")) {
+        check_again = true;
+        ty->quals |= Q_RESTRICT;
+      }
+    }
   }
   *rest = tok;
   return ty;
@@ -838,7 +1064,7 @@ static Type *declarator(Token **rest, Token *tok, Type *ty) {
     Type dummy = {};
     declarator(&tok, start->next, &dummy);
     tok = skip(tok, ")");
-    ty = type_suffix(rest, tok, ty);
+    ty = type_suffix(rest, tok, ty); // CAGALON
     return declarator(&tok, start->next, ty);
   }
 
@@ -980,7 +1206,7 @@ static Node *compute_vla_size(Type *ty, Token *tok) {
   else
     base_sz = new_num(ty->base->size, tok);
 
-  ty->vla_size = new_lvar("", NULL, ty_ulong);
+  ty->vla_size = new_lvar("", ident_none, ty_ulong);
   Node *expr = new_binary(ND_ASSIGN, new_var_node(ty->vla_size, tok),
                           new_binary(ND_MUL, ty->vla_len, base_sz, tok),
                           tok);
@@ -1035,7 +1261,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       // Variable length arrays (VLAs) are translated to alloca() calls.
       // For example, `int x[n+2]` is translated to `tmp = n + 2,
       // x = alloca(tmp)`.
-      Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+      Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
       Token *tok = ty->name;
       Node *expr = new_binary(ND_ASSIGN, new_vla_ptr(var, tok),
                               new_alloca(new_var_node(ty->vla_size, tok)),
@@ -1045,7 +1271,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
       continue;
     }
 
-    Obj *var = new_lvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_lvar(get_ident(ty->name), ident_none, ty);
     if (attr && attr->align)
       var->align = attr->align;
 
@@ -1435,6 +1661,10 @@ static Node *init_desg_expr(InitDesg *desg, Token *tok) {
   }
 
   Node *lhs = init_desg_expr(desg->next, tok);
+  add_type(lhs);
+  if (lhs->ty->kind == TY_ARRAY)
+      lhs = new_unary(ND_ADDR, lhs, tok);
+
   Node *rhs = new_num(desg->idx, tok);
   return new_unary(ND_DEREF, new_add(lhs, rhs, tok), tok);
 }
@@ -2112,7 +2342,7 @@ static Node *to_assign(Node *binary) {
 
   // Convert `A.x op= C` to `tmp = &A, (*tmp).x = (*tmp).x op C`.
   if (binary->lhs->kind == ND_MEMBER) {
-    Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->lhs->ty));
+    Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->lhs->ty));
 
     Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                              new_unary(ND_ADDR, binary->lhs->lhs, tok), tok);
@@ -2147,10 +2377,10 @@ static Node *to_assign(Node *binary) {
     Node head = {};
     Node *cur = &head;
 
-    Obj *addr = new_lvar("", NULL, pointer_to(binary->lhs->ty));
-    Obj *val = new_lvar("", NULL, binary->rhs->ty);
-    Obj *old = new_lvar("", NULL, binary->lhs->ty);
-    Obj *new = new_lvar("", NULL, binary->lhs->ty);
+    Obj *addr = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
+    Obj *val = new_lvar("", ident_none, binary->rhs->ty);
+    Obj *old = new_lvar("", ident_none, binary->lhs->ty);
+    Obj *new = new_lvar("", ident_none, binary->lhs->ty);
 
     cur = cur->next =
       new_unary(ND_EXPR_STMT,
@@ -2197,7 +2427,7 @@ static Node *to_assign(Node *binary) {
   }
 
   // Convert `A op= B` to ``tmp = &A, *tmp = *tmp op B`.
-  Obj *var = new_lvar("", NULL, pointer_to(binary->lhs->ty));
+  Obj *var = new_lvar("", ident_none, pointer_to(binary->lhs->ty));
 
   Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok),
                            new_unary(ND_ADDR, binary->lhs, tok), tok);
@@ -2214,6 +2444,78 @@ static Node *to_assign(Node *binary) {
   return new_binary(ND_COMMA, expr1, expr2, tok);
 }
 
+static Node *operator_overload(Obj *fn, Node *lhs, Node *rhs, Token *tok) {
+  /* Build function node */
+  if (fn->ty->kind != TY_FUNC &&
+      (fn->ty->kind != TY_PTR || fn->ty->base->kind != TY_FUNC))
+    error_tok(fn->tok, "not a function");
+
+  add_type(lhs);
+  add_type(rhs);
+
+  /* Build method node */
+  Node *method = new_var_node(fn, tok);
+  method->ty = fn->ty;
+  method->func_ty = fn->ty;
+  method->recv = lhs;
+  add_type(method);
+
+  Type *ty = (fn->ty->kind == TY_FUNC) ? fn->ty : fn->ty->base;
+  Type *param_ty = ty->params;
+
+  Node head = {};
+  Node *cur = &head;
+
+  /* Add receiver as first parameter of the function */
+  if (param_ty) {
+    if (param_ty->kind != TY_STRUCT && param_ty->kind != TY_UNION)
+      method->recv = new_cast(method->recv, param_ty);
+    param_ty = param_ty->next;
+  } else if (method->recv->ty->kind == TY_FLOAT) {
+    // If parameter type is omitted (e.g. in "..."), float
+    // arguments are promoted to double.
+    method->recv = new_cast(method->recv, ty_double);
+  }
+
+  cur = cur->next = method->recv;
+
+  while (rhs) {
+    add_type(rhs);
+
+    /* First argument if !recv */
+    if (!param_ty && !ty->is_variadic)
+      error_tok(tok, "too many arguments");
+
+    if (param_ty) {
+      if (param_ty->kind != TY_STRUCT && param_ty->kind != TY_UNION)
+        rhs = new_cast(rhs, param_ty);
+      param_ty = param_ty->next;
+    } else if (rhs->ty->kind == TY_FLOAT) {
+      // If parameter type is omitted (e.g. in "..."), float
+      // arguments are promoted to double.
+      rhs = new_cast(rhs, ty_double);
+    }
+
+    cur = cur->next = rhs;
+    rhs = rhs->next; // Advance
+  }
+
+  if (param_ty)
+    error_tok(tok, "too few arguments");
+
+  Node *node = new_unary(ND_FUNCALL, method, tok);
+  node->func_ty = ty;
+  node->ty = ty->return_ty;
+  node->args = head.next;
+  add_type(node);
+
+  // If a function returns a struct, it is caller's responsibility
+  // to allocate a space for the return value.
+  if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
+  return node;
+}
+
 // assign    = conditional (assign-op assign)?
 // assign-op = "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^="
 //           | "<<=" | ">>="
@@ -2223,20 +2525,165 @@ static Node *assign(Token **rest, Token *tok) {
   if (equal(tok, "="))
     return new_binary(ND_ASSIGN, node, assign(rest, tok->next), tok);
 
-  if (equal(tok, "+="))
-    return to_assign(new_add(node, assign(rest, tok->next), tok));
+  if (equal(tok, "+=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
 
-  if (equal(tok, "-="))
-    return to_assign(new_sub(node, assign(rest, tok->next), tok));
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
 
-  if (equal(tok, "*="))
-    return to_assign(new_binary(ND_MUL, node, assign(rest, tok->next), tok));
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
 
-  if (equal(tok, "/="))
-    return to_assign(new_binary(ND_DIV, node, assign(rest, tok->next), tok));
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__iadd__",
+      .params_ty = pty,
+      .is_method = true,
+    };
 
-  if (equal(tok, "%="))
-    return to_assign(new_binary(ND_MOD, node, assign(rest, tok->next), tok));
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) += (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+      /* Return normal arithmetic */
+      return to_assign(new_add(node, rhs, tok));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "-=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__isub__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) -= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+      /* Return normal arithmetic */
+      return to_assign(new_sub(node, rhs, tok));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "*=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__imul__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) *= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_MUL, node, rhs, tok));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "/=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__idiv__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) /= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_DIV, node, rhs, tok));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
+
+  if (equal(tok, "%=")) {
+    /* Check if there's an operator overload */
+    add_type(node);
+    Node *rhs = assign(rest, tok->next);
+    add_type(rhs);
+
+    if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+      error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+    Type *pty = copy_type(array_decay(node->ty));
+    pty->next = copy_type(array_decay(rhs->ty));
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__imod__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+        error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %%= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+      /* Return normal arithmetic */
+      return to_assign(new_binary(ND_MOD, node, rhs, tok));
+    }
+
+    return operator_overload(fn, node, rhs, tok);
+  }
 
   if (equal(tok, "&="))
     return to_assign(new_binary(ND_BITAND, node, assign(rest, tok->next), tok));
@@ -2269,7 +2716,7 @@ static Node *conditional(Token **rest, Token *tok) {
   if (equal(tok->next, ":")) {
     // [GNU] Compile `a ?: b` as `tmp = a, tmp ? tmp : b`.
     add_type(cond);
-    Obj *var = new_lvar("", NULL, cond->ty);
+    Obj *var = new_lvar("", ident_none, cond->ty);
     Node *lhs = new_binary(ND_ASSIGN, new_var_node(var, tok), cond, tok);
     Node *rhs = new_node(ND_COND, tok);
     rhs->cond = new_var_node(var, tok);
@@ -2349,12 +2796,70 @@ static Node *equality(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "==")) {
-      node = new_binary(ND_EQ, node, relational(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = relational(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__eq__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) == (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison */
+        node = new_binary(ND_EQ, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "!=")) {
-      node = new_binary(ND_NE, node, relational(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = relational(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__ne__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) != (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison */
+        node = new_binary(ND_NE, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2371,22 +2876,138 @@ static Node *relational(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "<")) {
-      node = new_binary(ND_LT, node, shift(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__lt__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) < (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison */
+        node = new_binary(ND_LT, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "<=")) {
-      node = new_binary(ND_LE, node, shift(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__le__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) <= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison */
+        node = new_binary(ND_LE, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, ">")) {
-      node = new_binary(ND_LT, shift(&tok, tok->next), node, start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__gt__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) > (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison (inversion of ND_LT) */
+        node = new_binary(ND_LT, rhs, node, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, ">=")) {
-      node = new_binary(ND_LE, shift(&tok, tok->next), node, start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = shift(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__ge__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot compare non-numeric types, no operator overload for (%s) >= (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal comparison */
+        node = new_binary(ND_LE, rhs, node, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2496,12 +3117,70 @@ static Node *add(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "+")) {
-      node = new_add(node, mul(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = mul(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__add__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) + (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal arithmetic */
+        node = new_add(node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "-")) {
-      node = new_sub(node, mul(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = mul(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__sub__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) - (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal arithmetic */
+        node = new_sub(node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2518,17 +3197,104 @@ static Node *mul(Token **rest, Token *tok) {
     Token *start = tok;
 
     if (equal(tok, "*")) {
-      node = new_binary(ND_MUL, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__mul__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) * (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal arithmetic */
+        node = new_binary(ND_MUL, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "/")) {
-      node = new_binary(ND_DIV, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__div__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) / (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal arithmetic */
+        node = new_binary(ND_DIV, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
     if (equal(tok, "%")) {
-      node = new_binary(ND_MOD, node, cast(&tok, tok->next), start);
+      /* Check if there's an operator overload */
+      add_type(node);
+      Node *rhs = cast(&tok, tok->next);
+      add_type(rhs);
+
+      if (!is_arithmetic_type(node->ty) && rhs->ty == ty_int && rhs->tok->kind == TK_NUM)
+        error_tok(rhs->tok, "ambiguous literal numbers are not allowed for operator overload\nCast the number '%ld' to the desired type. For example, '(int)%ld'", rhs->tok->val, rhs->tok->val);
+
+      Type *pty = copy_type(array_decay(node->ty));
+      pty->next = copy_type(array_decay(rhs->ty));
+
+      /* Lookup method */
+      Identifier ident = {
+        .name = "__mod__",
+        .params_ty = pty,
+        .is_method = true,
+      };
+
+      Obj *fn = find_func(ident, false);
+      if (!fn) {
+        /* Safe check */
+        if (!is_arithmetic_type(node->ty) || !is_arithmetic_type(rhs->ty))
+          error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %% (%s)",
+                   type_to_string(pty), type_to_string(pty->next));
+        /* Return normal arithmetic */
+        node = new_binary(ND_MOD, node, rhs, start);
+        continue;
+      }
+
+      node = operator_overload(fn, node, rhs, start);
       continue;
     }
 
@@ -2562,11 +3328,59 @@ static Node *cast(Token **rest, Token *tok) {
 //       | "&&" ident
 //       | postfix
 static Node *unary(Token **rest, Token *tok) {
-  if (equal(tok, "+"))
-    return cast(rest, tok->next);
+  if (equal(tok, "+")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
 
-  if (equal(tok, "-"))
-    return new_unary(ND_NEG, cast(rest, tok->next), tok);
+    Type *pty = array_decay(node->ty);
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__pos__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot operate unary plus on non-numeric types, no operator overload for +(%s)",
+                   type_to_string(pty));
+      /* Return node */
+      return node;
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
+
+  if (equal(tok, "-")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
+
+    Type *pty = array_decay(node->ty);
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__neg__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot negate non-numeric types, no operator overload for -(%s)",
+                   type_to_string(pty));
+      /* Return normal negation */
+      return new_unary(ND_NEG, node, tok);
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
 
   if (equal(tok, "&")) {
     Node *lhs = cast(rest, tok->next);
@@ -2591,8 +3405,32 @@ static Node *unary(Token **rest, Token *tok) {
   if (equal(tok, "!"))
     return new_unary(ND_NOT, cast(rest, tok->next), tok);
 
-  if (equal(tok, "~"))
-    return new_unary(ND_BITNOT, cast(rest, tok->next), tok);
+  if (equal(tok, "~")) {
+    /* Check if there's an operator overload */
+    Node *node = cast(rest, tok->next);
+    add_type(node);
+
+    Type *pty = array_decay(node->ty);
+
+    /* Lookup method */
+    Identifier ident = {
+      .name = "__del__",
+      .params_ty = pty,
+      .is_method = true,
+    };
+
+    Obj *fn = find_func(ident, false);
+    if (!fn) {
+      /* Safe check */
+      if (!is_arithmetic_type(node->ty))
+        error_tok(tok, "cannot invert non-numeric types, no operator overload for ~(%s)",
+                   type_to_string(pty));
+      /* Return normal inversion */
+      return new_unary(ND_BITNOT, node, tok);
+    }
+
+    return operator_overload(fn, node, NULL, tok);
+  }
 
   // Read ++i as i+=1
   if (equal(tok, "++"))
@@ -2701,6 +3539,8 @@ static Token *attribute_list(Token *tok, Type *ty, Obj *var) {
       if (consume(&tok, tok, "symbol")) {
         if (var && var->is_local)
           error_tok(tok, "symbol attribute can only be applied to global declarations");
+        if (var && var->is_inline)
+          error_tok(tok, "symbol attribute cannot be applied to inline functions");
 
         tok = skip(tok, "(");
         if (tok->kind != TK_STR)
@@ -2762,6 +3602,8 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     Type *ty2 = hashmap_get2(&scope->tags, tag->loc, tag->len);
     if (ty2) {
       *ty2 = *ty;
+      // If type is not registered, save it for codegen.
+      store_union_struct_decl(ty2);
       return ty2;
     }
 
@@ -2872,6 +3714,19 @@ static Node *struct_ref(Node *node, Token *tok) {
     error_tok(node->tok, "not a struct nor a union");
 
   Type *ty = node->ty;
+  if (!ty->members && ty->tagname) {
+    // Maybe the members are defined in a typedef.
+    char *tagname = get_ident(ty->tagname);
+    Identifier ident = {
+      .name = tagname,
+      .is_method = false,
+      .params_ty = NULL,
+    };
+    VarScope *sc = find_var(ident);
+    if (sc)
+      ty = sc->type_def;
+    free(tagname);
+  }
 
   for (;;) {
     Member *mem = get_struct_member(ty, tok);
@@ -2918,7 +3773,7 @@ static Node *postfix(Token **rest, Token *tok) {
       return new_var_node(var, start);
     }
 
-    Obj *var = new_lvar("", NULL, ty);
+    Obj *var = new_lvar("", ident_none, ty);
     Node *lhs = lvar_initializer(rest, tok, var);
     Node *rhs = new_var_node(var, tok);
     return new_binary(ND_COMMA, lhs, rhs, start);
@@ -2946,7 +3801,22 @@ static Node *postfix(Token **rest, Token *tok) {
       Token *name_tok = tok->next;
       Token *after_name = name_tok->next;
 
-      if (equal(after_name, "(")) {
+      /* Check if it's struct member before checking if it's a method
+       * because if foo.sum(1) and sum is a member function derefence,
+       * then foo.sum(1) is not a method call is a regular member. */
+      bool is_struct_member = false;
+      add_type(node);
+      if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION) {
+        for (Member *mem = node->ty->members; mem; mem = mem->next) {
+          if (mem->name && mem->name->len == name_tok->len &&
+              !strncmp(mem->name->loc, name_tok->loc, name_tok->len)) {
+            is_struct_member = true;
+            break;
+          }
+        }
+      }
+
+      if (!is_struct_member && equal(after_name, "(")) {
         node = methodcall(&tok, tok, node);
         continue;
       }
@@ -3051,6 +3921,10 @@ static Node *funcall(Token **rest, Token *tok, Node *fn) {
   node->args = head.next;
   add_type(node);
 
+  // If a function returns a struct, it is caller's responsibility
+  // to allocate a space for the return value.
+  if (node->ty->kind == TY_STRUCT || node->ty->kind == TY_UNION)
+    node->ret_buffer = new_lvar("", ident_none, node->ty);
   return node;
 }
 
@@ -3061,47 +3935,60 @@ static Node *methodcall(Token **rest, Token *tok, Node *recv) {
   Token *name_tok = tok->next;
   Token *after_name = name_tok->next;
 
-  add_type(recv);
-
-  Type *basety = recv->ty;
-
-  /* Convert array and function types to pointers */
-  if (basety->kind == TY_ARRAY) {
-    // "array of T" is converted to "pointer to T" only in the receiver
-    // context. For example, *argv[] is converted to **argv by this.
-    basety = pointer_to(basety->base);
-  } else if (basety->kind == TY_FUNC) {
-    // Likewise, a function is converted to a pointer to a function
-    // only in the receiver context.
-    basety = pointer_to(basety);
-  }
-
-  char *basety_str = type_to_string(basety);
-
-  Obj *fnobj = NULL;
   if (name_tok->kind != TK_IDENT)
     error_tok(name_tok, "expected a method name");
-
   char *name_str = get_ident(name_tok);
 
-  /* Lookup method */
-  Identifier ident = {name_str, basety};
-  fnobj = find_func(ident);
-  if (!fnobj)
-    error_tok(name_tok, "unknown method '%s' of type '%s'", get_ident(name_tok), basety_str);
+  add_type(recv);
 
-  /* Check that is the type expected */
-  Type *impl_type = fnobj->recv.method_ty;
-  if (!same_type(basety, impl_type))
-    error_tok(name_tok, "expected a method of type '%s'", basety_str);
+  Type *basety = array_decay(recv->ty);
+  if (recv->kind != ND_VAR && basety == ty_int)
+    error_tok(recv->tok, "method call does not allow ambiguous number types\nCast the number '%ld' to the desired type. For example, '(int)%ld'", recv->val, recv->val);
+  char *basety_str = type_to_string(basety);
 
+  /* Lookup parameter types */
   tok = skip(after_name, "(");
+  Token *lookup_tok = tok;
+  Type *cur = basety;
+
+  bool first = true;
+  while (!equal(lookup_tok, ")")) {
+    if (!first)
+      lookup_tok = skip(lookup_tok, ",");
+
+    Node *arg = assign(&lookup_tok, lookup_tok);
+    add_type(arg);
+    Type *pty = array_decay(arg->ty);
+
+    // Clone to avoid list destruction
+    pty = copy_type(pty);
+    pty->next = NULL;
+    pty->name_pos = arg->tok;
+
+    cur = cur->next = pty;
+    first = false;
+  }
+
+  /* Lookup method */
+  Identifier ident = {
+    .name = name_str,
+    .params_ty = basety,
+    .is_method = true,
+  };
+
+  bool only_check_recv = !guard_and_count_overloads(ident);
+
+  Obj *fnobj = find_func(ident, only_check_recv);
+  if (!fnobj)
+    error_tok(name_tok, "unknown method '%s'", ident_to_string(ident));
 
   Node *fn = new_var_node(fnobj, name_tok);  // callee is an identifier
   fn->ty = fnobj->ty;
   fn->func_ty = fnobj->ty;
   fn->recv = recv;
   add_type(fn);
+
+  free(basety_str);
 
   *rest = tok;
   return funcall(rest, tok, fn);
@@ -3118,11 +4005,8 @@ static Node *generic_selection(Token **rest, Token *tok) {
   Node *ctrl = assign(&tok, tok);
   add_type(ctrl);
 
-  Type *t1 = ctrl->ty;
-  if (t1->kind == TY_FUNC)
-    t1 = pointer_to(t1);
-  else if (t1->kind == TY_ARRAY)
-    t1 = pointer_to(t1->base);
+  // array decay
+  Type *t1 = array_decay(ctrl->ty);
 
   Node *ret = NULL;
 
@@ -3281,16 +4165,15 @@ static Node *primary(Token **rest, Token *tok) {
     Identifier ident = consume_ident(&tok, tok);
     *rest = tok;
 
+    if (!guard_and_count_overloads(ident)) {
+      if (ident.is_method && ident.params_ty)
+        ident.params_ty->next = NULL;
+      else
+        ident.params_ty = NULL;
+    }
+
     // Variable or enum constant
     VarScope *sc = find_var(ident);
-
-    // For "static inline" function
-    if (sc && sc->var && sc->var->is_function) {
-      if (current_fn)
-        strarray_push(&current_fn->refs, sc->var->name);
-      else
-        sc->var->is_root = true;
-    }
 
     if (sc) {
       if (sc->var)
@@ -3300,7 +4183,7 @@ static Node *primary(Token **rest, Token *tok) {
     }
 
     if (equal(tok->next, "("))
-      error_tok(tok, "implicit declaration of a function");
+      error_tok(tok, "implicit declaration of a function '%s'", ident_to_string(ident));
     error_tok(tok, "undefined variable '%s'", ident_to_string(ident));
   }
 
@@ -3339,9 +4222,10 @@ static Token *parse_typedef(Token *tok, Type *basety) {
     if (!ty->name)
       error_tok(ty->name_pos, "typedef name omitted");
 
-    if (ty->kind == TY_STRUCT || ty->kind == TY_UNION) {
+    if (!ty->tagname && (ty->kind == TY_STRUCT || ty->kind == TY_UNION || ty->kind == TY_ENUM)) {
       /* When typedef an anonymous struct, make sure that there is a tag name. */
-      if (!ty->tagname) ty->tagname = ty->name;
+      if (!ty->tagname)
+        ty->tagname = ty->name;
       /* Save it aligator */
       store_union_struct_decl(ty);
     }
@@ -3356,7 +4240,7 @@ static void create_param_lvars(Type *param) {
     create_param_lvars(param->next);
     if (!param->name)
       error_tok(param->name_pos, "parameter name omitted");
-    new_lvar(get_ident(param->name), NULL, param);
+    new_lvar(get_ident(param->name), ident_none, param);
   }
 }
 
@@ -3382,46 +4266,32 @@ static void resolve_goto_labels(void) {
   gotos = labels = NULL;
 }
 
-static Obj *find_func(Identifier ident) {
+static Obj *find_func(Identifier ident, bool only_check_recv) {
   /* Find the global scope */
   Scope *sc = scope;
   while (sc->next)
     sc = sc->next;
 
-  /* If method_ty, search for its overload */
-  if (ident.method_ty && ident.name) {
-    /* Isn't quick method, but is */
-    for (size_t i = 0; i < sc->vars.capacity; ++i) {
-      HashEntry *ent = &sc->vars.buckets[i];
-      if (!ent) continue;
-      VarScope *sc2 = ent->val;
+  /* Isn't quick method, but is */
+  for (size_t i = 0; i < sc->vars.capacity; ++i) {
+    HashEntry *ent = &sc->vars.buckets[i];
+    if (!ent || !ent->key || ent->key == ((void *)-1))
+      continue;
 
-      if (!sc2 || !sc2->var || !sc2->var->is_function ||
-          !sc2->var->recv.method_ty ||
-          !sc2->var->recv.name)
-        continue;
+    VarScope *sc2 = ent->val;
+    if (!sc2 || !sc2->var || !sc2->var->is_function || sc2->var->ident.is_method != ident.is_method
+      || !sc2->var->ident.name || !sc2->var->ident.params_ty)
+      continue;
 
-      /* Check if it's the same method by value, not by pointer*/
-      char *msg1 = type_to_asmident(sc2->var->recv.method_ty);
-      char *msg2 = type_to_asmident(ident.method_ty);
-      if (strcmp(msg1, msg2) != 0){
-        free(msg1);
-        free(msg2);
-        continue;
-      }
-      free(msg1);
-      free(msg2);
+    /* Check if it's the same method by value, not by pointer */
+    if (ident.params_ty && !same_type_value(sc2->var->ident.params_ty, ident.params_ty, !only_check_recv))
+      continue;
 
-      /* Check if it's the method we are searching for */
-      if (strcmp(sc2->var->recv.name, ident.name) == 0)
-          return sc2->var;
-    }
-    return NULL;
+    /* Check if it's the method we are searching for */
+    if (strcmp(ident.name, sc2->var->ident.name) == 0)
+        return sc2->var;
   }
 
-  VarScope *sc2 = hashmap_get(&sc->vars, ident.name);
-  if (sc2 && sc2->var && sc2->var->is_function)
-    return sc2->var;
   return NULL;
 }
 
@@ -3430,9 +4300,21 @@ static void mark_live(Obj *var) {
     return;
   var->is_live = true;
 
+  /* Find the global scope */
+  Scope *sc = scope;
+  while (sc->next)
+    sc = sc->next;
+
   for (int i = 0; i < var->refs.len; i++) {
-    Identifier ident = {var->refs.data[i], var->recv.method_ty};
-    Obj *fn = find_func(ident);
+    // Search function by name, no type
+    char *name = var->refs.data[i];
+    Obj *fn;
+
+    // Search function by name
+    VarScope *sc2 = hashmap_get(&sc->vars, name);
+    if (sc2 && sc2->var && sc2->var->is_function)
+      fn = sc2->var;
+
     if (fn)
       mark_live(fn);
   }
@@ -3444,55 +4326,435 @@ static bool is_type_method(Token *tok) {
   return true;
 }
 
+/* Identify operator overload by function name */
+enum e_opv {
+  OPV_NONE = 0,
+  /* Binary arithmetics */
+  OPV_ADD,
+  OPV_SUB,
+  OPV_MUL,
+  OPV_DIV,
+  OPV_MOD,
+  /* Assignments */
+  OPV_IADD,
+  OPV_ISUB,
+  OPV_IMUL,
+  OPV_IDIV,
+  OPV_IMOD,
+  /* Comparisons */
+  OPV_LT,
+  OPV_GT,
+  OPV_LE,
+  OPV_GE,
+  OPV_EQ,
+  OPV_NE,
+  /* Unarys */
+  OPV_NEG,
+  OPV_POS,
+  OPV_DEL,
+};
+
+static inline short get_opv_id(char *name_str) {
+  char fn_op_id = OPV_NONE;
+
+  /* Binary arithmetics */
+  if (!strcmp(name_str, "__add__"))
+    fn_op_id = OPV_ADD;
+  else if (!strcmp(name_str, "__sub__"))
+    fn_op_id = OPV_SUB;
+  else if (!strcmp(name_str, "__mul__"))
+    fn_op_id = OPV_MUL;
+  else if (!strcmp(name_str, "__div__"))
+    fn_op_id = OPV_DIV;
+  else if (!strcmp(name_str, "__mod__"))
+    fn_op_id = OPV_MOD;
+  /* Assignments */
+  else if (!strcmp(name_str, "__iadd__"))
+    fn_op_id = OPV_IADD;
+  else if (!strcmp(name_str, "__isub__"))
+    fn_op_id = OPV_ISUB;
+  else if (!strcmp(name_str, "__mul__"))
+    fn_op_id = OPV_IMUL;
+  else if (!strcmp(name_str, "__div__"))
+    fn_op_id = OPV_IDIV;
+  else if (!strcmp(name_str, "__mod__"))
+    fn_op_id = OPV_IMOD;
+  /* Comparisons */
+  else if (!strcmp(name_str, "__lt__"))
+    fn_op_id = OPV_LT;
+  else if (!strcmp(name_str, "__gt__"))
+    fn_op_id = OPV_GT;
+  else if (!strcmp(name_str, "__le__"))
+    fn_op_id = OPV_LE;
+  else if (!strcmp(name_str, "__ge__"))
+    fn_op_id = OPV_GE;
+  else if (!strcmp(name_str, "__eq__"))
+    fn_op_id = OPV_EQ;
+  else if (!strcmp(name_str, "__ne__"))
+    fn_op_id = OPV_NE;
+  /* Unarys */
+  else if (!strcmp(name_str, "__neg__"))
+    fn_op_id = OPV_NEG;
+  else if (!strcmp(name_str, "__pos__"))
+    fn_op_id = OPV_POS;
+  else if (!strcmp(name_str, "__del__"))
+    fn_op_id = OPV_DEL;
+
+  return fn_op_id;
+}
+
+static void check_operator_overload_signature(Type *fty, char *name_str, Token *name_tok) {
+  short fn_op_id = get_opv_id(name_str);
+  /* Not an operator overload method */
+  if (fn_op_id == OPV_NONE)
+    return;
+
+  /* First param is the receiver */
+  if (fty->params->kind == TY_PTR && fty->params->next && is_integer(fty->params->next)) {
+    /* You cannot pass a number to a pointer overload */
+    error_tok(name_tok, "cannot overload pointer arithmetic, parameter '%s' cannot be numeric",
+      get_ident(fty->params->next->name));
+  }
+
+  /* == Verify function signature == */
+
+  /* Binary signatures */
+  if (fn_op_id == OPV_ADD || fn_op_id == OPV_SUB ||
+      fn_op_id == OPV_MUL || fn_op_id == OPV_DIV || fn_op_id == OPV_MOD) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
+  }
+
+  /* Assignment signatures */
+  else if (fn_op_id == OPV_IADD || fn_op_id == OPV_ISUB
+        || fn_op_id == OPV_IMUL || fn_op_id == OPV_IDIV || fn_op_id == OPV_IMOD) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if the receiver is modifiable */
+    if (fty->params->kind == TY_STRUCT || fty->params->kind == TY_UNION || fty->params->kind == TY_FUNC)
+      error_tok(name_tok, "invalid %s signature, receiver '(%s %s)' must be passed by reference\nstructs and unions are passed by value",
+        name_str,
+        type_to_string(fty->params),
+        get_ident(fty->params->name));
+
+    /* Check if return type matches receiver type */
+    if (!same_type_value(fty->return_ty, fty->params, false)) {
+      char *recv_ty_str = type_to_string(fty->params);
+      char *recv_id_str = get_ident(fty->params->name);
+      char *param_ty_str = type_to_string(fty->params->next);
+      char *param_id_str = get_ident(fty->params->next->name);
+      error_tok(name_tok, "invalid %s signature, return type does not match receiver type\nexpected '%s (%s %s) %s(%s %s)', but got '%s (%s %s) %s(%s %s)'",
+        name_str,
+        recv_ty_str, recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str,
+        type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str, param_ty_str, param_id_str
+      );
+    }
+
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
+  }
+
+  /* Comparison signatures */
+  else if (fn_op_id == OPV_LT ||fn_op_id == OPV_GT
+        || fn_op_id == OPV_LE || fn_op_id == OPV_GE
+        || fn_op_id == OPV_EQ || fn_op_id == OPV_NE) {
+    /* Check parameter count */
+    if (!fty->params->next)
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got zero", name_str);
+    if (fty->params->next->next) {
+      int cx = 1;
+      Type *param_ty = fty->params->next;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, expected exactly one parameter, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
+    /* Check if parameter is const */
+    if (fty->params->next->kind == TY_PTR && !(fty->params->next->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, parameter '%s' must be 'const'",
+        name_str, get_ident(fty->params->next->name));
+
+    /* Check if return type is boolean */
+    if (fty->return_ty->kind != TY_BOOL)
+      error_tok(name_tok, "invalid %s signature, return type must be 'bool', found '%s'",
+        name_str, type_to_string(fty->return_ty));
+  }
+
+  /* Unary signatures */
+  else if (fn_op_id == OPV_NEG || fn_op_id == OPV_NEG || fn_op_id == OPV_DEL) {
+    /* Check parameter count */
+    if (fty->params->next) {
+      int cx = 0;
+      Type *param_ty = fty->params;
+      while ((param_ty = param_ty->next))
+        cx++;
+      error_tok(name_tok, "invalid %s signature, no parameters expected, but got %d", name_str, cx);
+    }
+
+    /* Check if receiver is const */
+    if (fty->params->kind == TY_PTR && !(fty->params->base->quals & Q_CONST))
+      error_tok(name_tok, "invalid %s signature, receiver '%s' must be 'const'",
+        name_str, get_ident(fty->params->name));
+
+    /* Check if return type matches receiver type */
+    if (!same_type_value(fty->return_ty, fty->params, false)) {
+      char *recv_ty_str = type_to_string(fty->params);
+      char *recv_id_str = get_ident(fty->params->name);
+      error_tok(name_tok, "invalid %s signature, return type does not match receiver type\nexpected '%s (%s %s) %s()', but got '%s (%s %s) %s()'",
+        name_str,
+        recv_ty_str, recv_ty_str, recv_id_str, name_str,
+        type_to_string(fty->return_ty), recv_ty_str, recv_id_str, name_str
+      );
+    }
+  }
+}
+
+static Node *check_that_function_return_recv(Node *n, char *fn_recv, bool *has_return_stmt) {
+  while (n) {
+    Node *ret = NULL;
+
+    switch (n->kind) {
+      case ND_RETURN:
+        // TODO: Check that all branches return
+        *has_return_stmt = true;
+
+        // Compare if variable is the receiver
+        n = n->lhs;
+
+        // Don't care about type casts
+        if (n->kind == ND_CAST)
+          n = n->lhs;
+
+        if (n->kind != ND_VAR || strcmp(fn_recv, n->var->name) != 0)
+          return n;
+      break;
+
+      case ND_CASE:
+      case ND_LABEL:
+        ret = check_that_function_return_recv(n->lhs, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_IF:
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        ret = check_that_function_return_recv(n->els, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_FOR:
+        ret = check_that_function_return_recv(n->init, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_DO:
+        ret = check_that_function_return_recv(n->then, fn_recv, has_return_stmt);
+        if (ret)
+          return ret;
+        break;
+
+      case ND_BLOCK:
+      case ND_STMT_EXPR:
+        for (Node *m = n->body; m; m = m->next) {
+          ret = check_that_function_return_recv(m, fn_recv, has_return_stmt);
+          if (ret)
+            return ret;
+        }
+        break;
+    }
+
+    n = n->next;
+  }
+
+  return NULL;
+}
+
+static void check_operator_overload_body(Obj *fn, char *name_str, Token *name_tok) {
+  short fn_op_id = get_opv_id(name_str);
+  /* Not an operator overload method */
+  if (fn_op_id == OPV_NONE)
+    return;
+
+  // Function already passed the signature check
+  // so there's no need to check again
+
+  /* Assignment shall return the receiver */
+  if (fn_op_id == OPV_IADD) {
+    char *fn_recv = fn->params->name;
+
+    bool has_ret = false;
+    Node *ret = check_that_function_return_recv(fn->body, fn->params->name, &has_ret);
+
+    // Check that has some return
+    if (!has_ret)
+      error_tok(name_tok, "invalid %s; the function must return '%s'",
+        name_str, fn_recv);
+
+    // Check that the return is the recv
+    if (ret)
+      error_tok(ret->tok, "invalid %s; the function shall always return the receiver '%s'",
+        name_str, fn_recv);
+  }
+}
+
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   /* Check if it's a type method */
   Type *recv = NULL;
 
+  // Pointers of the return type, in case of type methods
+  // For some reason the pointers are checked in
+  // declarator instead of declspec
+  bool has_pointers = false;
+  Token *before_pointers = tok;
+  // Just advance tok
+  pointers(&tok, tok, NULL);
+
   if (is_type_method(tok)) {
+    has_pointers = tok != before_pointers;
     tok = tok->next;
 
     Type *impl_base = declspec(&tok, tok, NULL);
     recv = declarator(&tok, tok, impl_base);
 
     /* Convert array and function types to pointers */
-    if (recv->kind == TY_ARRAY || recv->kind == TY_VLA) {
-      // "array of T" is converted to "pointer to T" only in the receiver
-      // context. For example, *argv[] is converted to **argv by this.
-      recv = pointer_to(recv->base);
-    } else if (recv->kind == TY_FUNC) {
-      // Likewise, a function is converted to a pointer to a function
-      // only in the receiver context.
-      recv = pointer_to(recv);
-    }
+    recv = array_decay(recv);
 
     /* This is not arbitrary, the next declarator function
      * would destroy the recv references. So copy to save. */
     recv = copy_type(recv);
 
     tok = skip(tok, ")");
+  } else {
+    tok = before_pointers;
   }
 
+  Token *name_tok = tok;
   Type *ty = declarator(&tok, tok, basety);
+
+  // If has pending pointers, apply them to the type
+  if (has_pointers)
+    // Don't advance, before_pointers will not be used again
+    ty->return_ty = pointers(&before_pointers, before_pointers, ty->return_ty);
+
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
   char *name_str = get_ident(ty->name);
 
-  /* Save the method type and name */
-  Identifier ident = {name_str, recv};
+  /* Check that the struct/union doesn't have a member that is named
+    * exactly the same as this method */
+  if (recv && (recv->kind == TY_STRUCT || recv->kind == TY_UNION)) {
+    for (Member *mem = recv->members; mem; mem = mem->next) {
+      if (mem->name && mem->name->len == ty->name->len &&
+          !strncmp(mem->name->loc, ty->name->loc, ty->name->len))
+        error_tok(name_tok, "'%s' already has a member named '%s'",
+          type_to_string(recv), name_str);
+    }
+  }
 
-  /* Underlying identifier for methods is not the method name, it's uid */
+  /* Discard operator overload for primitives */
+  if (recv && is_numeric(recv) && (
+      !strcmp(name_str, "__add__") ||
+      !strcmp(name_str, "__sub__") ||
+      !strcmp(name_str, "__mul__") ||
+      !strcmp(name_str, "__div__") ||
+      !strcmp(name_str, "__mod__") ||
+      !strcmp(name_str, "__iadd__") ||
+      !strcmp(name_str, "__isub__") ||
+      !strcmp(name_str, "__imul__") ||
+      !strcmp(name_str, "__idiv__") ||
+      !strcmp(name_str, "__imod__") ||
+      !strcmp(name_str, "__lt__") ||
+      !strcmp(name_str, "__gt__") ||
+      !strcmp(name_str, "__le__") ||
+      !strcmp(name_str, "__ge__") ||
+      !strcmp(name_str, "__eq__") ||
+      !strcmp(name_str, "__ne__") ||
+      !strcmp(name_str, "__neg__") ||
+      !strcmp(name_str, "__pos__") ||
+      !strcmp(name_str, "__del__")))
+    error_tok(name_tok, "operators cannot be overloaded for primitive types");
+
+  /* If there is an method implicit receiver, prepend it to param list */
+  if (recv) {
+    recv->next = ty->params;
+    ty->params = recv;
+  }
+
+  /* Save the method type and name */
+  Identifier ident = {
+    .name = name_str,
+    .params_ty = ty->params,
+    .is_method = recv != NULL,
+  };
+
+  /* Underlying identifier is not the name, it's uid */
+  char *name_fid = new_unique_name();
   if (recv)
-    name_str = new_unique_name();
+    name_str = name_fid;
 
   /* Check if its definition or declaration */
   Token *tok_attr = tok;
+  char *lookup_symbol = NULL;
   if (equal(tok, "__attribute__")) {
-    // Skip attributes to read the following '{'
-    tok = attribute_list(tok, NULL, NULL); // Pass NULL to just advance the token
+    // Skip attributes and lookup ((symbol)) for function name
+    Obj attr_lookup = {0};
+    tok = attribute_list(tok, NULL, &attr_lookup);
+    lookup_symbol = attr_lookup.symbol;
+    if (attr_lookup.symbol)
+      // If the function has a symbol attribute
+      // randomize name to allow function override
+      name_str = name_fid;
+  } else if (recv) {
+    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
+    char *type_cname = type_to_asmident(recv, true);
+    size_t newlen = strlen(ident.name) + strlen(type_cname) + 2;
+    lookup_symbol = malloc(newlen);
+    snprintf(lookup_symbol, newlen, "%s$%s", ident.name, type_cname);
+    free(type_cname);
   }
+
   const bool is_def = equal(tok, "{");
 
-  Obj *fn = find_func(ident);
+  Obj *fn = find_func(ident, false);
   if (fn) {
     // Redeclaration
     if (!fn->is_function)
@@ -3503,31 +4765,128 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
       error_tok(tok, "static declaration follows a non-static declaration");
     fn->is_definition = fn->is_definition || is_def;
   } else {
-    fn = new_gvar(name_str, &ident, ty);
+    /* Check if there is a function with the same name declared before */
+
+    /** Function overload counter */
+    size_t fn_ov_cx = 0;
+
+    /* Count all the other functions with the same name */
+    for (Obj *fn_ov = globals; fn_ov; fn_ov = fn_ov->next) {
+      /* Check if it's the same function name */
+      if (!fn_ov->is_function || fn_ov->ident.is_method != ident.is_method
+        || fn_ov->is_inline || strcmp(fn_ov->ident.name, ident.name) != 0)
+        continue;
+
+      /* Check that every overload has a different symbol */
+      const char *fn_symbol = lookup_symbol ?: ident.name;
+      const char *fn_ov_symbol = get_symbol(fn_ov);
+      if (!strcmp(fn_ov_symbol, fn_symbol)) {
+
+        /* Allow opaque pointers, only for the first overload,
+         * for backwards C compatibility.
+         * eg., the following should be valid if
+         * there is only one definition for them:
+         *   int vsprintf(char*, char*, void*);
+         *   int vsprintf(char*, char*, __va_elem*)
+         */
+        if (!fn_ov_cx) {
+          int opaques_m = 0, opaques_f = 0;
+          Type *fty = fn_ov->ident.params_ty;
+          Type *mty = ident.params_ty;
+          for (; mty && fty; mty = mty->next, fty = fty->next) {
+            /* If parameters are compatible continue */
+            if (is_compatible(mty, fty))
+              continue;
+
+            /* Check if both are pointers and one of them is opaque (void*) */
+            if (mty->kind == TY_PTR && fty->kind == TY_PTR) {
+              bool is_opaque_decl_m = !is_def && mty->base->kind == TY_VOID;
+              bool is_opaque_decl_f = !fn_ov->is_definition && fty->base->kind == TY_VOID;
+              opaques_m += is_opaque_decl_m;
+              opaques_f += is_opaque_decl_f;
+              if (is_opaque_decl_m || is_opaque_decl_f)
+                continue;
+            }
+
+            /* If parameters are not compatible, error */
+            goto lbl_err_not_compatible;
+          }
+
+          /* Parameter length difference, check dangling extra parameters */
+          if (mty || fty)
+            goto lbl_err_not_compatible;
+
+          /* If all parameters are compatible, don't throw an error,
+           * this is an opaque pointer compatible overload */
+          if (opaques_m >= opaques_f) {
+            // Skip this function declaration, since is a forward
+            // declaration of another function already defined
+            fn = fn_ov;
+            goto lbl_ok_fwd_opaque_compatible;
+          }
+          // Previous overload is a forward declaration,
+          // so this has more weight
+          goto lbl_ok_opaque_compatible;
+        }
+
+        lbl_err_not_compatible:
+        error_tok(name_tok, "'%s' and '%s' have the same symbol",
+          ident_to_string(ident),
+          ident_to_string(fn_ov->ident));
+      }
+
+      lbl_ok_opaque_compatible: ;
+
+      /* Guard methods from colliding */
+      if (ident.is_method && !same_type_value(fn_ov->ident.params_ty, ident.params_ty, false))
+        continue;
+
+      /* Prohibit variadic function overload */
+      if (fn_ov->ty->is_variadic) {
+        char *ident_str = ident_to_string(fn_ov->ident);
+        ident_str[strlen(ident_str) - 1] = '\0';
+        // print identifier string with ", ...)"
+        error_tok(name_tok, "variadic function cannot be overloaded, see '%s%s...)'",
+          ident_str,
+          ident_str[strlen(ident_str) - 1] != '(' ? ", " : "");
+      }
+
+      fn_ov_cx++;
+    }
+
+    if (fn_ov_cx) {
+      /* Prohibit variadic function overload */
+      if (ty->is_variadic)
+        error_tok(name_tok, "variadic function cannot be overloaded");
+
+      fn_ov_cx++; // Count this function
+      // Set the number of overloads in the map
+      char *fn_oid = get_overload_id(ident);
+      // sum2(int,int) and (int).sum2(int) would collide if we use just ident.name
+      // so use a unique id for each method like sum2$i and sum2 for regular functions
+      hashmap_put(&map_func_ov, fn_oid, (void*)fn_ov_cx);
+    }
+
+    // Create a new function as global variable
+    fn = new_gvar(name_str, ident, ty);
     fn->is_function = true;
     fn->is_definition = is_def;
     fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
     fn->is_inline = attr->is_inline;
   }
 
-  if (recv) {
-    /* Calculate default symbol as 'id$type_asm' 'sum$int' */
-    char *type_cname = type_to_asmident(recv);
-    size_t newlen = strlen(fn->recv.name) + strlen(type_cname) + 2;
-    fn->symbol = malloc(newlen);
-    snprintf(fn->symbol, newlen, "%s$%s", fn->recv.name, type_cname);
-    free(type_cname);
-  }
+  if (recv)
+    fn->symbol = lookup_symbol;
 
   tok = attribute_list(tok_attr, NULL, fn);
 
   fn->is_root = !(fn->is_static && fn->is_inline);
 
-  /* If there is an method implicit receiver, prepend it to param list */
-  if (recv) {
-    recv->next = ty->params;
-    ty->params = recv;
-  }
+  /* Check if operator overload is well formed */
+  if (recv)
+    check_operator_overload_signature(ty, ident.name, name_tok);
+
+  lbl_ok_fwd_opaque_compatible: ;
 
   /* Not a function definition, exit */
   if (consume(&tok, tok, ";"))
@@ -3543,20 +4902,24 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("__struct_area__", NULL, pointer_to(rty));
+    new_lvar("__struct_area__", ident_none, pointer_to(rty));
 
   fn->params = locals;
   locals = NULL; /* Prevent params to be registered as locals */
 
   if (ty->is_variadic)
-    fn->va_area = new_lvar("__va_area__", NULL, array_of(ty_char, 136));
+    fn->va_area = new_lvar("__va_area__", ident_none, array_of(ty_char, 136));
 
   tok = skip(tok, "{");
 
   // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
   // automatically defined as a local variable containing the
   // current function name.
-  Obj *__fnname__ = new_string_literal(fn->name, array_of(ty_char, strlen(fn->name) + 1));
+  // **Update** since SuperC functions can have overloads, the __func__/__FUNCTION__
+  // will be the symbol of the function for compatibility, instead of the name.
+  // Regular C style functions will not be affected by this change
+  const char *symname = get_symbol(fn);
+  Obj *__fnname__ = new_string_literal(symname, array_of(ty_char, strlen(symname) + 1));
   push_scope("__func__")->var = __fnname__;
 
   // [GNU] __FUNCTION__ is yet another name of __func__.
@@ -3568,6 +4931,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   fn->locals = locals;
   leave_scope();
   resolve_goto_labels();
+
+  check_operator_overload_body(fn, ident.name, name_tok);
   return tok;
 }
 
@@ -3583,7 +4948,7 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
 
-    Obj *var = new_gvar(get_ident(ty->name), NULL, ty);
+    Obj *var = new_gvar(get_ident(ty->name), ident_none, ty);
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
@@ -3605,6 +4970,11 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
 static bool is_function(Token *tok) {
   if (equal(tok, ";"))
     return false;
+
+  // Pointers of the return type, in case of type methods
+  Token *before_pointers = tok;
+  // Just advance tok
+  pointers(&tok, tok, NULL);
 
   /* Check if it's type method */
   if (is_type_method(tok)) {
@@ -3630,6 +5000,8 @@ static bool is_function(Token *tok) {
       error_tok(ty->name_pos, "expected an identifier for receiver");
 
     tok = skip(tok, ")");
+  } else {
+    tok = before_pointers;
   }
 
   Type dummy = {};
@@ -3651,7 +5023,7 @@ static Obj *scan_tentatives(Obj *first_global) {
     // Find another definition of the same identifier.
     Obj *var2 = first_global;
     for (; var2; var2 = var2->next)
-      if (var != var2 && var2->is_definition && !strcmp(var->name, var2->name))
+      if (var != var2 && var2->is_definition && !strcmp(get_symbol(var), get_symbol(var2)))
         break;
 
     // If there's another definition, the tentative definition
@@ -3668,7 +5040,13 @@ static void declare_builtin_functions(void) {
   /* Declare __builtin_alloca */
   Type *ty = func_type(pointer_to(ty_void));
   ty->params = copy_type(ty_int);
-  builtin_alloca = new_gvar("__builtin_alloca", NULL, ty);
+  char *fname = "__builtin_alloca";
+  Identifier ident = {
+    .name = fname,
+    .is_method = false,
+    .params_ty = ty->params,
+  };
+  builtin_alloca = new_gvar(fname, ident, ty);
   builtin_alloca->is_definition = false;
 }
 

@@ -4,7 +4,7 @@ int foo __attribute__((symbol("bar"))) = 123;
 int bar2 = 456;
 
 int (int a) sum(int b) __attribute__((symbol("def")));
-int (int a) add(int b) /* Symbol defaults to `add$i` */;
+int (int a) add(int b) /* Symbol defaults to `add$ii` */;
 int sum(int a, int b) __attribute__((symbol("abc")));
 
 asm(".global __asm_var__\n"
@@ -18,7 +18,7 @@ int main(void) {
   ASSERT(0, strcmp(symbolof(bar2), "bar2"));
   ASSERT(0, strcmp(symbolof(sum), "abc"));
   ASSERT(0, strcmp(symbolof((int).sum), "def"));
-  ASSERT(0, strcmp(symbolof((int).add), "add$i"));
+  ASSERT(0, strcmp(symbolof((int).add), "add$ii"));
   ASSERT(0, strcmp(symbolof(ext1), "__asm_var__"));
   ASSERT(32, ext1);
 

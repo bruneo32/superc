@@ -114,7 +114,10 @@ struct Token {
 typedef struct Identifier Identifier;
 struct Identifier {
   char *name;
-  Type *method_ty;
+  Type *params_ty;
+  /* True if this is a type method `(int).sum`,
+   * False for a function */
+  bool is_method;
 };
 
 noreturn void error(char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -205,8 +208,8 @@ struct Obj {
   Initializer *init;
 
   // Function
+  Identifier ident;
   bool is_inline;
-  Identifier recv;
   Obj *params;
   Node *body;
   Obj *locals;
@@ -383,12 +386,21 @@ typedef enum {
   TY_UNION,
 } TypeKind;
 
+typedef uint8_t Qualifiers_t;
+enum Qualifiers_t {
+  Q_NONE     = 0,
+  Q_CONST    = 1,
+  Q_VOLATILE = (1 << 1),
+  Q_RESTRICT = (1 << 2),
+};
+
 struct Type {
   TypeKind kind;
   int size;           // sizeof() value
   int align;          // alignment
   bool is_unsigned;   // unsigned or signed
   bool is_atomic;     // true if _Atomic
+  Qualifiers_t quals; // const, volatile, ...
   Type *origin;       // for type compatibility check
 
   // Pointer-to or array-of type. We intentionally use the same member
@@ -461,6 +473,7 @@ extern Type *ty_float;
 extern Type *ty_double;
 extern Type *ty_ldouble;
 
+bool is_ty_original(Type *ty);
 bool is_integer(Type *ty);
 bool is_flonum(Type *ty);
 bool is_numeric(Type *ty);
@@ -475,8 +488,9 @@ Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
 bool same_type(Type *a, Type *b);
+bool same_type_value(Type *a, Type *b, bool recurse);
 char *type_to_string(Type *ty);
-char *type_to_asmident(Type *ty);
+char *type_to_asmident(Type *ty, bool recurse);
 const char *llvm_type(Type *ty);
 
 //

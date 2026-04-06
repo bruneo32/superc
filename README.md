@@ -1,379 +1,228 @@
 # SuperC: C11 superset language
 
+A backwards-compatible extension of **C** with modern ergonomics like *defer*, *methods*, and *operator overloading*, without sacrificing performance and control.
+
+> ⚠️ **Alpha**: expect bugs, missing features, and breaking changes.
+
+[![License](https://img.shields.io/github/license/bruneo32/superc)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-gh--pages-blue)](https://bruneo32.github.io/superc/)
+
 ### Index
-- [Current developed features](#current-developed-features)
-  - [Defer](#defer)
-  - [Defer in loops](#defer-in-loops)
-  - [Type methods](#type-methods)
-  - [break N](#break-n)
-  - [Symbol mangling](#symbol-mangling)
-- [Current planned features](#current-planned-features)
-  - [Aliases](#aliases)
-  - [Lambdas](#lambdas)
 
-# Current developed features
-## Defer
-Will execute the code stated right before exiting a function
-### Examples
-```c
-#include <stdio.h>
+- [Why SuperC?](#why-superc)
+  - [Memory management](#memory-management)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Notes](#notes)
 
-int main() {
-  defer printf("This will print after OK\n");
-  printf("OK\n");
-  // OK
-  // This will print after OK
-  return 0;
+# Why SuperC?
+> **C** is powerful, but unforgiving. **SuperC** keeps that power, while making it easier to use correctly.
+
+**SuperC** does not aim to replace existing high-level languages, but rather to be a very good option for [embedded systems](<https://en.wikipedia.org/wiki/Embedded_system#Characteristics>) programming. Hence, making it a great option for **general purpose** development too.
+
+- **Zero‑cost abstractions** - sometimes even more efficient than hand-written C.
+- **No runtime overhead** - no hidden allocations, no vtables.
+- **Full C compatibility** - use any existing C library without wrappers.
+- **Defined behavior** - **SuperC** tries to standardize or reject undefined behavior where necessary.
+- **Multiplatform** - write once, run on Linux, Windows, macOS with minimal `#ifdef`.
+- **Great documentation** - tutorials, examples, and edge cases all organized.<br>No need to spend hours reading random forum posts or blindly pasting AI responses.
+
+> Read more about vision and scope [here](<https://bruneo32.github.io/superc/#what-is-superc>).
+
+## Memory management
+- Unlike *Rust*, *Java* or *C++*, memory management in **SuperC** is ***manually*** managed.
+- Unlike *C*, memory management in **SuperC** is easy and simple.
+- No suprises, manual control, no hidden workflows.
+
+**SuperC** introduces some optional safety features that makes it easier and safer to write dynamically allocated code.
+
+> Both achieve the same end result, resources are released in order at compile time.<br>
+> But Rust makes it implicitly, while SuperC makes it explicitly.
+
+```rs
+// Rust
+
+fn main() {
+  let a = Box::new(1);
+  let b = Box::new(2);
+  let c = Box::new(3);
+
+  let sum = *a + *b + *c;
+
+  assert_eq!(sum, 6);
+  // a, b, and c are dropped
 }
 ```
 ```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
+// SuperC
+
+inline int *box_new(int val) {
+  int *x = malloc(sizeof(int));
+  // no defer, x survives
+  *x = val;
+  return x;
+}
 
 int main() {
-  srand(time(NULL));
+  int *a = box_new(1);
+  defer free(a); // drop a on function's exit
 
-  FILE *f = fopen("test.txt", "w");
+  int *b = box_new(2);
+  defer free(b);
+
+  int *c = box_new(3);
+  defer free(c);
+
+  int sum = *a + *b + *c;
+
+  assert(sum == 6);
+  // a, b, and c are dropped
+}
+```
+
+# Features
+- Current developed features
+  - [Defer](<https://bruneo32.github.io/superc/docs/defer>)
+  - [Type methods](<https://bruneo32.github.io/superc/docs/methods>)
+  - [Symbol mangling](<https://bruneo32.github.io/superc/docs/symbols>)
+    - [Aliases](<https://bruneo32.github.io/superc/docs/symbols#aliases>)
+  - [break N](<https://bruneo32.github.io/superc/docs/break_n>)
+  - [Operator overload](<https://bruneo32.github.io/superc/docs/operator_overload>)
+  - [Function overload](<https://bruneo32.github.io/superc/docs/function_overload>)
+- Current planned features
+  - *Struct inheritance/composition*
+  - [Defer auto (scoped blocks)](<https://bruneo32.github.io/superc/docs/defer_auto>)
+    - [Defer in loops](<https://bruneo32.github.io/superc/docs/defer_auto#defer-in-loops>)
+  - [Lambdas](<https://bruneo32.github.io/superc/docs/lambdas>)
+    - [Closures](<https://bruneo32.github.io/superc/docs/lambdas#closures>)
+
+# Quick start
+Right now the compiler is not reliable enough to showcase, but sure you can try to test the new features.
+
+> ⚠️ **Reminder**: the compiler is unstable right now. **Expect bugs**.
+
+## Installation
+> ⏩ **Recomendation**: Try **[SuperC online playground](<https://bruneo32.github.io/superc/playground>)** before installing
+
+```sh
+# Clone
+git clone https://github.com/bruneo32/superc.git
+cd superc
+# Build
+make
+# Setup compiler
+alias superc="${PWD}/superc -I${PWD}/include "
+# Build examples
+superc example_simple.c
+superc example_string.c
+```
+
+### Examples
+example_simple.c
+```c
+#include <stdio.h>
+
+int main() {
+  FILE *f = fopen("example_simple.c", "r");
   defer {
     fclose(f);
     printf("File closed!\n");
-  }
-
-  /* 50% change to exit early with error */
-  if ((rand() & 1) == 0) {
-    printf("No need to call fclose(), because the defer executes before the return.\n");
-    return 1;
-  }
-
-  fprintf(f, "Hello world!\n");
-
-  return 0;
-}
-```
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <SDL.h>
-
-static SDL_Window   *game_window;
-static SDL_Renderer *game_renderer;
-
-int main() {
-  /* Init SDL */
-  if (SDL_Init(SDL_INIT_VIDEO) != 0)
-    return 1;
-  defer SDL_Quit();
-
-  /* Create window */
-  game_window = SDL_CreateWindow("Defer test",
-                    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                    640, 480, SDL_WINDOW_SHOWN);
-  if (!game_window)
-    return 2;
-  defer SDL_DestroyWindow(game_window);
-
-  /* Create renderer */
-  game_renderer = SDL_CreateRenderer(game_window, -1,
-                    SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
-  if (!game_renderer)
-    return 3;
-  defer SDL_DestroyRenderer(game_renderer);
-
-  /*
-   * This example shows a basic usage of defer.
-   * If function returns early, it will execute the defer statements before
-   * exiting the function.
-   * I.E.:
-   *   - If game_renderer is NULL, SDL_DestroyWindow and SDL_Quit will be called
-   *     (in that order, reverse to declaration), but SDL_DestroyRenderer won't.
-   *     Because the return happens before the defer is declared.
-   *
-   * [!!!]
-   * Beware that defer statements are related to the function, not the block of code.
-   * This means that even though the following if statement never runs,
-   * the following defer is declared and will beexecuted because `main`
-   * does not return before the defer is declared.
-   */
-  if (1 == 0) {
-    defer printf("Actual defer execution\n");
-    return 4;
-  }
-
-  printf("OK\n");
-  return 0;
-}
-```
-
-## Defer in loops
-Will execute the code stated right before the break/continue label of a for/while/do loop.
-At first glance it can look totally unnecessary, but for memory management escenarios can be very useful.
-
-### Examples
-```c
-#include <stdio.h>
-
-int main() {
-  for (int i = 0; i < 3; i++) {
-    defer printf("This will run when the functions is over. Nothing to do with the loop\n");
-    defer break printf("[%d] This will run right before loop break\n", i);
-    defer continue printf("[%d] This will run right before loop increment\n", i);
-  }
-
-  printf("OK\n");
-  // [0] This will run right before loop increment
-  // [1] This will run right before loop increment
-  // [2] This will run right before loop increment
-  // [3] This will run right before loop break
-  // OK
-  // This will run when the functions is over. Nothing to do with the loop
-  return 0;
-}
-```
-
-## Type methods
-Extends a type with implicit function calls.
-It is equivalent of passing the caller as the first argument.
-- Function is registered as `(type).name` *(the symbol is mangled, see [symbols](#symbol-mangling))*.
-- **I.E.** `mycat.meow()` is exactly the same to `(Cat).meow(mycat)`.
-
-### Examples
-```c
-#include <stdio.h>
-
-int (int a) sum(int b) {
-  return a + b;
-}
-
-int main() {
-  // = 15
-  printf("= %d\n", ((int)10).sum(5));
-  // = 15
-  printf("= %d\n", (int).sum(10, 5));
-  return 0;
-}
-```
-```c
-#include <stdio.h>
-
-struct color {
-  unsigned char r, g, b, a;
-};
-
-typedef struct Car Car;
-struct Car {
-  char *name;
-  struct color col;
-  int kms;
-};
-
-void (Car *c) drive(int kms) {
-  c->kms += kms;
-}
-
-int main() {
-  Car c = {
-    .name = "Kachow",
-    .col = {
-      .r = 255,
-      .g = 0,
-      .b = 0,
-      .a = 255,
-    },
-    .kms = 3,
   };
 
-  (&c).drive(100);
-
-  Car *p = &c;
-  p.drive(100);
-
-  // Kachow has driven 203 kms
-  printf("%s has driven %d kms\n", c.name, c.kms);
-  return 0;
-}
-```
-
-## break N
-Will break out of a loop or switch N levels up.
-
-### Examples
-```c
-#include <stdio.h>
-
-int main() {
-  for (int j = 0; j < 10; j++) {
-    for (int i = 0; i < 10; i++) {
-      if (i == 5 && j == 2)
-        break 2; /* Break both for loops */
-      printf(" %d\n", i);
-    }
-    putchar('\n');
-  }
-  printf("\n -- End --\n");
-  // 0 1 2 3 4 5 6 7 8 9
-  // 0 1 2 3 4 5 6 7 8 9
-  // 0 1 2 3 4
-  // -- End --
-  return 0;
-}
-```
-
-## Symbol mangling
-Allows the user to change the output symbol of a variable or function.
-- New attribute `__attribute__((symbol("new_symbol_name")))` -> changes the output symbol at assembly level of the variable or function.
-- New keyword `symbolof(identifier)` -> returns the expected symbol name of the variable or function as a string literal.
-
-### Examples
-```c
-#include <stdio.h>
-
-int foo __attribute__((symbol("bar"))) = 123;
-int bar2 = 456; // No symbol change.
-
-int sum(int a, int b) __attribute__((symbol("abc")));
-int (int a) sum(int b) __attribute__((symbol("def"))); // was "sum$i"
-
-// void abc(); // Link error: redefinition of symbol 'abc'
-
-asm(".global __asm_var__\n"
-    ".data\n.type __asm_var__, @object\n"
-    ".size __asm_var__, 8\n.align 8\n"
-    "__asm_var__: .long 32\n");
-extern long ext1 __attribute__((symbol("__asm_var__")));
-
-void test_symbol(char *a, char *b) {
-  printf("%s == %s -> %d\n", a, b, strcmp(a, b) == 0);
-}
-
-int main(void) {
-  test_symbol(symbolof(foo),       "bar");
-  test_symbol(symbolof(bar2),      "bar2");
-  test_symbol(symbolof(sum),       "abc");
-  test_symbol(symbolof((int).sum), "def");
-
-  test_symbol(symbolof(ext1), "__asm_var__");
-  printf("ext1 = %d\n", ext1);
-
-  // bar == bar -> 1
-  // bar2 == bar2 -> 1
-  // abc == abc -> 1
-  // def == def -> 1
-  // __asm_var__ == __asm_var__ -> 1
-  // ext1 = 32
-  // OK
   printf("OK\n");
+  // OK
+  // File closed!
   return 0;
 }
 ```
 
-# Current planned features
-> Please note that the **syntax** of all the planned features is **subject to change**.
-
-## Aliases
-Register a declaration as an alias of another symbol. Very useful for [type methods](#type-methods).
-
-### Examples
+example_string.c
 ```c
 #include <stdio.h>
+#include <string.h>
 
-void foo() {
-  printf("foo\n");
+/* Silly GCC headers
+ * destroy __attribute__ */
+#ifdef __attribute__
+#undef __attribute__
+#endif
+
+#define string char*
+
+/* s1.length() is strlen(s1) */
+inline size_t (string s1) length() {
+  return strlen(s1);
 }
 
-void bar() __attribute__((alias(foo)));
+/* s1 += s2 is strcat(s1, s2) */
+string (string s1) __iadd__(const string s2) __attribute__((symbol("strcat")));
 
 int main() {
-  foo();
-  bar();
-  printf("%p == %p", foo, bar);
-  // foo
-  // foo
-  // 0x7fff5fb3b3e0 == 0x7fff5fb3b3e0
-  return 0;
-}
-```
-```c
-#include <stdio.h>
+  char s1[100] = "Hello, ";
+  s1 += "world!"; // string += string
 
-typedef struct Point Point;
-struct Point {
-  double x, y;
-};
-
-Point point_add(Point p1, Point p2) {
-  return (Point){
-    .x = p1.x + p2.x,
-    .y = p1.y + p2.y,
-  };
-}
-
-/* No new function is emitted, just the compiler replaces the call with the aliased function */
-Point (Point p1) add(Point p2) __attribute__((alias(point_add)));
-
-int main() {
-  Point p = { .x = 1, .y = 2 };
-  Point q = { .x = 7, .y = -1 };
-
-  Point r = p.add(q);
-
-  // 8.0, 1.0
-  printf("%f, %f\n", r.x, r.y);
+  printf("(%d) = %s\n", s1.length(), s1);
+  // (13) = Hello, world!
   return 0;
 }
 ```
 
-## Lambdas
-Lambdas are anonymous functions that can be assigned to variables, or used immediately.
+# Roadmap
+- **Documentation**
+  - Keep [documentation](<https://bruneo32.github.io/superc/>) up-to-date.
+  - Provide dual-track explanations: by-the-hand guides for beginners, and straight forward documentation for experienced developers.
+  - Use examples *(at least the following)*: simple usage, real usage, and edge cases.
+- **Compiler**
+   1. Complete **LLVM** backend
+      - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
+   2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>)** syntax
+   3. Complete new language features:
+      - Struct inheritance/composition
+      - defer auto
+      - Lambdas
+      - (?) Namespaces
+      - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>)
+      - (?) Switch `goto` in-switch labels.
+   4. Better error messages, help, and man pages.
+   5. Multiplatform support *(write similar code in Linux, Windows and MacOS, etc)*
+      - Allow the same *(safe)* **SuperC** code to compile and run across platforms without much modification.
+      - The goal is to reduce the heavy regions guarded by `#ifdef` macros when working with cross-platform code *(for Windows mostly)*.
+- **Standard library**
+  - `#include <superc.h>`
+  - Strings
+  - Arrays
+  - [Try/catch](<https://github.com/bruneo32/trycatch>)
+  - Date
+  - ...
+- **Multithreading**
+  - Similar to [goroutines](<https://go.dev/ref/mem#go>), **SuperC** must support lightweight threads for massive concurrency, easy to use and manage resources.
+  - This implies new syntax.
+  - And library functions.
+- **Tooling & Editor Extensions**
+  1. A language cannot survive today without first-class tooling. Developing a highly responsive **VSCode** extension powered by a robust Language Server Protocol *(LSP)* is a top priority.
+  2. Other editors are welcome as well *(Neovim, Emacs, JetBrains, ...)*.
 
-### Examples
-```c
-#include <stdio.h>
+## Documentation
+- https://bruneo32.github.io/superc/
 
-int main() {
-  auto add = int (int a, int b) {
-    return a + b;
-  }
+Start with **Getting Started**, and explore features with examples.
 
-  // 5
-  printf("%d\n", add(2, 3));
-  return 0;
-}
-```
-```c
-#include <stdio.h>
+# Contributing
+SuperC is in an early stage - contributions are highly appreciated.
 
-void sort(int *a, int n, int (*cmp)(int, int)) {
-  for (int i = 0; i < n; i++) {
-    for (int j = i + 1; j < n; j++) {
-      if (cmp(a[i], a[j]) > 0) {
-        int tmp = a[i];
-        a[i] = a[j];
-        a[j] = tmp;
-      }
-    }
-  }
-}
+You can help with:
+- Compiler development
+- Design discussions
+- Documentation
+- Examples and testing
 
-int main() {
-  /* Unordered array */
-  int a[10] = { 4, 1, -5, 1, 3, 2, 6, 8, 9, 7 };
+> - Check issues: https://github.com/bruneo32/superc/issues
+> - Read contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-  sort(a, 10, int (int a, int b) {
-    /* Return 1 if a > b */
-    return a - b;
-  });
-
-  /* Print out the ordered array */
-  for (int i = 0; i < 10; i++)
-    printf("%d ", a[i]);
-  putchat('\n');
-
-  return 0;
-}
-```
-
-## Notes
+# Notes
 > Forked from [chibicc](https://github.com/rui314/chibicc).
 
 Tip for debugging with gdb.

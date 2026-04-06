@@ -994,7 +994,8 @@ static void emitd_initializer(Initializer *init) {
 static void emit_union_structs_decl() {
   for (size_t i = 0; i < mp_unions_structs.capacity; ++i) {
     HashEntry *ent = &mp_unions_structs.buckets[i];
-    if (!ent || !ent->val) continue;
+    if (!ent || !ent->val)
+      continue;
 
     Type *ty = ent->val;
     emitf("%s = type ", llvm_type(ty));

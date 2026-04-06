@@ -11,11 +11,6 @@ struct nothing {} _nothing;
 // 	short e;
 // } __attribute__((packed));
 
-/** This is a shame for C compilers,
- * an inline function should be able
- * to be inlined without enforcing */
-#define inline __attribute__((always_inline)) inline
-
 static void foo() {}
 
 // inline int bar() { return 1; }
