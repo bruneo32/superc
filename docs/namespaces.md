@@ -11,22 +11,110 @@ Big code projects must support namespaces for organization of big codebases. So 
 > Namespaces are **not** intended to **reduce** the amount of typing, but to **organize** the codebase and prevent **name collisions**.
 
 But in order to keep it simple and avoid "namespace hell":
-- **SuperC** allows `::` in **identifier** names *(but not single `:`, because that would break label parsing)*
-- no `using namespace foo`, only **explicit** `foo::bar`
-- no nesting namespaces, just a compile time **namespace prefix**
-  - use `#pragma namespace(foo)` to tell the compiler to **prepend** `foo::` to all declaration identifiers
-  - use `#pragma namespace(foo::bar)` to reassign the current prefix, instead of namespace nesting
-  - use `#pragma namespace()` to **end** the current namespace *(set prefix to empty)*
-  - reaching the end of the file will **end** the current namespace too
-- **default assembly symbol** mangling of `foo::bar` is `foo$bar`
-  - this can be totally overriden with [attribute symbol](symbols.md#aliases)
-  - this can be automated with `#pragma namespace_symbol("foo_")`, that will set the assembly prefix to `foo_*` instead of `foo$*`
-  - each time you start or end a namespace (`#pragma namespace(*)`), the prefix is reset to **default**
+- identifiers don't track namespaces for variables. Instead, the **"::"** becomes part of the identifier name.
+- no implicit `using namespace foo`, only **explicit** `foo::bar`.
+- no nesting namespaces, just a compile time **namespace prefix** *(see [pragma namespace](#pragma-namespace))*.
+- the **default assembly symbol** of `foo::bar` is `foo$$bar`
 
-> Note that `#pragma namespace` is a **SuperC** extension; **C** compilers will ignore it *(with a warning)*.
+## Identifier names
+**SuperC** allows the use of `::` in **identifier** names *(but not single character `:`, because that would break label parsing)*
+- Valid **SuperC** identifiers: `foo`, `foo::bar`, `foo::bar::baz`, etc.
+- Invalid **SuperC** identifiers: `foo:::bar`, `foo:bar`, etc.
+
+---
+- Only **global** variables/functions/typedefs are eligible to be namespaced.
+- **Local** variables/lambdas/typedefs cannot be namespaced, and will throw an error.
+- **Type methods** cannot be namespaced, and will throw an error.
+
+## \#pragma namespace
+Instead of constantly typing `foo::` before all the identifiers in your header files, you can use `#pragma namespace foo`, this assigns the ***name prefix*** to `foo::`.
+- use `#pragma namespace foo` to tell the compiler to **prepend** `foo::` to all eligible identifiers names.
+- use `#pragma namespace` to **end** the current namespace. **i.e.,** set *name prefix* to empty.
+- reaching the end of the file will also **end** the current namespace.
+- [type methods](methods.md) are **not** affected by the *name prefix*.
+
+Same as *name prefix*, there is also a ***symbol prefix*** *(see [\#pragma namespace_symbol](#pragma-namespace_symbol))*
+- each time `#pragma namespace` is reached, the *symbol prefix* is **reset**. **i.e.,** `#pragma namespace foo` makes the *symbol prefix* `foo$$` and the *name prefix* `foo::`.
+- this *default symbol* can totally overridden with a [attribute symbol](symbols.md#aliases)
+
+> **Note**: the `#pragma namespace` directive replaces the previous one. If you invoke `#pragma namespace foo` and then `#pragma namespace bar`, the namespace is not `foo::bar`, it's `bar`. Use `#pragma namespace foo::bar` to indicate a nested namespace.
+
+## \#pragma namespace_symbol
+- You can use `#pragma namespace_symbol "foo_"` to assign the ***symbol prefix*** to *"foo_"* instead of the default `foo$$`.
+- `#pragma namespace_symbol ""` effectively disables the *symbol prefix*, useful for wrappers.
+- Note that when the `#pragma namespace` directive is reached, the *symbol prefix* is **reset** to default. See [\#pragma namespace](#pragma-namespace)
+
+## Reduce deep namespace identifiers
+You can use a **macro** to reduce deep nested namespaces in some cases.
+```cpp
+#define Arithmetic Math::Algebra::Arithmetic
+printf("%d\n", Arithmetic::Add(1, 2)); // equivalent to Math::Algebra::Arithmetic::Add
+```
+
+## Examples
 
 {% tabs namespaces1 %}
-{% tab namespaces1 main.c %}
+{% tab namespaces1 example1.c %}
+```cpp
+#include <stdio.h>
+
+// no namespace
+int sum(int a, int b) {
+  return a + b;
+}
+
+// explicit namespace
+int mylib::sum(int a, int b) {
+  return a + b + 1;
+}
+
+// -- BEGIN NAMESPACE: mylib -- //
+#pragma namespace mylib
+const int TWO = 2;             // symbol : mylib$$TWO
+int add(int a, int b) {        // symbol : mylib$$add
+  return a + b + mylib::TWO;
+}
+#pragma namespace // end namespace
+
+int main() {
+  printf("sum: %d\n", sum(1, 2));
+  printf("sum: %d\n", mylib::sum(1, 2));
+  printf("add: %d\n", mylib::add(1, 2));
+  return 0;
+}
+```
+{% endtab %}
+
+{% tab namespaces1 example2.c %}
+```cpp
+#include <stdarg.h>
+
+#pragma namespace std
+#pragma namespace_symbol "" // disable symbol mangling
+// wrap all std headers inside `std::`
+#include <stdio.h>
+#include <stdlib.h>
+#pragma namespace // end namespace
+
+// warning: 'std::printf' has symbol "printf",
+// so change the symbol of this function to avoid collision
+void printf(const char *format, ...) __attribute__((symbol("myprintf"))) {
+  va_list args;
+  va_start(args, format);
+  std::puts("Hi: ");
+  std::vprintf(format, args);
+  va_end(args);
+}
+
+int main() {
+  printf("Hello world\n"); // output: "Hi: Hello world\n"
+  std::printf("OK\n");     // the classic printf from <stdio.h>
+  return 0;
+}
+```
+{% endtab %}
+
+{% tab namespaces1 example3.c %}
 ```cpp
 #include <stdio.h>
 #include "sdl_wrapper.h"
@@ -57,39 +145,24 @@ int main() {
 ```cpp
 #include <SDL2/SDL.h>
 
-#pragma namespace(SDL)
+#pragma namespace SDL
+#pragma namespace_symbol "SDL_"
+// SDL::Init -> SDL_Init
+// SDL::Quit -> SDL_Quit
+// ...
 
 typedef SDL_Window   Window;
 typedef SDL_Renderer Renderer;
 
-// default symbol is "SDL$Init", so make an alias to SDL_Init
-extern DECLSPEC int SDLCALL Init(Uint32 flags)
-        __attribute__((symbol("SDL_Init")));
-
-extern DECLSPEC void SDLCALL Quit(void)
-        __attribute__((symbol("SDL_Quit")));
-
-// Tired of typing __attribute__((symbol("SDL_*"))?
-// Let's make it easier by changing the
-// default assembly prefix
-#pragma namespace_symbol("SDL_")
+extern DECLSPEC int SDLCALL Init(Uint32 flags);
+extern DECLSPEC void SDLCALL Quit(void);
 
 extern DECLSPEC SDL::Window * SDLCALL CreateWindow(const char *title,
-                                                  int x, int y, int w,
-                                                  int h, Uint32 flags);
-
+                                                   int x, int y, int w,
+                                                   int h, Uint32 flags);
 extern DECLSPEC void SDLCALL DestroyWindow(SDL::Window * window);
 
-// no need for #pragma namespace(), since namespace will
-// automatically end at the end of the file
+// namespace will automatically end at the end of the file
 ```
 {% endtab %}
 {% endtabs %}
-
-## Optional macro to reduce namespace nesting
-You can use a **macro** to reduce deep nested namespaces in some cases.
-
-```cpp
-#define Arithmetic Math::Algebra::Arithmetic
-printf("%d\n", Arithmetic::Add(1, 2)); // equivalent to Math::Algebra::Arithmetic::Add
-```

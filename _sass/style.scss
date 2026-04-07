@@ -75,14 +75,14 @@ table {
 	width: unset !important;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+section>h1,
+section>h2,
+section>h3,
+section>h4,
+section>h5,
+section>h6 {
 	color: var(--heading-color);
-	margin: 20px 0;
+	margin: 32px 0 10px;
 }
 
 p {
@@ -105,6 +105,10 @@ ol {
 
 li {
 	list-style-position: inside;
+}
+
+li>p {
+	display: inline-block;
 }
 
 h1,
