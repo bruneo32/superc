@@ -88,6 +88,12 @@ struct StrArray {
   StrArray *next;
 };
 
+/** Current namespace prefix */
+static char *current_ns = NULL;
+
+/** Current namespace symbol prefix */
+static char *current_nss = NULL;
+
 static const Identifier ident_none = {.name = NULL, .params_ty = NULL, .is_method = 0};
 #define IdentNamed(name_) ((Identifier){.name = (name_), .params_ty = NULL, .is_method = 0})
 
@@ -171,13 +177,12 @@ static Node *funcall(Token **rest, Token *tok, Node *node);
 static Node *methodcall(Token **rest, Token *tok, Node *node);
 static Node *unary(Token **rest, Token *tok);
 static Node *primary(Token **rest, Token *tok);
-static Token *parse_typedef(Token *tok, Type *basety);
+static Token *parse_typedef(Token *tok, Type *basety, bool is_root);
 static bool is_function(Token *tok);
 static bool is_type_method(Token *tok);
 static Type *func_params(Token **rest, Token *tok, Type *ty);
 static Token *function(Token *tok, Type *basety, VarAttr *attr);
 static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
-static char *get_symbolname(Obj *var);
 static Obj *find_func(Identifier ident, bool only_check_recv);
 static Identifier consume_ident(Token** rest, Token *tok);
 static char *ident_to_string(Identifier ident);
@@ -436,6 +441,11 @@ static Obj *new_var(char *name, Identifier ident, Type *ty) {
 }
 
 static Obj *new_lvar(char *name, Identifier ident, Type *ty) {
+  /* Check that the local variable does not have a explicit namespace '::' */
+  if ((ident.name && strlen(ident.name) > 0 && strchr(ident.name, ':')) ||
+      (name && strlen(name) > 0 && strchr(name, ':')))
+    error_tok(ty->name_pos, "locals cannot be namespaced, remove '::'");
+
   Obj *var = new_var(name, ident, ty);
   var->is_local = true;
   var->next = locals;
@@ -471,6 +481,43 @@ static char *get_ident(Token *tok) {
   if (tok->kind != TK_IDENT)
     error_tok(tok, "expected an identifier");
   return strndup(tok->loc, tok->len);
+}
+
+static char *get_ident_with_ns(Token *tok) {
+  if (tok->kind != TK_IDENT)
+    error_tok(tok, "expected an identifier");
+
+  /* If no ns prefix, return normal ident */
+  if (!current_ns)
+    return get_ident(tok);
+
+  /* Given, ns prefix like 'foo', and varname like 'bar'
+   * return 'foo::bar' */
+  size_t current_ns_len = strlen(current_ns);
+  char *ns_name = calloc(current_ns_len + tok->len + 1, sizeof(char));
+  memmove(ns_name, current_ns, current_ns_len);
+  memmove(ns_name + current_ns_len, tok->loc, tok->len);
+  return ns_name;
+}
+
+static char *get_default_ns_symbol(char *prefix, char *varname) {
+  if (!prefix) {
+    /* Manage explicit ident like
+     * 'foo::bar' -> 'foo$$bar' */
+    char *nss = strdup(varname);
+    sanitize_ns_symbol(nss);
+    return nss;
+  }
+
+  /* Given, nss prefix like 'foo' and varname like 'bar'
+   * return 'foo$$bar' */
+  size_t prefix_len = strlen(prefix);
+  size_t varname_len = strlen(varname);
+  char *nss = calloc(prefix_len + varname_len + 1, sizeof(char));
+  memmove(nss, prefix, prefix_len);
+  memmove(nss + prefix_len, varname, varname_len);
+  sanitize_ns_symbol(nss);
+  return nss;
 }
 
 // ident = "(" typename ")" "." ident | ident
@@ -2215,7 +2262,7 @@ static Node *compound_stmt(Token **rest, Token *tok) {
       Type *basety = declspec(&tok, tok, &attr);
 
       if (attr.is_typedef) {
-        tok = parse_typedef(tok, basety);
+        tok = parse_typedef(tok, basety, false);
         continue;
       }
 
@@ -4232,7 +4279,7 @@ static Node *primary(Token **rest, Token *tok) {
     if (!sc)
       error_tok(tok, "cannot find symbol of %s", ident_to_string(ident));
 
-    char *symbolname = get_symbolname(sc->var);
+    char *symbolname = get_symbol(sc->var);
     Type *symbol_ty = stringlit_of(symbolname);
 
     Obj *var = new_string_literal(symbolname, symbol_ty);
@@ -4346,7 +4393,7 @@ static Node *primary(Token **rest, Token *tok) {
   error_tok(tok, "expected an expression");
 }
 
-static Token *parse_typedef(Token *tok, Type *basety) {
+static Token *parse_typedef(Token *tok, Type *basety, bool is_root) {
   bool first = true;
 
   while (!consume(&tok, tok, ";")) {
@@ -4362,8 +4409,10 @@ static Token *parse_typedef(Token *tok, Type *basety) {
       // Promote anonymous structs/unions to named structs.
       ty->tagname = ty->name;
 
-    push_scope(get_ident(ty->name))->type_def = ty;
+    char *ident_name = !is_root ? get_ident(ty->name) : get_ident_with_ns(ty->name);
+    push_scope(ident_name)->type_def = ty;
   }
+
   return tok;
 }
 
@@ -4424,12 +4473,6 @@ static Obj *find_func(Identifier ident, bool only_check_recv) {
   }
 
   return NULL;
-}
-
-static char *get_symbolname(Obj *var) {
-  if (var->symbol)
-    return var->symbol;
-  return var->name;
 }
 
 static void mark_live(Obj *var) {
@@ -4814,10 +4857,17 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
 
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
-  char *name_str = get_ident(ty->name);
+
+  // Get the name without ns prefix (for later use)
+  char *name_str_no_ns = get_ident(ty->name);
+  if (recv && strchr(name_str_no_ns, ':'))
+    error_tok(name_tok, "type methods cannot be namespaced, remove '::'");
+
+  // type methods don't apply for namespaces, so no get_ident_with_ns
+  char *name_str = !recv ? get_ident_with_ns(ty->name) : name_str_no_ns;
 
   /* Check that the struct/union doesn't have a member that is named
-    * exactly the same as this method */
+   * exactly the same as this method */
   if (recv && (recv->kind == TY_STRUCT || recv->kind == TY_UNION)) {
     for (Member *mem = recv->members; mem; mem = mem->next) {
       if (mem->name && mem->name->len == ty->name->len &&
@@ -4887,6 +4937,9 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     lookup_symbol = malloc(newlen);
     snprintf(lookup_symbol, newlen, "%s$%s", ident.name, type_cname);
     free(type_cname);
+  } else if (current_nss || strchr(name_str_no_ns, ':')) {
+    /* If we have a namespace, mangle the symbol, before applying attributes */
+    lookup_symbol = get_default_ns_symbol(current_nss, name_str_no_ns);
   }
 
   const bool is_def = equal(tok, "{");
@@ -4916,7 +4969,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
 
       /* Check that every overload has a different symbol */
       char *fn_symbol = lookup_symbol ?: ident.name;
-      char *fn_ov_symbol = get_symbolname(fn_ov);
+      char *fn_ov_symbol = get_symbol(fn_ov);
       if (!strcmp(fn_ov_symbol, fn_symbol)) {
 
         /* Allow opaque pointers, only for the first overload,
@@ -5012,9 +5065,9 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     fn->is_inline = attr->is_inline;
   }
 
-  if (recv)
-    fn->symbol = lookup_symbol;
-
+  /* Assign the lookup_symbol to the function.
+   * If any, __attribute__((symbol)) can override this */
+  fn->symbol = lookup_symbol;
   tok = attribute_list(tok_attr, NULL, fn);
 
   fn->is_root = !(fn->is_static && fn->is_inline);
@@ -5055,7 +5108,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // **Update** since SuperC functions can have overloads, the __func__/__FUNCTION__
   // will be the symbol of the function for compatibility, instead of the name.
   // Regular C style functions will not be affected by this change
-  char *symname = get_symbolname(fn);
+  char *symname = get_symbol(fn);
   Obj *__fnname__ = new_string_literal(symname, array_of(ty_char, strlen(symname) + 1));
   push_scope("__func__")->var = __fnname__;
 
@@ -5086,12 +5139,16 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
     if (!ty->name)
       error_tok(ty->name_pos, "variable name omitted");
 
-    Obj *var = new_gvar(get_ident(ty->name), ident_none, ty);
+    Obj *var = new_gvar(get_ident_with_ns(ty->name), ident_none, ty);
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
     if (attr->align)
       var->align = attr->align;
+
+    /* If we have a namespace, mangle the symbol */
+    if (current_nss || strchr(var->name, ':'))
+      var->symbol = get_default_ns_symbol(current_nss, get_ident(ty->name));
 
     tok = attribute_list(tok, NULL, var);
 
@@ -5161,7 +5218,7 @@ static void scan_globals(void) {
     // Find another definition of the same identifier.
     Obj *var2 = globals;
     for (; var2; var2 = var2->next)
-      if (var != var2 && var2->is_definition && !strcmp(get_symbolname(var), get_symbolname(var2)))
+      if (var != var2 && var2->is_definition && !strcmp(get_symbol(var), get_symbol(var2)))
         break;
 
     // If there's another definition, the tentative definition
@@ -5204,12 +5261,37 @@ Obj *parse(Token *tok) {
       continue;
     }
 
+    if (tok->kind == TK_PP_NS) {
+      /* Set current namespace from
+       * #pragma namespace */
+      current_ns = tok->str;
+      current_nss = NULL; // disable nss when ns is NULL
+
+      /* Reset default symbol prefix.
+       * i.e., "foo::bar::" -> "foo$$bar$$" */
+      if (current_ns) {
+        current_nss = strdup(current_ns);
+        sanitize_ns_symbol(current_nss);
+      }
+
+      tok = tok->next;
+      continue;
+    }
+
+    if (tok->kind == TK_PP_NSS) {
+      /* Set current namespace symbol from
+       * #pragma namespace_symbol */
+      current_nss = tok->str;
+      tok = tok->next;
+      continue;
+    }
+
     VarAttr attr = {};
     Type *basety = declspec(&tok, tok, &attr);
 
     // Typedef
     if (attr.is_typedef) {
-      tok = parse_typedef(tok, basety);
+      tok = parse_typedef(tok, basety, true);
       continue;
     }
 

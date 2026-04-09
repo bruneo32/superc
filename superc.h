@@ -70,6 +70,8 @@ typedef enum {
   TK_STR,     // String literals
   TK_NUM,     // Numeric literals
   TK_PP_NUM,  // Preprocessing numbers
+  TK_PP_NS,   // Preprocessor namespace
+  TK_PP_NSS,  // Preprocessor namespace symbol
   TK_EOF,     // End-of-file markers
 } TokenKind;
 
@@ -135,6 +137,7 @@ Token *tokenize_file(char *filename);
 // preprocess.c
 //
 
+void sanitize_ns_symbol(char *symbol);
 char *search_include_paths(char *filename);
 void init_macros(void);
 void define_macro(char *name, char *buf);
@@ -469,6 +472,7 @@ char *type_to_asmident(Type *ty, bool recurse);
 
 void codegen(Obj *prog, FILE *out);
 int align_to(int n, int align);
+char *get_symbol(Obj *var);
 
 //
 // unicode.c

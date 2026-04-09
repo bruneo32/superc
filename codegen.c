@@ -63,6 +63,12 @@ int align_to(int n, int align) {
   return (n + align - 1) / align * align;
 }
 
+char *get_symbol(Obj *var) {
+  if (var->symbol)
+    return var->symbol;
+  return var->name;
+}
+
 static char *reg_dx(int sz) {
   switch (sz) {
   case 1: return "%dl";
@@ -81,12 +87,6 @@ static char *reg_ax(int sz) {
   case 8: return "%rax";
   }
   unreachable();
-}
-
-static char* get_symbol(Obj *var) {
-  if (var->symbol)
-    return var->symbol;
-  return var->name;
 }
 
 // Compute the absolute address of a given node.

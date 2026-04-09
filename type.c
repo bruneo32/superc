@@ -492,6 +492,7 @@ char *type_to_string(Type *ty) {
 
 static void append_name_mangle(Token *tok, StringBuilder *sb) {
   char *name = strndup(tok->loc, tok->len);
+  sanitize_ns_symbol(name);
   sb_appendf(sb, "%d%s", tok->len, name);
   free(name);
 }

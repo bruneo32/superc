@@ -969,6 +969,47 @@ static Token *preprocess2(Token *tok) {
       continue;
     }
 
+    if (equal(tok, "pragma") && equal(tok->next, "namespace")) {
+      Token *ns_name = tok->next->next;
+      char *ns_name_str = NULL;
+
+      if (!ns_name->at_bol && ns_name->kind == TK_IDENT) {
+        // Set current namespace prefix to "foo::"
+        ns_name_str = strndup(ns_name->loc, ns_name->len + 2);
+        ns_name_str[ns_name->len] = ':';
+        ns_name_str[ns_name->len + 1] = ':';
+        ns_name->len += 2;
+      }
+
+      /* Replace tok with TK_PP_NS, hinting the parser
+       * of the new namespace prefix */
+      tok->kind = TK_PP_NS;
+      tok->str = ns_name_str;
+      cur = cur->next = copy_token(tok);
+
+      tok = tok->next = skip_line(!ns_name_str ? ns_name : ns_name->next);
+      continue;
+    }
+
+    if (equal(tok, "pragma") && equal(tok->next, "namespace_symbol")) {
+      Token *ns_symbol = tok->next->next;
+
+      if (ns_symbol->at_bol || ns_symbol->kind != TK_STR)
+        error_tok(ns_symbol, "expected string literal");
+
+      // Get string without quotes
+      char *ns_symbol_str = strndup(ns_symbol->loc + 1, ns_symbol->len - 2);
+
+      /* Replace tok with TK_PP_NSS, hinting the parser
+       * of the new namespace symbol prefix */
+      tok->kind = TK_PP_NSS;
+      tok->str = ns_symbol_str;
+      cur = cur->next = copy_token(tok);
+
+      tok = tok->next = skip_line(!ns_symbol_str ? ns_symbol : ns_symbol->next);
+      continue;
+    }
+
     if (equal(tok, "pragma")) {
       do {
         tok = tok->next;
@@ -1191,6 +1232,13 @@ static void join_adjacent_string_literals(Token *tok) {
     tok1->str = buf;
     tok1->next = tok2;
     tok1 = tok2;
+  }
+}
+
+void sanitize_ns_symbol(char *symbol) {
+  for (char *c = symbol; *c; c++) {
+    if (*c == ':')
+      *c = '$';
   }
 }
 

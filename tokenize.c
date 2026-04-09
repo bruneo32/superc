@@ -617,7 +617,25 @@ Token *tokenize(File *file) {
     // Identifier or keyword
     int ident_len = read_ident(p);
     if (ident_len) {
-      cur = cur->next = new_token(TK_IDENT, p, p + ident_len);
+      char *q = p + ident_len;
+      Token *tk_ident = new_token(TK_IDENT, p, q);
+      cur = cur->next = tk_ident;
+
+      /* Read namespaced identifiers */
+      lbl_ns_loop:
+      uint32_t c = decode_utf8(&q, q);
+      if (c == ':') {
+        uint32_t c = decode_utf8(&q, q);
+        if (c == ':') {
+          int len = read_ident(q);
+          if (!len)
+            error_at(p, "invalid identifier");
+          tk_ident->len += len + 2 /* '::' */;
+          q += len;
+          goto lbl_ns_loop;
+        }
+      }
+
       p += cur->len;
       continue;
     }
