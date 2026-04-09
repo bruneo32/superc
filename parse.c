@@ -4396,10 +4396,20 @@ static Node *primary(Token **rest, Token *tok) {
 static Token *parse_typedef(Token *tok, Type *basety, bool is_root) {
   bool first = true;
 
+  Token *ptok; // track previous token
   while (!consume(&tok, tok, ";")) {
-    if (!first)
-      tok = skip(tok, ",");
+    if (!first) {
+      /* Manual check for ',' because
+       * skip(",") error message is misleading */
+      if (equal(tok, ","))
+        tok = tok->next;
+      else if (ptok->kind == TK_IDENT)
+        error_tok(ptok, "unknown type '%s'", get_ident(ptok));
+      else
+        error_tok(ptok, "expected ','");
+    }
     first = false;
+    ptok = tok;
 
     Type *ty = declarator(&tok, tok, basety);
     if (!ty->name)
