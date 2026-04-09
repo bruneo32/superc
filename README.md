@@ -1,6 +1,6 @@
 # SuperC: C11 superset language
 
-A backwards-compatible extension of **C** with modern ergonomics like *defer*, *methods*, and *operator overloading*, without sacrificing performance and control.
+A backwards-compatible superset language of **C** with modern ergonomics like *defer*, *methods*, and *lambdas*, without sacrificing performance and control.
 
 > ⚠️ **Alpha**: expect bugs, missing features, and breaking changes.
 
@@ -92,8 +92,9 @@ int main() {
   - [break N](<https://bruneo32.github.io/superc/docs/break_n>)
   - [Operator overload](<https://bruneo32.github.io/superc/docs/operator_overload>)
   - [Function overload](<https://bruneo32.github.io/superc/docs/function_overload>)
+  - [Namespaces](<https://bruneo32.github.io/superc/docs/namespaces>)
 - Current planned features
-  - *Struct inheritance/composition*
+  - [Struct embedding](<https://bruneo32.github.io/superc/docs/struct_embedding>)
   - [Defer auto (scoped blocks)](<https://bruneo32.github.io/superc/docs/defer_auto>)
     - [Defer in loops](<https://bruneo32.github.io/superc/docs/defer_auto#defer-in-loops>)
   - [Lambdas](<https://bruneo32.github.io/superc/docs/lambdas>)
@@ -121,8 +122,8 @@ superc example_string.c
 ```
 
 ### Examples
-example_simple.c
 ```c
+// example_defer.c
 #include <stdio.h>
 
 int main() {
@@ -138,17 +139,14 @@ int main() {
   return 0;
 }
 ```
-
-example_string.c
+---
 ```c
+// example_string.c
+// - type methods
+// - symbol mangling
+// - operator overload
 #include <stdio.h>
 #include <string.h>
-
-/* Silly GCC headers
- * destroy __attribute__ */
-#ifdef __attribute__
-#undef __attribute__
-#endif
 
 #define string char*
 
@@ -158,11 +156,13 @@ inline size_t (string s1) length() {
 }
 
 /* s1 += s2 is strcat(s1, s2) */
-string (string s1) __iadd__(const string s2) __attribute__((symbol("strcat")));
+string (string s1) __iadd__(const string s2)
+          __attribute__((symbol("strcat")));
+
 
 int main() {
   char s1[100] = "Hello, ";
-  s1 += "world!"; // string += string
+  s1 += "world!";
 
   printf("(%d) = %s\n", s1.length(), s1);
   // (13) = Hello, world!
@@ -180,10 +180,9 @@ int main() {
       - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
    2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>)** syntax
    3. Complete new language features:
-      - Struct inheritance/composition
+      - Struct embedding
       - defer auto
-      - Lambdas
-      - (?) Namespaces
+      - Lambdas/Closures
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>)
       - (?) Switch `goto` in-switch labels.
    4. Better error messages, help, and man pages.
@@ -212,6 +211,7 @@ Start with **Getting Started**, and explore features with examples.
 
 # Contributing
 SuperC is in an early stage - contributions are highly appreciated.
+> Read contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 You can help with:
 - Compiler development
@@ -219,8 +219,7 @@ You can help with:
 - Documentation
 - Examples and testing
 
-> - Check issues: https://github.com/bruneo32/superc/issues
-> - Read contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+> Check issues: https://github.com/bruneo32/superc/issues
 
 # Notes
 > Forked from [chibicc](https://github.com/rui314/chibicc).
