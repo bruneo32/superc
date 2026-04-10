@@ -6,7 +6,7 @@ layout: blog
 # Getting started with SuperC
 Hi everyone! Welcome to **SuperC** documentation.
 
-> ⚠️ **Status:** The compiler is still **experimental**, and the language is **not finalized yet**.
+> ⚠️ **Status:** The compiler is still in **alpha** stage, and the language is **not finalized yet**.<br>
 > Expect bugs, missing features, and breaking changes.
 
 ## Who are you?
@@ -14,7 +14,7 @@ If you landed here, you probably are one of the following...
 
 | You are... | What to do with **SuperC**? |
 | ---------- | --------------------------- |
-| Curious, just casually looking<br>for new programming languages | Go ahead and try it! Just keep in mind that **SuperC** is still in **beta**<br>Help us focusing on what it *could become*, not what it is today. |
+| Curious, just casually looking<br>for new programming languages | Go ahead and try it! Just keep in mind that **SuperC** is still in **alpha** stage.<br>Help us focusing on what it *could become*, not what it is today. |
 | A *low-level* enjoyer, but **C** is already 50+ years old,<br>and the new low-level languages are too weird or too complex.<br><br>So, you want to take a look at **SuperC**,<br>hoping that this is the one you have been searching for. | Well, right now **SuperC** is unripe, but since you are a **C** guru,<br>we need your help **improving** the *compiler*, *documentation*, *library*, etc.<br><br>**Just** take your time, and **read** some [issues](<https://github.com/bruneo32/superc/issues>){:target="_blank"} or **create** new ones!<br>> Thanks to you, this project can become a reality. |
 
 # What is SuperC
@@ -51,7 +51,6 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
       - Struct embedding
       - defer auto
       - Lambdas
-      - Namespaces
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>){:target="_blank"}
       - (?) Switch `goto default`.
    4. Better error messages, help, and man pages.

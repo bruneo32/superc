@@ -1,23 +1,24 @@
 ---
-title: (DRAFT) Namespaces
+title: Namespaces
 layout: blog
 ---
 
-> ⚠️ This is a **PROPOSAL DRAFT**. Namespaces are currently **not implemented**. Syntax may change
+> ⚠️ Namespace are implemented **[up-stream](https://github.com/bruneo32/superc){:target="_blank"}**, but the **playground** does not support it yet
 
 # Namespaces
-Big code projects must support namespaces for organization of big codebases. So **SuperC** will not survive without namespacing.
+Big code projects must support namespaces to organize large codebases. So **SuperC** will not survive without namespacing.
 
-> Namespaces are **not** intended to **reduce** the amount of typing, but to **organize** the codebase and prevent **name collisions**.
+> Namespaces are **not** intended to **reduce** the amount of typing, but to **organize** the code and prevent **name collisions**.
 
 But in order to keep it simple and avoid "namespace hell":
-- identifiers don't track namespaces for variables. Instead, the **"::"** becomes part of the identifier name.
-- no implicit `using namespace foo`, only **explicit** `foo::bar`.
-- no nesting namespaces, just a compile time **namespace prefix** *(see [pragma namespace](#pragma-namespace))*.
-- the **default assembly symbol** of `foo::bar` is `foo$$bar`
+- Identifiers do not track namespace metadata. Instead, `::` is treated as part of the identifier name.
+- The default assembly symbol for `foo::bar` is `foo$$bar`.
+- There is no implicit `using namespace foo`; only **explicit** usage like `foo::bar`.
+- Nested namespaces are not supported. Instead, a compile-time **namespace prefix** is used (see [#pragma namespace](#pragma-namespace)).
 
 ## Identifier names
-**SuperC** allows the use of `::` in **identifier** names *(but not single character `:`, because that would break label parsing)*
+**SuperC** allows the use of `::` inside **identifier** names *(but not single character `:`, as that would conflict with label parsing)*
+
 - Valid **SuperC** identifiers: `foo`, `foo::bar`, `foo::bar::baz`, etc.
 - Invalid **SuperC** identifiers: `foo:::bar`, `foo:bar`, etc.
 
@@ -31,17 +32,19 @@ Instead of constantly typing `foo::` before all the identifiers in your header f
 - use `#pragma namespace foo` to tell the compiler to **prepend** `foo::` to all eligible identifiers names.
 - use `#pragma namespace` to **end** the current namespace. **i.e.,** set *name prefix* to empty.
 - reaching the end of the file will also **end** the current namespace.
+- after an `#include` directive, the *name prefix* is **restored** to the previous one, preventing the included file from hoisting the *name prefix*.
 - [type methods](methods.md) are **not** affected by the *name prefix*.
 
 Same as *name prefix*, there is also a ***symbol prefix*** *(see [\#pragma namespace_symbol](#pragma-namespace_symbol))*
 - each time `#pragma namespace` is reached, the *symbol prefix* is **reset**. **i.e.,** `#pragma namespace foo` makes the *symbol prefix* `foo$$` and the *name prefix* `foo::`.
-- this *default symbol* can totally overridden with a [attribute symbol](symbols.md#aliases)
+- this *default symbol* can be completely overridden with a [attribute symbol](symbols.md#aliases)
 
 > **Note**: the `#pragma namespace` directive replaces the previous one. If you invoke `#pragma namespace foo` and then `#pragma namespace bar`, the namespace is not `foo::bar`, it's `bar`. Use `#pragma namespace foo::bar` to indicate a nested namespace.
 
 ## \#pragma namespace_symbol
 - You can use `#pragma namespace_symbol "foo_"` to assign the ***symbol prefix*** to *"foo_"* instead of the default `foo$$`.
 - `#pragma namespace_symbol ""` effectively disables the *symbol prefix*, useful for wrappers.
+- after an `#include` directive, the *symbol prefix* is **restored** to the previous one, preventing the included file from hoisting the *symbol prefix*.
 - Note that when the `#pragma namespace` directive is reached, the *symbol prefix* is **reset** to default. See [\#pragma namespace](#pragma-namespace)
 
 ## Reduce deep namespace identifiers
@@ -68,18 +71,31 @@ int mylib::sum(int a, int b) {
   return a + b + 1;
 }
 
-// -- BEGIN NAMESPACE: mylib -- //
+/* -- BEGIN NAMESPACE: mylib -- */
 #pragma namespace mylib
-const int TWO = 2;             // symbol : mylib$$TWO
-int add(int a, int b) {        // symbol : mylib$$add
+const int TWO = 2;       // symbol : mylib$$TWO
+int add(int a, int b) {  // symbol : mylib$$add
   return a + b + mylib::TWO;
 }
+
+// methods don't get namespace, so this is
+// not '(int).mylib::sum', but just '(int).sum'
+int (int a) sum(int b) {
+  return a + b;
+}
+
 #pragma namespace // end namespace
 
 int main() {
-  printf("sum: %d\n", sum(1, 2));
-  printf("sum: %d\n", mylib::sum(1, 2));
-  printf("add: %d\n", mylib::add(1, 2));
+  int x = 3;
+  printf("A: %d\n", sum(1, 2));
+  printf("B: %d\n", mylib::sum(1, 2));
+  printf("C: %d\n", mylib::add(1, 2));
+  printf("D: %d\n", x.sum(4)); // (int).sum
+  // A: 3
+  // B: 4
+  // C: 6
+  // D: 7
   return 0;
 }
 ```
