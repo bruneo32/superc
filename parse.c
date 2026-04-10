@@ -88,11 +88,8 @@ struct StrArray {
   StrArray *next;
 };
 
-/** Current namespace prefix */
-static char *current_ns = NULL;
-
-/** Current namespace symbol prefix */
-static char *current_nss = NULL;
+/** Current namespace prefix, and namespace symbol prefix */
+static char *current_ns, *current_nss;
 
 static const Identifier ident_none = {.name = NULL, .params_ty = NULL, .is_method = 0};
 #define IdentNamed(name_) ((Identifier){.name = (name_), .params_ty = NULL, .is_method = 0})
@@ -2297,6 +2294,9 @@ static Node *expr_stmt(Token **rest, Token *tok) {
     return new_node(ND_BLOCK, tok);
   }
 
+  while (is_virtual_token(tok))
+    tok = tok->next;
+
   Node *node = new_node(ND_EXPR_STMT, tok);
   node->lhs = expr(&tok, tok);
   *rest = skip(tok, ";");
@@ -4390,6 +4390,11 @@ static Node *primary(Token **rest, Token *tok) {
     return node;
   }
 
+  if (is_virtual_token(tok)) {
+    *rest = tok->next;
+    return new_node(ND_NOP, tok);
+  }
+
   error_tok(tok, "expected an expression");
 }
 
@@ -5259,6 +5264,10 @@ Obj *parse(Token *tok) {
   declare_builtin_functions();
   globals = NULL;
 
+  /* Reset ns and nss on each compile unit */
+  current_ns = NULL;
+  current_nss = NULL;
+
   while (tok->kind != TK_EOF) {
     // global asm statement
     if (equal(tok, "asm")) {
@@ -5271,7 +5280,7 @@ Obj *parse(Token *tok) {
       continue;
     }
 
-    if (tok->kind == TK_PP_NS) {
+    if (tok->kind == VTK_PP_NS) {
       /* Set current namespace from
        * #pragma namespace */
       current_ns = tok->str;
@@ -5288,7 +5297,7 @@ Obj *parse(Token *tok) {
       continue;
     }
 
-    if (tok->kind == TK_PP_NSS) {
+    if (tok->kind == VTK_PP_NSS) {
       /* Set current namespace symbol from
        * #pragma namespace_symbol */
       current_nss = tok->str;

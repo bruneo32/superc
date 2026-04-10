@@ -70,10 +70,13 @@ typedef enum {
   TK_STR,     // String literals
   TK_NUM,     // Numeric literals
   TK_PP_NUM,  // Preprocessing numbers
-  TK_PP_NS,   // Preprocessor namespace
-  TK_PP_NSS,  // Preprocessor namespace symbol
   TK_EOF,     // End-of-file markers
+  // Virtual tokens (compiler generated)
+  VTK_PP_NS,  // Preprocessor namespace
+  VTK_PP_NSS, // Preprocessor namespace symbol
 } TokenKind;
+
+#define is_virtual_token(t_) ((t_)->kind >= VTK_PP_NS)
 
 typedef struct {
   char *name;

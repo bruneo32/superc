@@ -65,6 +65,9 @@ struct Hideset {
   char *name;
 };
 
+/** Current namespace prefix, and namespace symbol prefix */
+static char *current_ns, *current_nss;
+
 static HashMap macros;
 static CondIncl *cond_incl;
 static HashMap pragma_once;
@@ -148,7 +151,7 @@ static Token *add_hideset(Token *tok, Hideset *hs) {
 }
 
 // Append tok2 to the end of tok1.
-static Token *append(Token *tok1, Token *tok2) {
+static Token *append(Token *tok1, Token *tok2, Token **last) {
   if (tok1->kind == TK_EOF)
     return tok2;
 
@@ -158,6 +161,8 @@ static Token *append(Token *tok1, Token *tok2) {
   for (; tok1->kind != TK_EOF; tok1 = tok1->next)
     cur = cur->next = copy_token(tok1);
   cur->next = tok2;
+  if (last)
+    *last = cur;
   return head.next;
 }
 
@@ -648,7 +653,7 @@ static bool expand_macro(Token **rest, Token *tok) {
     Token *body = add_hideset(m->body, hs);
     for (Token *t = body; t->kind != TK_EOF; t = t->next)
       t->origin = tok;
-    *rest = append(body, tok->next);
+    *rest = append(body, tok->next, NULL);
     (*rest)->at_bol = tok->at_bol;
     (*rest)->has_space = tok->has_space;
     return true;
@@ -676,7 +681,7 @@ static bool expand_macro(Token **rest, Token *tok) {
   body = add_hideset(body, hs);
   for (Token *t = body; t->kind != TK_EOF; t = t->next)
     t->origin = macro_token;
-  *rest = append(body, tok->next);
+  *rest = append(body, tok->next, NULL);
   (*rest)->at_bol = macro_token->at_bol;
   (*rest)->has_space = macro_token->has_space;
   return true;
@@ -813,7 +818,29 @@ static Token *include_file(Token *tok, char *path, Token *filename_tok) {
   if (guard_name)
     hashmap_put(&include_guards, path, guard_name);
 
-  return append(tok2, tok);
+  Token *last = NULL;
+  Token *res = append(tok2, tok, &last);
+
+  if (last) {
+    /* Restore the previous ns and nss at the end of #include */
+    Token *tok_nss = copy_token(last);
+    tok_nss->kind = VTK_PP_NSS;
+    tok_nss->str = current_nss ? strdup(current_nss) : NULL;
+    tok_nss->at_bol = true;
+    tok_nss->len = 0;
+    tok_nss->next = last->next;
+
+    Token *tok_ns = copy_token(last);
+    tok_ns->kind = VTK_PP_NS;
+    tok_ns->str = current_ns ? strdup(current_ns) : NULL;
+    tok_ns->at_bol = true;
+    tok_ns->len = 0;
+    tok_ns->next = tok_nss;
+
+    last->next = tok_ns;
+  }
+
+  return res;
 }
 
 // Read #line arguments
@@ -981,9 +1008,12 @@ static Token *preprocess2(Token *tok) {
         ns_name->len += 2;
       }
 
-      /* Replace tok with TK_PP_NS, hinting the parser
+      current_ns = ns_name_str;
+      current_nss = NULL;
+
+      /* Replace tok with VTK_PP_NS, hinting the parser
        * of the new namespace prefix */
-      tok->kind = TK_PP_NS;
+      tok->kind = VTK_PP_NS;
       tok->str = ns_name_str;
       cur = cur->next = copy_token(tok);
 
@@ -999,10 +1029,11 @@ static Token *preprocess2(Token *tok) {
 
       // Get string without quotes
       char *ns_symbol_str = strndup(ns_symbol->loc + 1, ns_symbol->len - 2);
+      current_nss = ns_symbol_str;
 
-      /* Replace tok with TK_PP_NSS, hinting the parser
+      /* Replace tok with VTK_PP_NSS, hinting the parser
        * of the new namespace symbol prefix */
-      tok->kind = TK_PP_NSS;
+      tok->kind = VTK_PP_NSS;
       tok->str = ns_symbol_str;
       cur = cur->next = copy_token(tok);
 
