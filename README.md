@@ -94,6 +94,7 @@ int main() {
   - [Function overload](<https://bruneo32.github.io/superc/docs/function_overload>)
   - [Namespaces](<https://bruneo32.github.io/superc/docs/namespaces>)
 - Current planned features
+  - [Default arguments](<https://bruneo32.github.io/superc/docs/function_default_arguments>)
   - [Struct embedding](<https://bruneo32.github.io/superc/docs/struct_embedding>)
   - [Defer auto (scoped blocks)](<https://bruneo32.github.io/superc/docs/defer_auto>)
     - [Defer in loops](<https://bruneo32.github.io/superc/docs/defer_auto#defer-in-loops>)
