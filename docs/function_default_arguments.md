@@ -4,7 +4,9 @@ layout: blog
 ---
 
 # Default arguments in functions
-Unlike C, **SuperC** allows an optional *default value* for a parameter when no argument is provided.
+Unlike C, **SuperC** allows parameters to have optional default values.
+- If an argument is not provided, the default value is used instead of an error.
+
 {% tabs functions1 %}
 {% tab functions1 SuperC %}
 ```cpp
@@ -48,7 +50,7 @@ int main() {
 {% endtab %}
 {% endtabs %}
 
-## Select parameters by name
+## Named arguments
 When a parameter has a *default value*, it can be selected by **name** instead of position.
 > Note that the order of the arguments does not matter when they are selected by name.
 
@@ -100,3 +102,93 @@ int main() {
 ```
 {% endtab %}
 {% endtabs %}
+
+{% tabs functions3 %}
+{% tab functions3 SuperC %}
+```cpp
+#include <stdio.h>
+
+#define C_BLACK 0x000000FF
+#define C_WHITE 0xFFFFFFFF
+#define C_RED   0xFF0000FF
+
+Button Button::new(int background = C_BLACK, int color = C_WHITE,
+                   const char *text = NULL, const char *tooltip = NULL);
+
+int main() {
+  /* Named arguments are great when a function has many parameters
+   * with similar types.
+   * They improve readability without requiring a struct,
+   * which is less safe and can change the signature of the function */
+
+  Button btn_play = Button::new(
+    .text = "Play!",
+    .tooltip = "Start a new adventure",
+  );
+
+  Button btn_quit = Button::new(
+    .color = C_RED,
+    .text = "Quit",
+    .tooltip = "Exit the game",
+  );
+
+  ...
+
+  return 0;
+}
+```
+{% endtab %}
+
+{% tab functions3 C99 %}
+```c
+#include <stdio.h>
+
+#define C_BLACK 0x000000FF
+#define C_WHITE 0xFFFFFFFF
+#define C_RED   0xFF0000FF
+
+struct ButtonParams {
+  int background;
+  int color;
+  const char *text;
+  const char *tooltip;
+};
+
+Button Button_new(ButtonParams params);
+
+int main() {
+  Button btn_play = Button_new((ButtonParams){
+    .text = "Play!",
+    .tooltip = "Start a new adventure",
+  });
+
+  Button btn_quit = Button_new((ButtonParams){
+    .color = C_RED,
+    .text = "Quit",
+    .tooltip = "Exit the game",
+  });
+
+  ...
+
+  return 0;
+}
+```
+{% endtab %}
+{% endtabs %}
+
+## Collision with function overloading
+Have in mind the following example, which `foo` gets called?
+1. Overloads that do not require default arguments are preferred.
+2. Overloads with fewer default arguments are preferred.
+
+> The answer is `foo1`
+
+```c
+void foo(int a)            __attribute__((symbol("foo1")));
+void foo(int a, int b = 0) __attribute__((symbol("foo2")));
+
+int main() {
+  foo((int)10);
+  return 0;
+}
+```
