@@ -7,7 +7,7 @@ layout: blog
 Unlike C, **SuperC** allows an optional *default value* for a parameter when no argument is provided.
 {% tabs functions1 %}
 {% tab functions1 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int add(int a, int b = 1) {
@@ -54,7 +54,7 @@ When a parameter has a *default value*, it can be selected by **name** instead o
 
 {% tabs functions2 %}
 {% tab functions2 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 struct Point {

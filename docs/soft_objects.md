@@ -26,7 +26,7 @@ Does not comply with the official definition of *OOP*, but is close enough for m
 This can bring objects closer to low-level programming, speed up games runtime, etc.
 
 ## Constructors and destructors
-```cpp
+```c
 #include <stdio.h>
 
 // class Animal
@@ -218,7 +218,7 @@ struct Car {
 ## Full polymorphism - dynamic dispatch
 Instead of soft polymorphism, you can write full polymorphism with **dynamic dispatch**.
 
-```cpp
+```c
 #include <stdio.h>
 
 // class Animal

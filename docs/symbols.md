@@ -9,7 +9,7 @@ Allows the user to change the output symbol of a variable or function.
 - New keyword `symbolof(identifier)`; returns the expected symbol name of the variable or function as a string literal.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 
 int foo __attribute__((symbol("bar"))) = 123;
@@ -57,7 +57,7 @@ Symbol mangling can be used to create syntax aliases to existing variables and f
 Sure you can do `#define def abc`, but you cannot use preprocessor for [type methods](methods.md), so this is a useful feature of the symbol mangling.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 #include <string.h>
 
@@ -78,7 +78,7 @@ int main(void) {
   return 0;
 }
 ```
-```c
+```cpp
 #include <stdio.h>
 
 /*

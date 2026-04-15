@@ -30,7 +30,7 @@ If we don't want it to be inlined, we can just remove `inline` from the function
 
 {% tabs scdiffc1 %}
 {% tab scdiffc1 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 // both functions are inlined at assembly level,
@@ -84,7 +84,7 @@ Like [GCC](<https://gcc.gnu.org/onlinedocs/gcc/Function-Names.html>){:target="_b
 
 {% tabs scdiffc2 %}
 {% tab scdiffc2 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int add(int a, int b) __attribute__((symbol("myadd_function"))) {

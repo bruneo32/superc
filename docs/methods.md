@@ -10,7 +10,7 @@ It is equivalent to passing the caller as the first argument.
 - **i.e.** `mycat.meow()` is exactly the same to `(Cat).meow(mycat)`.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 
 int (int a) sum(int b) {
@@ -25,7 +25,7 @@ int main() {
   return 0;
 }
 ```
-```c
+```cpp
 #include <stdio.h>
 
 struct color {

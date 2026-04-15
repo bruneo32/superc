@@ -13,7 +13,7 @@ The nullish coalescing operator is a ternary operator that returns its **right**
 > Note: that operator overload for `__ne__` does not work for nullish coalescing operator, because `(x != 0)` is not tested, it's just the variable "truthiness". If you want to test the operator overload, use explicit ternary operator `x != 0 ? x : y`.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 #include <string.h>
 

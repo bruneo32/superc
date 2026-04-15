@@ -16,7 +16,7 @@ This means that the collision of the **symbols** only happen in the linker, so i
 {% tabs fnov1 %}
 
 {% tab fnov1 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 void foo(float a) __attribute__((symbol("foo_f"))) {
@@ -70,7 +70,7 @@ int main(void) {
 {% endtabs %}
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 
 /* Methods don't collide by default,
@@ -101,7 +101,7 @@ int main(void) {
   return 0;
 }
 ```
-```c
+```cpp
 #include <stdio.h>
 
 int add(int a, int b) {

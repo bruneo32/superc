@@ -63,7 +63,7 @@ There are some rules that the compiler follows:
 > Note: operator `~` is mostly used as [object destructor](soft_objects.md#constructors-and-destructors), rather than **arithmetic inversion**. That is why it is called \_\_del\_\_ instead of \_\_inv\_\_.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 #include <string.h>
 
@@ -79,7 +79,7 @@ int main(void) {
   return 0;
 }
 ```
-```c
+```cpp
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -119,7 +119,7 @@ int main(void) {
   return 0;
 }
 ```
-```c
+```cpp
 #include <stdio.h>
 #include <string.h>
 

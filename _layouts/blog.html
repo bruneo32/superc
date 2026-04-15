@@ -213,7 +213,7 @@
       });
     });
 
-    const c_codes = document.querySelectorAll("ul.tab-content div.language-c.highlighter-rouge");
+    const c_codes = document.querySelectorAll("ul.tab-content div.language-cpp.highlighter-rouge");
     c_codes.forEach(div => {
       const code = div.children[0].textContent.slice(0, -1 /* remove x1F4CB */).trim();
       const code_b64 = btoa(code);

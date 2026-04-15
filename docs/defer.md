@@ -14,7 +14,7 @@ Will execute the code stated right before exiting a function.
 ### Examples
 {% tabs defer1 %}
 {% tab defer1 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int main() {
@@ -35,7 +35,7 @@ This will print after OK
 
 {% tabs defer2 %}
 {% tab defer2 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -90,7 +90,7 @@ File closed!
 
 {% tabs defer3 %}
 {% tab defer3 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
@@ -138,7 +138,7 @@ int main() {
 
 {% tabs defer4 %}
 {% tab defer4 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int main() {
@@ -186,7 +186,7 @@ Below is a pseudo assembly example of how the **SuperC** compiler emits defer st
 
 {% tabs defer-ass %}
 {% tab defer-ass SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int main() {

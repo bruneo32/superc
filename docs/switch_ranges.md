@@ -13,7 +13,7 @@ This can be done using ranges, which are written as `case low ... high`, it has 
 > Note: Space around the `1 ... 10` is important, otherwise you could get an error when parsing integer values.
 
 ### Examples
-```c
+```cpp
 #include <stdio.h>
 
 int main() {

@@ -10,7 +10,7 @@ Will break out of a loop or switch N levels up.
 ### Examples
 {% tabs break_n_1 %}
 {% tab break_n_1 SuperC %}
-```c
+```cpp
 #include <stdio.h>
 
 int main() {
