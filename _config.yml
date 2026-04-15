@@ -1,7 +1,7 @@
 title: SuperC documentation
 google_analytics:
 theme: jekyll-theme-minimal
-incremental: true
+incremental: false
 plugins:
   - jekyll-tabs
 
@@ -12,16 +12,17 @@ docs_nav:
   - index.md
   - docs/defer.md
   - docs/defer_auto.md
-  - docs/methods.md
   - docs/symbols.md
   - docs/break_n.md
-  - docs/operator_overload.md
-  - docs/nullish_coalescing.md
   - docs/switch_ranges.md
+  - docs/nullish_coalescing.md
+  - docs/methods.md
+  - docs/operator_overload.md
   - docs/function_overload.md
+  - docs/function_default_arguments.md
+  - docs/namespaces.md
   - docs/c_backwards_compat.md
-  - docs/lambdas.md
-  - docs/defer_edge_cases.md
   - docs/struct_embedding.md
   - docs/soft_objects.md
-  - docs/namespaces.md
+  - docs/lambdas.md
+  - docs/defer_edge_cases.md

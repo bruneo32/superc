@@ -48,6 +48,7 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
       - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
    2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>){:target="_blank"}** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>){:target="_blank"}** syntax
    3. Complete new language features:
+      - Default arguments
       - Struct embedding
       - defer auto
       - Lambdas
