@@ -984,8 +984,9 @@ static Type *func_params(Token **rest, Token *tok, Type *ty) {
     cur = cur->next = ty2;
   }
 
-  if (cur == &head)
-    is_variadic = true;
+  // TODO: Review why this is needed
+  // if (cur == &head)
+  //   is_variadic = true;
 
   ty = func_type(ty);
   ty->params = head.next;
@@ -4902,7 +4903,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   // as the hidden first parameter.
   Type *rty = ty->return_ty;
   if ((rty->kind == TY_STRUCT || rty->kind == TY_UNION) && rty->size > 16)
-    new_lvar("__struct_area__", ident_none, pointer_to(rty));
+    ty->sret_ty = copy_type(rty);
 
   fn->params = locals;
   locals = NULL; /* Prevent params to be registered as locals */

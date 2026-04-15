@@ -3,13 +3,13 @@
 
 struct nothing {} _nothing;
 
-// struct ReturnVal {
-// 	char  a;
-// 	int   b;
-// 	long  c;
-// 	char  d;
-// 	short e;
-// } __attribute__((packed));
+struct ReturnVal {
+	char  a;
+	int   b;
+	long  c;
+	char  d;
+	short e;
+};
 
 static void foo() {}
 
@@ -29,15 +29,15 @@ static inline int foobar() { return 2; }
 // 	return __func__;
 // }
 
-// static struct ReturnVal foobar3() {
-// 	return (struct ReturnVal){
-// 		.a = 1,
-// 		.b = 2,
-// 		.c = 3,
-// 		.d = 4,
-// 		.e = 5,
-// 	};
-// }
+struct ReturnVal foobar3() {
+	return (struct ReturnVal){
+		.a = 1,
+		.b = 2,
+		.c = 3,
+		.d = 4,
+		.e = 5,
+	};
+}
 
 // long sumall(int n, ...) {
 // 	va_list ap;
@@ -55,8 +55,10 @@ first:
 	goto first;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
 	alloca(7);
+
+	struct ReturnVal r = foobar3();
 
 	goto test_label;
 

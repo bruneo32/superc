@@ -1,4 +1,4 @@
-LLCFLAGS=-O2 -mtriple=x86_64-pc-linux-gnu
+LLCFLAGS=-O0 -mtriple=x86_64-pc-linux-gnu
 
 %.exe: %.o
 	ld.lld -o $@ -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
@@ -21,4 +21,4 @@ LLCFLAGS=-O2 -mtriple=x86_64-pc-linux-gnu
 .PHONY: all clean
 
 clean:
-	rm -rf *.o *.exe *.s
+	rm -rf *.o *.exe *.s *.ll

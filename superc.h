@@ -432,6 +432,7 @@ struct Type {
 
   // Function type
   Type *return_ty;
+  Type *sret_ty;
   Type *params;
   bool is_variadic;
   Type *next;
@@ -507,6 +508,7 @@ enum LLKind {
   LL_NUM,
   LL_NUMF,
   LL_VAR,
+  LL_GEP,  // getelementptr
   /* Basic ops */
   LL_ALLOCA,
   LL_LOAD,
@@ -556,11 +558,17 @@ struct LLVM {
   Obj *var;
 
   // Function
+  Type *func_ty;
+  LLVM *sret;
   LLVM *args;
 
   // Numeric literal
   int64_t val;
   flt_number fval;
+
+  // Getelementptr
+  int base_idx;
+  int elem_idx;
 };
 
 void codegen(Obj *prog, FILE *out);

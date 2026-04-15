@@ -122,6 +122,7 @@ static const char *get_symvar(LLVM *llvm) {
   case LL_NUMF:
     return get_float_lit(llvm->ty->kind, llvm->fval);
   case LL_VAR:
+    assert(llvm->var);
     Obj *var = llvm->var;
     if (var->is_local)
       return format("%%%ld", var->llvm->ssa);
@@ -142,7 +143,7 @@ static inline bool is_assignable_ll(LLVM *ll) {
   case LL_LABEL:
     return ll->label->is_live;
   case LL_FUNCALL:
-    return ll->ty->kind != TY_VOID;
+    return !ll->sret && ll->ty->kind != TY_VOID;
   default:
     return true;
   }
@@ -202,7 +203,18 @@ static LLVM *gen_jmp(Label *label) {
   return llvm;
 }
 
-static LLVM *gen_addr(Type *ty, Obj *var) {
+static Obj *make_ssa_var(count_t ssa, Type *ty) {
+  Obj *var = calloc(1, sizeof(Obj));
+  var->ty = ty;
+  var->is_local = true;
+  var->llvm = calloc(1, sizeof(LLVM));
+  var->llvm->kind = LL_VAR;
+  var->llvm->ssa = ssa;
+  var->llvm->ty = ty;
+  return var;
+}
+
+static LLVM *gen_addr_var(Type *ty, Obj *var) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
@@ -212,6 +224,33 @@ static LLVM *gen_addr(Type *ty, Obj *var) {
   llvm->ty   = ty;
   llvm->var  = var;
   return llvm;
+}
+
+static LLVM *gen_getelementptr(Type *ty, Obj *var, int base_idx, int elem_idx) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_GEP;
+  llvm->ty   = ty;
+  llvm->var  = var;
+  llvm->base_idx = base_idx;
+  llvm->elem_idx = elem_idx;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_addr(Node *node) {
+  switch (node->kind) {
+  case ND_VAR:
+    return gen_addr_var(node->ty, node->var);
+  case ND_MEMBER:
+    return gen_getelementptr(node->member->ty, node->lhs->var, 0, node->member->idx);
+  default:
+    unreachable();
+  }
 }
 
 static LLVM *gen_inum(Type *ty, int64_t val) {
@@ -402,9 +441,10 @@ static LLVM *gen_funcall(Node *fn, LLVM *args) {
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_FUNCALL;
+  llvm->func_ty = fn->func_ty;
   llvm->ty = fn->ty;
   llvm->args = args;
-  llvm->lhs = gen_addr(fn->lhs->ty, fn->lhs->var);
+  llvm->lhs = gen_addr(fn->lhs);
 
   advance_emit(llvm);
   return llvm;
@@ -420,8 +460,7 @@ static LLVM *gen_expr(Node *node) {
       return NULL;
     case ND_COMMA:
       gen_expr(node->lhs);
-      gen_expr(node->rhs);
-      return NULL;
+      return gen_expr(node->rhs);
     case ND_STMT_EXPR:
       for (Node *n = node->body; n; n = n->next)
         gen_stmt(n, false);
@@ -431,7 +470,7 @@ static LLVM *gen_expr(Node *node) {
     }
     case ND_VAR: {
       // rvalue of a var = load from its address
-      return gen_load(node->ty, gen_addr(node->ty, node->var));
+      return gen_load(node->ty, gen_addr(node));
     }
     case ND_CAST: {
       /* If lhs is a primitive, don't need to cast,
@@ -447,9 +486,14 @@ static LLVM *gen_expr(Node *node) {
       return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     }
     case ND_ASSIGN: {
-      // lhs must be an lvalue
-      LLVM *ptr = gen_addr(node->lhs->ty, node->lhs->var);
+      LLVM *ptr = gen_addr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
+      if (rhs->func_ty && rhs->func_ty->sret_ty) {
+        /* If a function returns a struct, don't gen_store,
+         * pass the ptr of the struct to the function */
+        rhs->sret = ptr;
+        return rhs;
+      }
       return gen_store(node->ty, rhs, ptr);
     }
     case ND_FUNCALL: {
@@ -458,9 +502,9 @@ static LLVM *gen_expr(Node *node) {
         int64_t sz = eval2(node->args, NULL);
         return builtint_alloca(sz);
       }
+
       LLVM head = {};
       LLVM *cur = &head;
-
       for (Node *arg = node->args; arg; arg = arg->next)
         cur = cur->next = gen_expr(arg);
 
@@ -610,6 +654,18 @@ static count_t emit_load(count_t ssa, LLVM *ll) {
   return ssa;
 }
 
+static count_t emit_getelementptr(count_t ssa, LLVM *ll) {
+  assert(ll);
+  assert(ll->var);
+  if (!ssa) ssa = ll->ssa;
+
+  const char *llty = llvm_type(ll->var->ty);
+  emitfln("  %%%ld = getelementptr inbounds %s, %s* %s, i32 %d, i32 %d", ssa,
+          llty, llty, get_symvar(ll->var->llvm), ll->base_idx, ll->elem_idx);
+
+  return ssa;
+}
+
 static count_t emit_label(Label *label) {
   if (!label->is_live)
     return 0;
@@ -640,6 +696,8 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_alloca(0, llvm);
   case LL_LOAD:
     return emit_load(0, llvm);
+  case LL_GEP:
+    return emit_getelementptr(0, llvm);
   case LL_STORE:
     return emit_store(llvm->src, llvm->dst);
 
@@ -662,9 +720,18 @@ static count_t emit_llvm(LLVM *llvm) {
     if (llvm->ssa)
       emitf("%%%ld = ", llvm->ssa);
 
-    emitf("call %s %s(", llvm_type(llvm->ty), get_symvar(llvm->lhs));
+    emitf("call %s %s(", llvm->sret ? llvm_type(ty_void) : llvm_type(llvm->ty), get_symvar(llvm->lhs));
 
     Obj *param = llvm->lhs->var->params;
+
+    if (llvm->sret) {
+      const char *llvmty_sret = llvm_type(llvm->sret->ty);
+      emitf("%s* sret(%s) align %d %s", llvmty_sret, llvmty_sret,
+        llvm->lhs->ty->align, get_symvar(llvm->sret));
+      if (param)
+        emitf(", ");
+    }
+
     for (LLVM *arg = llvm->args; arg && param; arg = arg->next, param = param->next) {
       emitf("%s%s %s", llvm_type(arg->ty), is_noundef(param) ? " noundef" : "", get_symvar(arg));
       if (arg->next)
@@ -1127,14 +1194,14 @@ static void emit_text(Obj *prog) {
     current_fn = fn;
     const char *symbol = get_symbol(fn);
 
-    Type *ret_ty = fn->ty->return_ty;
+    Type *ret_ty = fn->ty->sret_ty ? ty_void : fn->ty->return_ty;
     const char *ll_ret_ty = llvm_type(ret_ty);
 
     /* Allocate return value */
     if (ret_ty->kind != TY_VOID) {
       fn_retval_ll = gen_alloca(ret_ty, 0);
     } else
-     fn_retval_ll = NULL;
+      fn_retval_ll = NULL;
 
     /* ==== Function header ==== */
     emitf("define");
@@ -1148,12 +1215,22 @@ static void emit_text(Obj *prog) {
 
     /* Emit arguments */
     ssa_id = 0;
+
+    // A buffer for a struct/union return value is passed
+    // as the hidden first parameter.
+    if (fn->ty->sret_ty) {
+      const char *llvmty_sret = llvm_type(fn->ty->sret_ty);
+      emitf("%s* noalias sret(%s) align %d %%%ld", llvmty_sret, llvmty_sret, fn->ty->sret_ty->align, new_ssa);
+      /* Refer to the sret when returning */
+      fn_retval_ll = gen_addr_var(fn->ty->sret_ty, make_ssa_var(0, fn->ty->sret_ty));
+    }
+
     for (Obj *param = fn->params; param; param = param->next) {
+      if (ssa_id != 0)
+        emitf(", ");
       param->llvm = gen_alloca(param->ty, 0);
       emitf("%s%s %%%ld", llvm_type(param->ty), is_noundef(param) ? " noundef" : "",
             new_ssa);
-      if (param->next)
-        emitf(", ");
     }
 
     emitfln(") #%ld {", attr_num);
