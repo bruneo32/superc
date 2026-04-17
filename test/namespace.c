@@ -4,6 +4,8 @@ int foo::var1 = 0;
 int foo::var2 __attribute__((symbol("foo_bar2"))) = 1;
 int foo::bar::var1 = 2;
 
+/* Test that unknown pragmas are skipped over */
+#pragma region SDL
 typedef struct {
   int x;
   int y;
@@ -14,6 +16,7 @@ SDL::Point (SDL::Point p) __add__(SDL::Point q) {
   p.y += q.y;
   return p;
 }
+#pragma endregion SDL
 
 #pragma namespace Math
 const double PI = 3.141592653;

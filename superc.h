@@ -71,6 +71,7 @@ typedef enum {
   TK_NUM,     // Numeric literals
   TK_PP_NUM,  // Preprocessing numbers
   TK_EOF,     // End-of-file markers
+  TK_PPI,     // Ignore token (preprocessor verbose messages)
   // Virtual tokens (compiler generated)
   VTK_PP_NS,  // Preprocessor namespace
   VTK_PP_NSS, // Preprocessor namespace symbol

@@ -997,6 +997,20 @@ static Token *preprocess2(Token *tok) {
     }
 
     if (equal(tok, "pragma") && equal(tok->next, "namespace")) {
+      /* this pragma is consumed in the parser, not the preprocessor;
+       * so we need to save as PPI it for the -E flag */
+      Token *tk_ppi = copy_token(tok);
+      tk_ppi->kind = TK_PPI;
+      tk_ppi->at_bol = true;
+      // Include '#'
+      tk_ppi->loc--;
+      tk_ppi->len++;
+      // include tok->next
+      tk_ppi->len += tok->next->len + tok->next->has_space;
+      // include tok->next->next
+      tk_ppi->len += tok->next->next->len + tok->next->next->has_space;
+      cur = cur->next = tk_ppi;
+
       Token *ns_name = tok->next->next;
       char *ns_name_str = NULL;
 
@@ -1022,6 +1036,20 @@ static Token *preprocess2(Token *tok) {
     }
 
     if (equal(tok, "pragma") && equal(tok->next, "namespace_symbol")) {
+      /* this pragma is consumed in the parser, not the preprocessor;
+       * so we need to save as PPI it for the -E flag */
+      Token *tk_ppi = copy_token(tok);
+      tk_ppi->kind = TK_PPI;
+      tk_ppi->at_bol = true;
+      // Include '#'
+      tk_ppi->loc--;
+      tk_ppi->len++;
+      // include tok->next
+      tk_ppi->len += tok->next->len + tok->next->has_space;
+      // include tok->next->next
+      tk_ppi->len += tok->next->next->len + tok->next->next->has_space;
+      cur = cur->next = tk_ppi;
+
       Token *ns_symbol = tok->next->next;
 
       if (ns_symbol->at_bol || ns_symbol->kind != TK_STR)
@@ -1042,9 +1070,19 @@ static Token *preprocess2(Token *tok) {
     }
 
     if (equal(tok, "pragma")) {
-      do {
-        tok = tok->next;
-      } while (!tok->at_bol);
+      /* Unrecognized pragmas are passed through */
+      Token *tk_ppi = copy_token(tok);
+      tk_ppi->kind = TK_PPI;
+      tk_ppi->at_bol = true;
+      // Include '#'
+      tk_ppi->loc--;
+      tk_ppi->len++;
+
+      // Advance tok, while appending tok to tk_ppi
+      for (tok = tok->next; !tok->at_bol; tok = tok->next)
+        tk_ppi->len += tok->len + tok->has_space;
+
+      cur = cur->next = tk_ppi;
       continue;
     }
 

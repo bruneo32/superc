@@ -449,6 +449,9 @@ static void print_tokens(Token *tok) {
 
   int line = 1;
   for (; tok->kind != TK_EOF; tok = tok->next) {
+    if (is_virtual_token(tok))
+      continue;
+
     if (line > 1 && tok->at_bol)
       fprintf(out, "\n");
     if (tok->has_space && !tok->at_bol)

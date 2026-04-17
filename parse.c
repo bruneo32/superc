@@ -5269,6 +5269,12 @@ Obj *parse(Token *tok) {
   current_nss = NULL;
 
   while (tok->kind != TK_EOF) {
+    if (tok->kind == TK_PPI) {
+      // preprocessor ignore
+      tok = tok->next;
+      continue;
+    }
+
     // global asm statement
     if (equal(tok, "asm")) {
       Node *node = asm_stmt(&tok, tok);
