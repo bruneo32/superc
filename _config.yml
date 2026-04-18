@@ -26,3 +26,4 @@ docs_nav:
   - docs/soft_objects.md
   - docs/lambdas.md
   - docs/defer_edge_cases.md
+  - docs/generics.md
