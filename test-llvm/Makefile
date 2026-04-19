@@ -1,4 +1,4 @@
-LLCFLAGS=-O0 -mtriple=x86_64-pc-linux-gnu
+LLCFLAGS=-O3 -mtriple=x86_64-pc-linux-gnu
 
 %.exe: %.o
 	ld.lld -o $@ -dynamic-linker /lib64/ld-linux-x86-64.so.2 \
