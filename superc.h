@@ -37,6 +37,7 @@ typedef struct Obj Obj;
 typedef struct Hideset Hideset;
 
 typedef enum LLKind LLKind;
+typedef struct ListLLVM ListLLVM;
 typedef struct LLVM LLVM;
 
 //
@@ -357,6 +358,7 @@ struct Node {
   flt_number fval;
 };
 
+bool is_builtin_fn(Obj *var);
 Node *new_cast(Node *expr, Type *ty);
 int64_t const_expr(Token **rest, Token *tok);
 int64_t eval2(Node *node, Obj **label);
@@ -535,6 +537,11 @@ enum LLKind {
   LL_FMUL,
 };
 
+struct ListLLVM {
+  LLVM *llvm;
+  ListLLVM *next;
+};
+
 struct LLVM {
   LLVM *next;
   LLKind kind;
@@ -560,7 +567,7 @@ struct LLVM {
   // Function
   Type *func_ty;
   LLVM *sret;
-  LLVM *args;
+  ListLLVM *args;
 
   // Numeric literal
   int64_t val;

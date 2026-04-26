@@ -1,6 +1,13 @@
 // #include <stdio.h>
 #include <alloca.h>
 
+int printf(char *fmt, ...);
+struct _IO_FILE { char __x; };
+typedef struct _IO_FILE FILE;
+int putc(int, FILE *);
+
+extern FILE *const stdout;
+
 struct nothing {} _nothing;
 
 struct ReturnVal {
@@ -16,10 +23,6 @@ static void foo() {}
 // inline int bar() { return 1; }
 
 static int _33(int a, float b) {
-wtf: ;
-// TODO: Emit blocks wisely
-	double c = 1;
-	goto wtf;
 	return 33 + a + (int)b;
 }
 
@@ -59,6 +62,8 @@ int main(int argc, char *argv[]) {
 	alloca(7);
 
 	struct ReturnVal r = foobar3();
+	putc(r.e + '0', stdout);
+	putc('\n', stdout);
 
 	goto test_label;
 

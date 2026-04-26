@@ -100,6 +100,12 @@ static HashMap map_func_ov = {0};
 
 static Obj *builtin_alloca;
 
+bool is_builtin_fn(Obj *var) {
+  if (var == builtin_alloca)
+    return true;
+  return false;
+}
+
 static bool is_typename(Token *tok);
 static bool is_identifier(Token *tok);
 static Type *declspec(Token **rest, Token *tok, VarAttr *attr);
@@ -5049,6 +5055,7 @@ static void declare_builtin_functions(void) {
   };
   builtin_alloca = new_gvar(fname, ident, ty);
   builtin_alloca->is_definition = false;
+  builtin_alloca->is_function = true;
 }
 
 // program = ("asm" asm-stmt | typedef | function-definition | global-variable)*

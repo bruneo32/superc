@@ -18,6 +18,12 @@ __int128 g06;
 _Float16 g07;
 #endif
 
+/* No initialized variables */
+extern int e1;
+extern const short e2;
+static int s1;
+static const short s2;
+
 // size_t g08;
 // ptrdiff_t g09;
 
@@ -156,5 +162,8 @@ int main() {
 
 	// asm("movl $0, %eax");
 
+	/* Force usage for the compiler to emit decl */
+	e1 = e2;
+	s1 = s2;
 	return 0;
 }
