@@ -127,8 +127,8 @@ void (Point[T] *this) add(T other);
 #include <stdio.h>
 #include <math.h>
 
-#pragma generic T: numeric
 /* Only allow Vec2[T] for numeric types (integer+floating) */
+#pragma generic T: numeric
 
 typedef struct Vec2[T] Vec2[T];
 struct Vec2[T] { T x, y; };
@@ -212,7 +212,6 @@ int main() {
   printf("OK\n");
   // Popped: 42
   // c: 128
-  // Cross: 99
   // OK
   return 0;
 }
@@ -277,12 +276,6 @@ V (Map[K,V] m) get(K key) {
   }
   // Not found
   return (V){0};
-}
-
-/* Higher-order method */
-inline void (Map[K,V] m) foreach(void (*callback)(K,V)) {
-  for (size_t i = 0; i < m.count; i++)
-    callback(m.buckets[i].key, m.buckets[i].val);
 }
 #pragma endgeneric
 
