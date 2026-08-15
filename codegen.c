@@ -202,6 +202,26 @@ static LLVM *gen_jmp(Label *label) {
   return llvm;
 }
 
+static LLVM *gen_branch(LLVM *cond, Label *then, Label *els) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_BR;
+  llvm->src = cond;
+  llvm->label = then;
+  llvm->label2 = els;
+
+  if (then)
+    then->is_live = true;
+  if (els)
+    els->is_live = true;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static Obj *make_ssa_var(count_t ssa, Type *ty) {
   Obj *var = calloc(1, sizeof(Obj));
   var->ty = ty;
@@ -349,6 +369,18 @@ static LLVM *gen_store_param(count_t ssa, Type *ty, Obj *param, LLVM *dst) {
   return llvm;
 }
 
+static const char *llcmp_op_table[] = {
+  // Integer
+  "eq", "ne",
+  "ugt", "uge", "ult", "ule",
+  "sgt", "sge", "slt", "sle",
+  // Floating-point
+  "false",
+  "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
+  "ueq", "ugt", "uge", "ult", "ule", "une", "uno",
+  "true",
+};
+
 static LLKind cast_table[][12] = {
 // i1     i8       i16      i32      i64      u8       u16      u32      u64      f32      f64      f80
 {LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // i1
@@ -406,6 +438,21 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   return llvm;
 }
 
+static LLVM *gen_icmp(LLCmpOp op, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_ICMP;
+  llvm->cmp_op = op;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -428,6 +475,21 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FMUL : LL_MUL;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_BITAND;
   llvm->ty = ty;
   llvm->lhs = lhs;
   llvm->rhs = rhs;
@@ -547,16 +609,30 @@ static LLVM *gen_expr(Node *node) {
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
           int64_t val1 = eval2(node->lhs, NULL);
           int64_t val2 = eval2(node->rhs, NULL);
-          return gen_inum(node->ty, val1 + val2);
+          return gen_inum(node->ty, val1 * val2);
         } else if (lhs->kind == LL_NUMF &&
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
           flt_number val1 = eval_double(node->lhs);
           flt_number val2 = eval_double(node->rhs);
-          return gen_fnum(node->ty, val1 + val2);
+          return gen_fnum(node->ty, val1 * val2);
         }
       }
 
       return gen_mul(node->ty, lhs, rhs);
+    }
+
+    case ND_BITAND: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+        int64_t val1 = eval2(node->lhs, NULL);
+        int64_t val2 = eval2(node->rhs, NULL);
+        return gen_inum(node->ty, val1 & val2);
+      }
+
+      return gen_bitand(node->ty, lhs, rhs);
     }
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
@@ -578,9 +654,9 @@ static void gen_stmt(Node *node, bool is_root_block) {
         count++;
         /* A terminator ends the block */
         if (is_block_terminator_ll(_emit_cur)) {
+          _is_reachable_code = false;
           if (!is_root_block)
             break;
-          _is_reachable_code = false;
         }
       }
 
@@ -611,6 +687,44 @@ static void gen_stmt(Node *node, bool is_root_block) {
       gen_jmp(&fn_label_ret);
       break;
     }
+
+    case ND_IF: {
+      assert(node->then);
+
+      LLVM *cond = gen_expr(node->cond);
+      LLVM *cmp = gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+      LLVM *br = gen_branch(cmp, NULL, NULL); // filled later
+
+      const bool is_next_node_out = node->next->kind == ND_LABEL;
+      Label *lout = (is_next_node_out) ? node->next->label : calloc(1, sizeof(Label));
+      Label *lthen = calloc(1, sizeof(Label));
+      Label *lels;
+      lthen->is_live = true;
+      lout->is_live = true;
+
+      // Then statement
+      {
+        gen_label(lthen);
+        gen_stmt(node->then, false);
+        gen_jmp(lout);
+      }
+
+      if (node->els) {
+        lels = calloc(1, sizeof(Label));
+        lels->is_live = true;
+
+        gen_label(lels);
+        gen_stmt(node->els, false);
+        gen_jmp(lout);
+      }
+
+      // Generate the out label if not
+      if (!is_next_node_out)
+        gen_label(lout);
+
+      br->label = lthen;
+      br->label2 = (node->els) ? lels : lout;
+    } break;
 
     default:
       error_tok(node->tok, "unsupported stmt in minimal IR");
@@ -704,11 +818,21 @@ static count_t emit_store(LLVM *src, LLVM *dst) {
 
 static count_t emit_llvm(LLVM *llvm) {
   switch (llvm->kind) {
+  case LL_LABEL:
+    return emit_label(llvm->label);
   case LL_JMP:
     emitfln("  br label %%%ld", llvm->label->ssa);
     return llvm->ssa;
-  case LL_LABEL:
-    return emit_label(llvm->label);
+  case LL_BR:
+    emitfln("  br i1 %%%ld, label %%%ld, label %%%ld", llvm->src->ssa, llvm->label->ssa, llvm->label2->ssa);
+    return llvm->ssa;
+  case LL_ICMP:
+    emitfln("  %%%ld = icmp %s %s %s, %s", llvm->ssa,
+            llcmp_op_table[llvm->cmp_op],
+            llvm_type(llvm->lhs->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
 
   case LL_ALLOCA:
     return emit_alloca(0, llvm);
@@ -844,6 +968,15 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
     return llvm->ssa;
+
+  /* BITWISE binops */
+  case LL_BITAND:
+    emitfln("  %%%ld = and %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+
   default:
     unreachable();
   }

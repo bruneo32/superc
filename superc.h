@@ -36,7 +36,8 @@ typedef struct Label Label;
 typedef struct Obj Obj;
 typedef struct Hideset Hideset;
 
-typedef enum LLKind LLKind;
+typedef uint8_t LLKind;
+typedef uint8_t LLCmpOp;
 typedef struct ListLLVM ListLLVM;
 typedef struct LLVM LLVM;
 
@@ -506,6 +507,9 @@ enum LLKind {
   /* Control flow */
   LL_LABEL,
   LL_JMP,
+  LL_BR,
+  LL_ICMP,
+  LL_FCMP,
   /* Literals & vars */
   LL_NUM,
   LL_NUMF,
@@ -535,6 +539,8 @@ enum LLKind {
   /* FLOAT binops */
   LL_FADD,
   LL_FMUL,
+  /* BITWISE binops */
+  LL_BITAND,
 };
 
 struct ListLLVM {
@@ -550,6 +556,9 @@ struct LLVM {
   // Common
   Type *ty;
 
+  // Comparison
+  LLCmpOp cmp_op;
+
   // Load/Store
   LLVM *src;
   LLVM *dst;
@@ -558,8 +567,9 @@ struct LLVM {
   LLVM *lhs;
   LLVM *rhs;
 
-  // Unconditional jump
+  // Branches
   Label *label;
+  Label *label2;
 
   // Variable
   Obj *var;
@@ -576,6 +586,43 @@ struct LLVM {
   // Getelementptr
   int base_idx;
   int elem_idx;
+};
+
+enum LLCmpOp {
+  // Integer
+  LLICMP_EQ = 0, // Equal
+  LLICMP_NE,     // Not equal
+
+  LLICMP_UGT,    // Unsigned greater than
+  LLICMP_UGE,    // Unsigned greater than or equal
+  LLICMP_ULT,    // Unsigned less than
+  LLICMP_ULE,    // Unsigned less than or equal
+
+  LLICMP_SGT,    // Signed greater than
+  LLICMP_SGE,    // Signed greater than or equal
+  LLICMP_SLT,    // Signed less than
+  LLICMP_SLE,    // Signed less than or equal
+
+  // Floating-point
+  LLFCMP_FALSE, // Always false
+
+  LLFCMP_OEQ,   // Ordered and equal
+  LLFCMP_OGT,   // Ordered and greater than
+  LLFCMP_OGE,   // Ordered and greater than or equal
+  LLFCMP_OLT,   // Ordered and less than
+  LLFCMP_OLE,   // Ordered and less than or equal
+  LLFCMP_ONE,   // Ordered and not equal
+  LLFCMP_ORD,   // Ordered (no nans)
+
+  LLFCMP_UEQ,   // Unordered or equal
+  LLFCMP_UGT,   // Unordered or greater than
+  LLFCMP_UGE,   // Unordered or greater than or equal
+  LLFCMP_ULT,   // Unordered or less than
+  LLFCMP_ULE,   // Unordered or less than or equal
+  LLFCMP_UNE,   // Unordered or not equal
+  LLFCMP_UNO,   // Unordered (no nans)
+
+  LLFCMP_TRUE,  // Always true
 };
 
 void codegen(Obj *prog, FILE *out);

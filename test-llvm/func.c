@@ -87,13 +87,12 @@ test_label: ;
 	return 0;
 }
 
-// int early() {
-// 	static volatile int x;
-// 	if (x & 1) {
-// 		foo();
-// 		goto earl_ret;
-// 	}
-// 	foo();
-// 	earl_ret:
-// 	return 0;
-// }
+int early() {
+	static volatile int x;
+	if (x & 1) {
+		foo();
+		goto earl_ret;
+	}
+	earl_ret:
+	return 0;
+}
