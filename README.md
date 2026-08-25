@@ -100,6 +100,7 @@ int main() {
     - [Defer in loops](<https://bruneo32.github.io/superc/docs/defer_auto#defer-in-loops>)
   - [Lambdas](<https://bruneo32.github.io/superc/docs/lambdas>)
     - [Closures](<https://bruneo32.github.io/superc/docs/lambdas#closures>)
+  - [become keyword](<https://bruneo32.github.io/superc/docs/become>)
 
 # Quick start
 Right now the compiler is not reliable enough to showcase, but sure you can try to test the new features.
@@ -184,6 +185,7 @@ int main() {
       - Struct embedding
       - defer auto
       - Lambdas/Closures
+      - become keyword
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>)
       - (?) Switch `goto` in-switch labels.
    4. Better error messages, help, and man pages.
