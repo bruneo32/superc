@@ -52,6 +52,7 @@ Overall, **SuperC** is a compelling effort to bring the old, reliable **C** to t
       - Struct embedding
       - defer auto
       - Lambdas
+      - become keyword
       - (?) HolyC ["sub_switch"](<https://harrison.totty.dev/p/a-lang-design-analysis-of-holyc#switch-statements>){:target="_blank"}
       - (?) Switch `goto default`.
    4. Better error messages, help, and man pages.

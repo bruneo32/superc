@@ -27,3 +27,4 @@ docs_nav:
   - docs/lambdas.md
   - docs/defer_edge_cases.md
   - docs/generics.md
+  - docs/become.md
