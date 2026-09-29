@@ -3617,7 +3617,16 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     push_tag_scope(tag, ty);
   }
 
-  // If type is not registered, save it for codegen.
+  // If type does not have a tagname, create an anonymous type name
+  if (!ty->tagname) {
+    char *name = new_unique_name();
+    Token *name_tok = calloc(1, sizeof(Token));
+    name_tok->kind = TK_IDENT;
+    name_tok->loc = name;
+    name_tok->len = strlen(name);
+    ty->tagname = name_tok;
+    push_tag_scope(name_tok, ty);
+  }
   store_union_struct_decl(ty);
 
   return ty;

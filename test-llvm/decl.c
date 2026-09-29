@@ -155,6 +155,12 @@ int main() {
 		int b;
 	} __attribute__((packed)) abc;
 
+	// anonymous struct
+	struct {
+		int c;
+		int d;
+	} def;
+
 	// printf("anonymous\n");
 	// printf("-> %c\n", l);
 
