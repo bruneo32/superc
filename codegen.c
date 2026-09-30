@@ -514,6 +514,20 @@ static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_neg(Type *ty, LLVM *src) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = is_flonum(ty) ? LL_FNEG : LL_NEG;
+  llvm->ty = ty;
+  llvm->src = src;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -650,7 +664,7 @@ static LLVM *gen_expr(Node *node) {
       }
 
       return gen_sub(node->ty, lhs, rhs);
-    } break;
+    }
     case ND_MUL: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
@@ -692,6 +706,21 @@ static LLVM *gen_expr(Node *node) {
       }
 
       return gen_div(node->ty, lhs, rhs);
+    }
+
+    case ND_NEG: {
+      LLVM *lhs = gen_expr(node->lhs);
+
+      /* If lhs is a number literal, evaluate it and return the number */
+      if (lhs->kind == LL_NUM) {
+        int64_t val = eval2(node->lhs, NULL);
+        return gen_inum(node->ty, -val);
+      } else if (lhs->kind == LL_NUMF) {
+        flt_number val = eval_double(node->lhs);
+        return gen_fnum(node->ty, -val);
+      }
+
+      return gen_neg(node->ty, lhs);
     }
 
     case ND_BITAND: {
@@ -1065,6 +1094,20 @@ static count_t emit_llvm(LLVM *llvm) {
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
+    return llvm->ssa;
+
+  /* INT unops */
+  case LL_NEG:
+    emitfln("  %%%ld = sub %s 0, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->src));
+    return llvm->ssa;
+
+  /* FLOAT unops */
+  case LL_FNEG:
+    emitfln("  %%%ld = fneg %s %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->src));
     return llvm->ssa;
 
   /* BITWISE binops */

@@ -543,6 +543,10 @@ enum LLKind {
   LL_FSUB,
   LL_FMUL,
   LL_FDIV,
+  /* INT unops */
+  LL_NEG,
+  /* FLOAT unops */
+  LL_FNEG,
   /* BITWISE binops */
   LL_BITAND,
 };
