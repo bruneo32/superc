@@ -409,6 +409,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
 
   switch (from->kind) {
   case TY_PTR:
+  case TY_ARRAY:
     llvm->kind = LL_BITCAST;
     break;
   case TY_BOOL:
@@ -468,6 +469,21 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_sub(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = is_flonum(ty) ? LL_FSUB : LL_SUB;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -475,6 +491,21 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FMUL : LL_MUL;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = is_flonum(ty) ? LL_FDIV : LL_DIV;
   llvm->ty = ty;
   llvm->lhs = lhs;
   llvm->rhs = rhs;
@@ -599,6 +630,27 @@ static LLVM *gen_expr(Node *node) {
 
       return gen_add(node->ty, lhs, rhs);
     }
+    case ND_SUB: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 - val2);
+        } else if (lhs->kind == LL_NUMF &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 - val2);
+        }
+      }
+
+      return gen_sub(node->ty, lhs, rhs);
+    } break;
     case ND_MUL: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
@@ -620,6 +672,27 @@ static LLVM *gen_expr(Node *node) {
 
       return gen_mul(node->ty, lhs, rhs);
     }
+    case ND_DIV: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 / val2);
+        } else if (lhs->kind == LL_NUMF &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 / val2);
+        }
+      }
+
+      return gen_div(node->ty, lhs, rhs);
+    }
 
     case ND_BITAND: {
       LLVM *lhs = gen_expr(node->lhs);
@@ -634,6 +707,7 @@ static LLVM *gen_expr(Node *node) {
 
       return gen_bitand(node->ty, lhs, rhs);
     }
+
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
   }
@@ -948,7 +1022,19 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
     return llvm->ssa;
+  case LL_SUB:
+    emitfln("  %%%ld = sub %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
   case LL_MUL:
+    emitfln("  %%%ld = mul %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_DIV:
     emitfln("  %%%ld = mul %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
@@ -962,7 +1048,19 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
     return llvm->ssa;
+  case LL_FSUB:
+    emitfln("  %%%ld = fsub %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
   case LL_FMUL:
+    emitfln("  %%%ld = fmul %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_FDIV:
     emitfln("  %%%ld = fmul %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),

@@ -535,10 +535,14 @@ enum LLKind {
   LL_F_UI,    // "fptoui"    float point to unsigned int
   /* INT binops */
   LL_ADD,
+  LL_SUB,
   LL_MUL,
+  LL_DIV,
   /* FLOAT binops */
   LL_FADD,
+  LL_FSUB,
   LL_FMUL,
+  LL_FDIV,
   /* BITWISE binops */
   LL_BITAND,
 };
