@@ -239,8 +239,9 @@ void add_type(Node *node) {
   case ND_NE:
   case ND_LT:
   case ND_LE:
-    usual_arith_conv(&node->lhs, &node->rhs);
-    node->ty = ty_int;
+    // LLVM uses i1 for comparisons, so we will need
+    // to cast i1 to the desired type anyway
+    node->ty = ty_bool;
     return;
   case ND_FUNCALL:
     node->ty = node->func_ty->return_ty;
