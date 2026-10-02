@@ -2829,6 +2829,9 @@ static Node *equality(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_EQ, node, rhs, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 
@@ -2863,6 +2866,9 @@ static Node *equality(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_NE, node, rhs, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 
@@ -2909,6 +2915,9 @@ static Node *relational(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LT, node, rhs, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 
@@ -2943,6 +2952,9 @@ static Node *relational(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LE, node, rhs, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 
@@ -2977,6 +2989,9 @@ static Node *relational(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison (inversion of ND_LT) */
         node = new_binary(ND_LT, rhs, node, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 
@@ -3011,6 +3026,9 @@ static Node *relational(Token **rest, Token *tok) {
                    type_to_string(pty), type_to_string(pty->next));
         /* Return normal comparison */
         node = new_binary(ND_LE, rhs, node, start);
+        // LLVM uses i1 for comparisons, so we will need
+        // to cast i1 to the desired type anyway
+        node->ty = ty_bool;
         continue;
       }
 

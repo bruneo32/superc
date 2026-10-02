@@ -449,6 +449,7 @@ static LLVM *gen_icmp(LLCmpOp op, LLVM *lhs, LLVM *rhs) {
   llvm->cmp_op = op;
   llvm->lhs = lhs;
   llvm->rhs = rhs;
+  llvm->ty = ty_bool; // icmp returns i1
 
   advance_emit(llvm);
   return llvm;
@@ -737,6 +738,46 @@ static LLVM *gen_expr(Node *node) {
       return gen_bitand(node->ty, lhs, rhs);
     }
 
+    case ND_EQ: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 == val2);
+        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 == val2);
+        }
+      }
+
+      return gen_icmp(LLICMP_EQ, lhs, rhs);
+    }
+
+    case ND_NE: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 != val2);
+        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 != val2);
+        }
+      }
+
+      return gen_icmp(LLICMP_NE, lhs, rhs);
+    }
+
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
   }
@@ -794,8 +835,15 @@ static void gen_stmt(Node *node, bool is_root_block) {
     case ND_IF: {
       assert(node->then);
 
+      // Evaluate the condition
       LLVM *cond = gen_expr(node->cond);
-      LLVM *cmp = gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+      LLVM *cmp;
+      if (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+        // If the condition is already an LLVM comparison, use it
+        cmp = cond;
+      else
+        cmp = gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+
       LLVM *br = gen_branch(cmp, NULL, NULL); // filled later
 
       const bool is_next_node_out = node->next->kind == ND_LABEL;
@@ -812,6 +860,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
         gen_jmp(lout);
       }
 
+      // Else statement
       if (node->els) {
         lels = calloc(1, sizeof(Label));
         lels->is_live = true;

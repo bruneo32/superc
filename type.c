@@ -592,6 +592,8 @@ char *type_to_asmident(Type *ty, bool recurse) {
 }
 
 const char *llvm_type(Type *ty) {
+  assert(ty);
+
   switch (ty->kind) {
   case TY_VOID:
     return "void";
