@@ -778,6 +778,50 @@ static LLVM *gen_expr(Node *node) {
       return gen_icmp(LLICMP_NE, lhs, rhs);
     }
 
+    case ND_LT: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 < val2);
+        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 < val2);
+        }
+      }
+
+      return gen_icmp(
+        (lhs->ty->is_unsigned || rhs->ty->is_unsigned) ? LLICMP_ULT : LLICMP_SLT,
+        lhs, rhs);
+    }
+
+    case ND_LE: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 <= val2);
+        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
+          flt_number val1 = eval_double(node->lhs);
+          flt_number val2 = eval_double(node->rhs);
+          return gen_fnum(node->ty, val1 <= val2);
+        }
+      }
+
+      return gen_icmp(
+        (lhs->ty->is_unsigned || rhs->ty->is_unsigned) ? LLICMP_ULE : LLICMP_SLE,
+        lhs, rhs);
+    }
+
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
   }

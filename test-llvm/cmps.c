@@ -22,5 +22,14 @@ int main() {
     if (f)
         nop();
 
+    _true  = b > a;
+    _false = b < a;
+    _true  = e >= d;
+    _false = e <= d;
+
+    // Test ult vs slt
+    _true  = a < e;
+    _false = e < a;
+
 	return 0;
 }
