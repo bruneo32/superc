@@ -53,10 +53,10 @@ int main() {
     if (_true || _false && 1)
         nop();
 
-    if (_true && (_true || _false))
+    if (_true && (!_true || _false))
         nop();
 
-    if ((_true && _false) || _false)
+    if ((_true && !_false) || _false)
         nop();
 
 	return 0;

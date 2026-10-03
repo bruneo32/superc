@@ -759,6 +759,18 @@ static LLVM *gen_expr(Node *node) {
       return gen_bitand(node->ty, lhs, rhs);
     }
 
+    case ND_NOT: {
+      LLVM *lhs = gen_expr(node->lhs);
+
+      /* If lhs is a number literal, evaluate it and return the number */
+      if (lhs->kind == LL_NUM) {
+        int64_t val = eval2(node->lhs, NULL);
+        return gen_inum(node->ty, !val);
+      }
+
+      return gen_icmp(LLICMP_EQ, lhs, gen_inum(lhs->ty, 0));
+    }
+
     case ND_EQ: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
