@@ -1,8 +1,9 @@
 #include "superc.h"
 
-static FILE *output_file;
-static Obj  *current_fn;
-static Node *current_loop;
+static FILE  *output_file;
+static Obj   *current_fn;
+static Node  *current_loop;
+static Label *current_label;
 
 static LLVM   *gen_expr(Node *node);
 static void    gen_stmt(Node *node, bool is_root_block);
@@ -118,6 +119,7 @@ static const char *get_float_lit(TypeKind kind, flt_number fval) {
 static const char *get_symvar(LLVM *llvm) {
   switch (llvm->kind) {
   case LL_NUM:
+    // NOTE: Maybe use "true" instead of "1" for i1 type
     return format("%ld", llvm->val);
   case LL_NUMF:
     return get_float_lit(llvm->ty->kind, llvm->fval);
@@ -184,6 +186,8 @@ static LLVM *gen_label(Label *label) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LABEL;
   llvm->label = label;
+
+  current_label = label;
   _is_reachable_code = true;
   advance_emit(llvm);
   return llvm;
@@ -450,6 +454,23 @@ static LLVM *gen_icmp(LLCmpOp op, LLVM *lhs, LLVM *rhs) {
   llvm->lhs = lhs;
   llvm->rhs = rhs;
   llvm->ty = ty_bool; // icmp returns i1
+
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_phi_node(Type *ty, LLVM *lhs, Label *lfrom, LLVM *rhs, Label *rfrom) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_PHI;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+  llvm->label = lfrom;
+  llvm->label2 = rfrom;
 
   advance_emit(llvm);
   return llvm;
@@ -822,6 +843,75 @@ static LLVM *gen_expr(Node *node) {
         lhs, rhs);
     }
 
+    case ND_LOGOR:
+    case ND_LOGAND: {
+      // Prepare out label
+      const bool is_next_node_out = node->next && node->next->kind == ND_LABEL;
+      Label *lout = (is_next_node_out) ? node->next->label : calloc(1, sizeof(Label));
+      lout->is_live = true;
+
+      // Generate the left side
+      Label *lbl_lhs = current_label;
+      if (!lbl_lhs) {
+        lbl_lhs = calloc(1, sizeof(Label));
+        lbl_lhs->is_live = true;
+        gen_label(lbl_lhs);
+      }
+
+      // Evaluate the condition (lhs)
+      LLVM *cond = gen_expr(node->lhs);
+      // If the condition is already an LLVM comparison, use it
+      LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+        ? cond
+        : gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+
+      Label *lbl_lhs_end = current_label;
+      LLVM *br = gen_branch(cmp, NULL, NULL); // filled later
+
+      // We save one branch by storing and passing the result
+      // of rhs_cmp to the phi node
+      LLVM *rhs_cmp;
+      // Generate the right side
+      Label *lbl_rhs = calloc(1, sizeof(Label));
+      lbl_rhs->is_live = true;
+      gen_label(lbl_rhs);
+      {
+        // Evaluate the condition (rhs)
+        LLVM *cond = gen_expr(node->rhs);
+        // If the condition is already an LLVM comparison, use it
+        rhs_cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+          ? cond
+          : gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+      }
+      Label *lbl_rhs_end = current_label;
+      gen_jmp(lout);
+
+      // Generate the out label if not
+      if (!is_next_node_out)
+        gen_label(lout);
+
+      // Generate the epilogue for LOGOR and LOGAND
+      LLVM *lhs_val;
+      if (node->kind == ND_LOGOR) {
+        // LOGOR goes to label if the lhs is true
+        // so lhs_val is true
+        lhs_val = gen_inum(ty_bool, 1);
+        br->label = lout;
+        br->label2 = lbl_rhs;
+      } else {
+        // LOGAND goes to label2 if the lhs is true
+        // so lhs_val is false
+        lhs_val = gen_inum(ty_bool, 0);
+        br->label = lbl_rhs;
+        br->label2 = lout;
+      }
+
+      return gen_phi_node(ty_bool,
+          lhs_val, lbl_lhs_end,
+          rhs_cmp, lbl_rhs_end
+        );
+    }
+
     default:
       error_tok(node->tok, "unsupported rvalue kind in minimal IR");
   }
@@ -834,7 +924,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
     return;
 
   switch (node->kind) {
-    case ND_BLOCK:
+    case ND_BLOCK: {
       size_t count = 0;
 
       for (Node *m = node->body; m; m = m->next) {
@@ -854,7 +944,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
         gen_jmp(label);
         gen_label(label);
       }
-      break;
+    } break;
 
     case ND_LABEL:
       gen_label(node->label);
@@ -873,24 +963,21 @@ static void gen_stmt(Node *node, bool is_root_block) {
       if (node->lhs)
         gen_store(current_fn->ty->return_ty, gen_expr(node->lhs), fn_retval_ll);
       gen_jmp(&fn_label_ret);
-      break;
-    }
+    } break;
 
     case ND_IF: {
       assert(node->then);
 
       // Evaluate the condition
       LLVM *cond = gen_expr(node->cond);
-      LLVM *cmp;
-      if (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
-        // If the condition is already an LLVM comparison, use it
-        cmp = cond;
-      else
-        cmp = gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
-
+      // If the condition is already an LLVM comparison, use it
+      LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+        ? cond
+        : gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
       LLVM *br = gen_branch(cmp, NULL, NULL); // filled later
 
-      const bool is_next_node_out = node->next->kind == ND_LABEL;
+      // Prepare labels
+      const bool is_next_node_out = node->next && node->next->kind == ND_LABEL;
       Label *lout = (is_next_node_out) ? node->next->label : calloc(1, sizeof(Label));
       Label *lthen = calloc(1, sizeof(Label));
       Label *lels;
@@ -1020,7 +1107,8 @@ static count_t emit_llvm(LLVM *llvm) {
     emitfln("  br label %%%ld", llvm->label->ssa);
     return llvm->ssa;
   case LL_BR:
-    emitfln("  br i1 %%%ld, label %%%ld, label %%%ld", llvm->src->ssa, llvm->label->ssa, llvm->label2->ssa);
+    emitfln("  br i1 %%%ld, label %%%ld, label %%%ld",
+            llvm->src->ssa, llvm->label->ssa, llvm->label2->ssa);
     return llvm->ssa;
   case LL_ICMP:
     emitfln("  %%%ld = icmp %s %s %s, %s", llvm->ssa,
@@ -1028,6 +1116,14 @@ static count_t emit_llvm(LLVM *llvm) {
             llvm_type(llvm->lhs->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_PHI:
+    emitfln("  %%%ld = phi %s [ %s, %%%ld ], [ %s, %%%ld ]", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            llvm->label->ssa,
+            get_symvar(llvm->rhs),
+            llvm->label2->ssa);
     return llvm->ssa;
 
   case LL_ALLOCA:
@@ -1591,6 +1687,7 @@ static void emit_text(Obj *prog) {
     memset(&ll_head, 0, sizeof(LLVM));
     _emit_cur = &ll_head;
 
+    current_label = NULL;
     _is_reachable_code = true;
 
     current_fn = fn;

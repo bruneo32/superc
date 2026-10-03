@@ -249,7 +249,9 @@ void add_type(Node *node) {
   case ND_NOT:
   case ND_LOGOR:
   case ND_LOGAND:
-    node->ty = ty_int;
+    // LLVM uses i1 for comparisons, so we will need
+    // to cast i1 to the desired type anyway
+    node->ty = ty_bool;
     return;
   case ND_BITNOT:
   case ND_SHL:

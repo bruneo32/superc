@@ -31,5 +31,33 @@ int main() {
     _true  = a < e;
     _false = e < a;
 
+    // Test LOGOR and LOGAND
+    int g = _true || _false;
+    int h = g && _false;
+    int i = h && _false || 0;
+    int j = i || _false && 1;
+    int k = j && (_false || _true);
+    int l = (_true && _false) || _false;
+    if (l)
+        nop();
+
+    if (_true || _false)
+        nop();
+
+    if (_true && _false)
+        nop();
+
+    if (_true && _false || 0)
+        nop();
+
+    if (_true || _false && 1)
+        nop();
+
+    if (_true && (_true || _false))
+        nop();
+
+    if ((_true && _false) || _false)
+        nop();
+
 	return 0;
 }
