@@ -1398,7 +1398,9 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->rhs));
     return llvm->ssa;
   case LL_DIV:
-    emitfln("  %%%ld = mul %s %s, %s", llvm->ssa,
+    emitfln("  %%%ld = %s %s %s, %s", llvm->ssa,
+            (llvm->lhs->ty->is_unsigned || llvm->rhs->ty->is_unsigned)
+              ? "udiv" : "sdiv",
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
@@ -1424,7 +1426,7 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->rhs));
     return llvm->ssa;
   case LL_FDIV:
-    emitfln("  %%%ld = fmul %s %s, %s", llvm->ssa,
+    emitfln("  %%%ld = fdiv %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
