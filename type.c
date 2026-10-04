@@ -598,10 +598,9 @@ const char *llvm_type(Type *ty) {
   assert(ty);
 
   switch (ty->kind) {
-  case TY_VOID:
-    return "void";
   case TY_BOOL:
     return "i1";
+  case TY_VOID:
   case TY_CHAR:    return "i8";
   case TY_SHORT:   return "i16";
   case TY_INT:     return "i32";

@@ -168,6 +168,19 @@ int main() {
 
 	// asm("movl $0, %eax");
 
+	// Test label as values
+    {
+		void *v41_addr = &&v41;
+		static void *p[] = { &&v41, &&v42, &&v43 };
+		goto *p[0];
+	v41:v41_addr+=2;
+	v42:v41_addr+=3;
+	v43:v41_addr+=4;
+		v41_addr;
+		// Test random indirect branch
+		goto *(void*)0x7fffabcd;
+	}
+
 	/* Force usage for the compiler to emit decl */
 	e1 = e2;
 	s1 = s2;

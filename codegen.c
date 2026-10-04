@@ -4,9 +4,13 @@ static FILE  *output_file;
 static Obj   *current_fn;
 static Node  *current_loop;
 static Label *current_label;
+static ListLLVM *current_fn_all_labels;
 
 static LLVM   *gen_expr(Node *node);
 static void    gen_stmt(Node *node, bool is_root_block);
+static LLVM   *gen_fnum(Type *ty, flt_number val);
+static LLVM   *gen_inum(Type *ty, int64_t val);
+static LLVM   *gen_num(Type *ty, Node *node);
 static count_t emit_llvm(LLVM *llvm);
 
 LLVM *fn_retval_ll = NULL;
@@ -130,6 +134,8 @@ static const char *get_symvar(LLVM *llvm) {
       return format("%%%ld", var->llvm->ssa);
     else
       return format("@%s", get_symbol(var));
+  case LL_BLKADDR:
+    return format("blockaddress(@%s, %%%ld)", get_symbol(llvm->var), llvm->label->ssa);
   default:
     return format("%%%ld", llvm->ssa);
   }
@@ -139,6 +145,8 @@ static inline bool is_assignable_ll(LLVM *ll) {
   switch (ll->kind) {
   /* List of instructions that don't emit an SSA */
   case LL_JMP:
+  case LL_BR:
+  case LL_IND_BR:
   case LL_STORE:
   case LL_STORE_PARAM:
     return false;
@@ -155,6 +163,8 @@ static inline bool is_block_terminator_ll(LLVM *ll) {
   switch (ll->kind) {
   /* List of instructions LLVM block terminators */
   case LL_JMP:
+  case LL_BR:
+  case LL_IND_BR:
     return true;
   default:
     return false;
@@ -180,8 +190,25 @@ static bool is_noundef(Type *ty) {
   }
 }
 
+static LLVM *gen_jmp(Label *label) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_JMP;
+  llvm->label = label;
+  label->is_live = true;
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_label(Label *label) {
   /* Emit even if unreachable */
+
+  // Insert explicit jmp if the previous block wasn't terminated
+  if (_emit_cur && !is_block_terminator_ll(_emit_cur))
+    gen_jmp(label);
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LABEL;
@@ -193,15 +220,16 @@ static LLVM *gen_label(Label *label) {
   return llvm;
 }
 
-static LLVM *gen_jmp(Label *label) {
+static LLVM *gen_ind_br(LLVM *addr, ListLLVM *labels) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_JMP;
-  llvm->label = label;
-  label->is_live = true;
+  llvm->kind = LL_IND_BR;
+  llvm->dst = addr;
+  llvm->args = labels;
+
   advance_emit(llvm);
   return llvm;
 }
@@ -249,15 +277,14 @@ static LLVM *gen_addr_var(Type *ty, Obj *var) {
   return llvm;
 }
 
-static LLVM *gen_getelementptr(Type *ty, Obj *var, int base_idx, int elem_idx) {
-  /* Don't emit if unreachable */
+static LLVM *gen_getelementptr(Type *ty, LLVM *src, int base_idx, LLVM *elem_idx) {
   if (!_is_reachable_code)
     return NULL;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_GEP;
   llvm->ty   = ty;
-  llvm->var  = var;
+  llvm->src  = src;
   llvm->base_idx = base_idx;
   llvm->elem_idx = elem_idx;
 
@@ -265,12 +292,31 @@ static LLVM *gen_getelementptr(Type *ty, Obj *var, int base_idx, int elem_idx) {
   return llvm;
 }
 
+static LLVM *gen_blockaddress(Type *ty, Label *label, Obj *fn) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm  = calloc(1, sizeof(LLVM));
+  llvm->kind  = LL_BLKADDR;
+  llvm->ty    = ty;
+  llvm->var   = fn;
+  llvm->label = label;
+
+  return llvm;
+}
+
 static LLVM *gen_addr(Node *node) {
   switch (node->kind) {
+  case ND_ADDR:
+  case ND_DEREF:
+    return gen_expr(node->lhs);
   case ND_VAR:
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
-    return gen_getelementptr(node->member->ty, node->lhs->var, 0, node->member->idx);
+    return gen_getelementptr(node->member->ty, gen_expr(node->lhs), 0, gen_inum(ty_int, node->member->idx));
+  case ND_LABEL_VAL:
+    return gen_blockaddress(node->ty, node->label, node->var);
   default:
     unreachable();
   }
@@ -300,7 +346,7 @@ static LLVM *gen_fnum(Type *ty, flt_number val) {
   return llvm;
 }
 
-static inline LLVM *gen_num(Type *ty, Node *node) {
+static LLVM *gen_num(Type *ty, Node *node) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
@@ -599,9 +645,13 @@ static LLVM *gen_expr(Node *node) {
     case ND_NUM: {
       return gen_num(node->ty, node);
     }
+    case ND_ADDR:
+    case ND_DEREF:
+    case ND_VAR:
     case ND_MEMBER:
-    case ND_VAR: {
-      // rvalue of a var = load from its address
+    case ND_LABEL_VAL: {
+      if (node->ty->kind == TY_ARRAY)
+        return gen_addr(node);
       return gen_load(node->ty, gen_addr(node));
     }
     case ND_CAST: {
@@ -646,6 +696,12 @@ static LLVM *gen_expr(Node *node) {
       return gen_funcall(node, head.next);
     }
     case ND_ADD: {
+      // Pointer arithmetic
+      if (node->ty->kind == TY_PTR || node->ty->kind == TY_ARRAY) {
+        return gen_getelementptr(node->ty, gen_expr(node->lhs), 0, gen_expr(node->rhs));
+      }
+
+      // Normal arithmetic
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
@@ -959,13 +1015,30 @@ static void gen_stmt(Node *node, bool is_root_block) {
     } break;
 
     case ND_LABEL:
-      gen_label(node->label);
+      // Generate label and get its SSA to save in the list
+      LLVM *ssa_label = gen_label(node->label);
+
+      /* Add named label to the list of labels in the current function */
+      // Find the tail of the list to insert the new label
+      ListLLVM *llabel = current_fn_all_labels;
+      for (; llabel && llabel->next; llabel = llabel->next)
+        continue;
+      // The first one is already allocated, but nexts must be allocated
+      if (llabel->llvm)
+        llabel = llabel->next = calloc(1, sizeof(ListLLVM));
+
+      llabel->llvm = ssa_label;
       gen_stmt(node->lhs, is_root_block);
       break;
 
     case ND_GOTO:
       gen_jmp(node->label);
       break;
+
+    case ND_GOTO_EXPR: {
+      LLVM *target = gen_expr(node->lhs);
+      gen_ind_br(target, current_fn_all_labels);
+    } break;
 
     case ND_EXPR_STMT:
       gen_expr(node->lhs);
@@ -1071,13 +1144,54 @@ static count_t emit_load(count_t ssa, LLVM *ll) {
 
 static count_t emit_getelementptr(count_t ssa, LLVM *ll) {
   assert(ll);
-  assert(ll->var);
+  assert(ll->src);
   if (!ssa) ssa = ll->ssa;
 
-  const char *llty = llvm_type(ll->var->ty);
-  emitfln("  %%%ld = getelementptr inbounds %s, %s* %s, i32 %d, i32 %d", ssa,
-          llty, llty, get_symvar(ll->var->llvm), ll->base_idx, ll->elem_idx);
+  // LL_VAR/LL_ALLOCA use the convention:
+  // ll->src->ty == the pointee type, the value's type is ll->src->ty*
+  // Everything else (bitcast, load, gep, ...) stores the value's
+  // actual LLVM type in ll->src->ty (which must be a pointer type).
+  bool src_is_addr = ll->src->kind == LL_VAR || ll->src->kind == LL_ALLOCA;
 
+  Type *pointee;
+  const char *src_llty;
+  if (src_is_addr) {
+    pointee  = ll->src->ty;
+    src_llty = format("%s*", llvm_type(pointee));
+  } else {
+    src_llty = llvm_type(ll->src->ty);
+    pointee  = ll->src->ty->base;
+  }
+
+  emitf("  %%%ld = getelementptr inbounds %s, %s %s",
+        ssa, llvm_type(pointee), src_llty, get_symvar(ll->src));
+
+  // Pointer-to-scalar: only one index
+  // Pointer-to-aggregate (array / struct): leading 0, then index.
+  bool pointee_is_aggregate = pointee->kind == TY_ARRAY ||
+                              pointee->kind == TY_STRUCT ||
+                              pointee->kind == TY_UNION;
+
+  if (!src_is_addr || !pointee_is_aggregate) {
+    // Single-index form
+    if (ll->elem_idx) {
+      const char *idx_ty  = llvm_type(ll->elem_idx->ty);
+      const char *idx_sym = get_symvar(ll->elem_idx);
+      emitf(", %s %s", idx_ty, idx_sym);
+    } else {
+      emitf(", i32 0");
+    }
+  } else {
+    // Aggregate: two indices
+    emitf(", i32 %d", ll->base_idx);
+    if (ll->elem_idx) {
+      const char *idx_ty  = llvm_type(ll->elem_idx->ty);
+      const char *idx_sym = get_symvar(ll->elem_idx);
+      emitf(", %s %s", idx_ty, idx_sym);
+    }
+  }
+
+  emitln;
   return ssa;
 }
 
@@ -1106,8 +1220,8 @@ static count_t emit_store(LLVM *src, LLVM *dst) {
   assert(dst);
   emitfln("  store %s %s, %s* %s, align %d",
           llvm_type(src->ty), get_symvar(src),
-          llvm_type(dst->ty), get_symvar(dst),
-          dst->ty->align);
+          llvm_type(src->ty), get_symvar(dst),
+          src->ty->align);
   return 0;
 }
 
@@ -1121,6 +1235,19 @@ static count_t emit_llvm(LLVM *llvm) {
   case LL_BR:
     emitfln("  br i1 %%%ld, label %%%ld, label %%%ld",
             llvm->src->ssa, llvm->label->ssa, llvm->label2->ssa);
+    return llvm->ssa;
+  case LL_IND_BR:
+    // indirectbr ptr %18, [label %7, label %7, label %10, label %13]
+    emitf("  indirectbr %s %s, [", llvm_type(llvm->dst->ty), get_symvar(llvm->dst));
+    for (ListLLVM *llabel = llvm->args; llabel; llabel = llabel->next) {
+      emitf("label %%%ld", llabel->llvm->label->ssa);
+      if (llabel->next) {
+        emitc(',');
+        emitc(' ');
+      }
+    }
+    emitc(']');
+    emitln;
     return llvm->ssa;
   case LL_ICMP:
     emitfln("  %%%ld = icmp %s %s %s, %s", llvm->ssa,
@@ -1144,6 +1271,12 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_load(0, llvm);
   case LL_GEP:
     return emit_getelementptr(0, llvm);
+  case LL_BLKADDR:
+    emitfln("  %%%ld = phi %s [ blockaddress(@%s, %%%ld), %%%ld ]",
+            llvm->ssa, llvm_type(llvm->ty),
+            get_symbol(llvm->var), llvm->label->ssa,
+            current_label->ssa);
+    return llvm->ssa;
   case LL_BITCAST:
     return emit_bitcast(0, llvm);
   case LL_STORE:
@@ -1508,6 +1641,14 @@ static void emitd_initializer(Initializer *init) {
             llvm_type(init->ty));
     } break;
 
+    case ND_LABEL_VAL: {
+      // FIXME: In this moment of the emission,
+      //        the label is not yet assigned an SSA.
+      emitf("blockaddress(@%s, %%%ld)",
+        get_symbol(init->expr->var),
+        init->expr->label->ssa);
+    } break;
+
     case ND_VAR: {
       bool is_arr = init->expr->ty->kind == TY_ARRAY;
       uint64_t offset = 0;
@@ -1699,14 +1840,21 @@ static void emit_text(Obj *prog) {
     memset(&ll_head, 0, sizeof(LLVM));
     _emit_cur = &ll_head;
 
+    /* Reset labels */
     current_label = NULL;
+    for (ListLLVM *llabel = current_fn_all_labels; llabel;) {
+      llabel = llabel->next; // advance before free!
+      free(llabel);
+    }
+    current_fn_all_labels = calloc(1, sizeof(ListLLVM));
+
     _is_reachable_code = true;
 
     current_fn = fn;
     const char *symbol = get_symbol(fn);
 
     Type *ret_ty = fn->ty->sret_ty ? ty_void : fn->ty->return_ty;
-    const char *ll_ret_ty = llvm_type(ret_ty);
+    const char *ll_ret_ty = (ret_ty == ty_void) ? "void" : llvm_type(ret_ty);
 
     /* Allocate return value */
     if (ret_ty->kind != TY_VOID) {
@@ -1796,8 +1944,8 @@ static void emit_text(Obj *prog) {
     /* Recover reachability */
     _is_reachable_code = true;
 
+    /* End header block with a terminator */
     if (fn_header_last->next && fn_header_last->next->kind == LL_LABEL) {
-      /* End header block with a terminator */
       Label *label = fn_header_last->next->label;
       LLVM *llvm = calloc(1, sizeof(LLVM));
       llvm->kind = LL_JMP;

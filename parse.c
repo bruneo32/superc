@@ -3451,6 +3451,7 @@ static Node *unary(Token **rest, Token *tok) {
   if (equal(tok, "&&")) {
     Node *node = new_node(ND_LABEL_VAL, tok);
     node->label = new_label(get_ident(tok->next));
+    node->var = current_fn; // LLVM needs a function to resolve the label
     node->goto_next = gotos;
     gotos = node;
     *rest = tok->next->next;
@@ -4271,6 +4272,7 @@ static void resolve_goto_labels(void) {
       if (!strcmp(x->label->name, y->label->name)) {
         free(x->label);
         x->label = y->label;
+        y->label->is_live = true;
         break;
       }
     }

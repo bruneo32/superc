@@ -177,8 +177,8 @@ struct Initializer {
 
 struct Label {
   count_t ssa;
+  bool is_live;
   const char *name;
-  bool   is_live;
   Label *next;
 };
 
@@ -508,6 +508,7 @@ enum LLKind {
   LL_LABEL,
   LL_JMP,
   LL_BR,
+  LL_IND_BR,  // indirect branch
   LL_ICMP,
   LL_FCMP,
   LL_PHI,
@@ -515,7 +516,8 @@ enum LLKind {
   LL_NUM,
   LL_NUMF,
   LL_VAR,
-  LL_GEP,  // getelementptr
+  LL_GEP,     // getelementptr
+  LL_BLKADDR, // blockaddress
   /* Basic ops */
   LL_ALLOCA,
   LL_LOAD,
@@ -594,7 +596,7 @@ struct LLVM {
 
   // Getelementptr
   int base_idx;
-  int elem_idx;
+  LLVM *elem_idx;
 };
 
 enum LLCmpOp {
