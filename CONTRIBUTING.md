@@ -62,7 +62,7 @@ There are some files you might want to modify:
 Tip for debugging with *gdb*.
 File `~/.gdbinit`:
 ```
-set disable-randomization on
+set disable-randomization off
 set follow-fork-mode child
 catch syscall exit
 catch syscall exit_group
