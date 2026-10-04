@@ -178,8 +178,9 @@ int main() {
   - Provide dual-track explanations: by-the-hand guides for beginners, and straight forward documentation for experienced developers.
   - Use examples *(at least the following)*: simple usage, real usage, and edge cases.
 - **Compiler**
-   1. Complete **LLVM** backend
-      - Right now, the backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
+   1. Complete **LLVM** backend **[WIP]**
+      - Right now, the *main branch*'s backend is **experimental** x86_64 specific, unoptimized assembly. Just meant to showcase the new language features.
+      - The **LLVM** backend currently being implemented in [llvm-backend](<https://github.com/bruneo32/superc/tree/llvm-backend>).
    2. Complete **[C11](<https://en.wikipedia.org/wiki/C11_(C_standard_revision)>)** and **[C23](<https://en.wikipedia.org/wiki/C23_(C_standard_revision)>)** syntax
    3. Complete new language features:
       - Struct embedding
