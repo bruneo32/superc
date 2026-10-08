@@ -1,5 +1,5 @@
 ---
-title: (DRAFT) become
+title: (DRAFT) become keyword
 layout: blog
 ---
 
@@ -49,7 +49,7 @@ int main() {
 {% endtab %}
 
 {% tab become1 SuperC %}
-```cpp
+```c
 #include <stdio.h>
 
 /**
@@ -139,7 +139,7 @@ In complex systems like network stacks (e.g., TCP connection parsing) or video g
 
 {% tabs become2 %}
 {% tab become2 SuperC %}
-```cpp
+```c
 #include <stdio.h>
 
 int handle_get(int user_id) {
@@ -174,7 +174,7 @@ Because the compiler guarantees that the current stack frame is obsolete when be
 
 {% tabs become3 %}
 {% tab become3 SuperC %}
-```cpp
+```c
 // Forward declarations for the states
 int state_reading(const char* stream, int index);
 int state_error(const char* stream, int index);
