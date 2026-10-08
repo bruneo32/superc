@@ -1,26 +1,28 @@
 ---
-title: (DRAFT) Generics programming
+title: (DRAFT) Generics meta-programming
 layout: blog
 ---
 
 > ⚠️ This is a **PROPOSAL DRAFT**. Generics are currently **not implemented**. Syntax may change<br>
 
-# Generics programming
+# Generics meta-programming
 The compiler automatically duplicates and **generates** at compile-time all the *type-specific implementations* for the *template region* you defined as a **generic implementation template**.
 
 - Generics operate purely at **compile-time** and do not introduce runtime overhead.
 - Generics increases file size, and reduces symbol control. Use them when **type safety** and **flexibility** are paramount.
 
 ## Define template region
-- Surround the *region* to duplicate with `#pragma generic` and `#pragma endgeneric`.
-- Indicate the *parameter types* with `T:` (e.g., `#pragma generic K: auto, V: auto`).
-- Separate the *target types* with `,` (e.g., `#pragma generic T: double, unsigned short`).
-- Special keywords can be used as types:
-  - `auto` for **automatic** type inference. This will look ahead to automatically determine the type parameters, only for the types explicitly used via `[T]`.
-  - `pointer` for **pointer** types: `void*, char*, float*, Person*, ...`
-  - `integer` for **integer** types: `char, short, int, long, ...`
-  - `floating` for **floating** point types: `float, double, long double, ...`
-  - `numeric` for **integer+floating** point types: `char, float, short, double, ...`
+- Surround the *region* to duplicate with `#definefor T ...` and `#undef T`.
+- Special **keywords** can be used as types:
+  - `$type` for **automatic** type inference. This will look ahead to automatically determine the type parameters explicitly used in all the types, variables and functions in the template region.
+  - `$signed` for **signed integer** types: `char, short, int, long, ...`
+  - `$unsigned` for **unsigned integer** types: `unsigned char, unsigned short, unsigned int, unsigned long, ...`
+  - `$integer` for **$signed+$unsigned** types: `char, unsigned char, short, unsigned short, ...`
+  - `$floating` for **floating** point types: `float, double, long double, ...`
+  - `$numeric` for **$integer+$floating** types: `char, unsigned char, float, short, unsigned short, double, ...`
+- When writing ***generic libraries***, it may be interesting to use **[\_\_attribute\_\_((linkonce))](attributes#__attribute__linkonce)**.
+  - For example, when compiling a *string library* against different *compile units*, the function `String::new` will be written to different **object files** (.o).
+  `__attribute__((linkonce))` tells the linker to only keep one definition of `String::new` in the final executable.
 
 {% tabs generics1 %}
 {% tab generics1 SuperC %}
@@ -29,16 +31,16 @@ The compiler automatically duplicates and **generates** at compile-time all the 
 
 // The compiler is going to repeat the emission of this region (template)
 // for types `double` and `short`
-#pragma generic T: double, short
+#definefor T double, short
 
 // The compiler emits two 'sum' functions
-// - One replacing T with double: double sum__double(double a, double b)
-// - One replacing T with short:  short sum__short(short a, short b)
+// - One replacing T with double:  double sum[double](double a, double b)
+// - One replacing T with short:   short  sum[short](short a, short b)
 T sum[T](T a, T b) {
   return a + b;
 }
 
-#pragma endgeneric
+#undef T
 
 int main() {
   printf("sum short:  %d\n", sum[short](1, 2));
@@ -57,6 +59,7 @@ int main() {
 double sum__double(double a, double b) {
   return a + b;
 }
+
 short sum__short(short a, short b) {
   return a + b;
 }
@@ -86,37 +89,55 @@ Many cases can be covered with one of the following before using generics:
 | Type safety      | ❌     | ✅        | ✅       |
 | Flexible types   | ✅     | ❌        | ✅       |
 | Code duplication | ❌     | ❌        | ⚠️       |
-| Symbol control   | ❎\*   | ✅        | ❌       |
+| Symbol control   | ❎\*   | ✅        | ⚠️       |
 
 (*) **macros** are preprocessed so they don't have a symbol, but that's not bad.
 
 ## Symbol mangle
-When duplicating the codebase, the compiler automatically mangles the symbols of the functions and methods to avoid name collisions.
+When a *type* is used inside **square brackets** next to an *identifier*, that makes it part of the *identifier*. So `math::sum[int]` is a **whole** *identifier*, just like `math_sum_int`.
 
-> **Warning**: Do not try to assign a [custom symbol](symbols.md) to a *function* or *method* inside a *generic region*, the symbol will be duplicated. The compiler automatically generates unique, mangled symbols for every type‑specific implementation.<br>
-> Unfortunately, this is a natural limitation of code duplication. For low-level and [ffi](<https://en.wikipedia.org/wiki/Foreign_function_interface>){:target="_blank"} scenarios, where symbol stability is required, generics might not be the right solution.
+To differentiate the assembly identifiers, the compiler uses ***"\$\$"*** for **namespaces** and ***".."*** for **generics**, so `math::sum[int]` will be ***"math\$\$sum..i"*** and does not conflict with `math::sum::int` (***"math\$\$sum\$\$int"***).
+
+Note that unlike `::`, the compiler will transform the type inside square brackets to it's assembly type name ***(i.e., `int`=>`i`, `float`=>`f`, `char*`=>`Pc`, `struct Point[int]`=>`S8Point..i`, etc)***, so the symbol of `math::sum[int]` will be `math$$sum..i`.
 
 ```c
 #include <stdio.h>
 
-#pragma generic T: auto
-struct Point[T] {
-  T x, y;
-};
+#definefor T int, float
 
-T math::sum[T](T a, T b);
+T math::sum[T](T a, T b); // No problem
+T math::sum::T(T a, T b); // Caution!
 
-void (Point[T] *this) add(T other);
+struct Point[T] { T x, y; };
+void (struct Point[T] *this) add(T other);
 
-// math::sum[int]   => "math$$sum.i"
-// math::sum[float] => "math$$sum.f"
+void control::symbol[T](T a, T b) __attribute__((symbol("control_" T)));
+void caution::symbol[T](T a, T b) __attribute__((symbol("caution_" #T)));
 
-// point_i.add(1)   => "add$PS7Point.ii"
-// point_f.add(1.0) => "add$PS7Point.ff"
+#undef T
 
-// math::sum[struct Point[int]]   => "math$$sum.S7Point.i"
-// math::sum[struct Point[float]] => "math$$sum.S7Point.f"
-#pragma endgeneric
+// math::sum[int]   => "math$$sum..i"
+// math::sum[float] => "math$$sum..f"
+// math::sum::int   => "math$$sum$$int"
+// math::sum::float => "math$$sum$$float"
+
+// Caution! because "math$$sum$$float" has no problem, but
+// something like: "math$$sum$$char*", would break the assembler or linker,
+// or even worse: "math$$sum$$struct Point".
+
+// point_i.add(1)   => "add$PS8Point..ii"
+// point_f.add(1.0) => "add$PS8Point..ff"
+
+// math::sum[struct Point[int]]   => "math$$sum..S8Point..i"
+// math::sum[struct Point[float]] => "math$$sum..S8Point..f"
+
+// control::symbol[int]   => "control_i"
+// control::symbol[float] => "control_f"
+// caution::symbol[int]   => "caution_int"
+// caution::symbol[float] => "caution_float"
+
+// Same warning as before, because "caution_int" won't have a problem,
+// but "caution_char*" would break the assembler or linker.
 ```
 
 ## Examples
@@ -127,8 +148,8 @@ void (Point[T] *this) add(T other);
 #include <stdio.h>
 #include <math.h>
 
-/* Only allow Vec2[T] for numeric types (integer+floating) */
-#pragma generic T: numeric
+/* Only allow Vec2[T] for numeric types ($integer+$floating) */
+#definefor T $numeric
 
 typedef struct Vec2[T] Vec2[T];
 struct Vec2[T] { T x, y; };
@@ -140,7 +161,8 @@ inline Vec2[T] (Vec2[T] a) __add__(Vec2[T] b) {
 inline bool (Vec2[T] a) __eq__(Vec2[T] b) {
   return a.x == b.x && a.y == b.y;
 }
-#pragma endgeneric
+
+#undef T
 
 int main() {
   Vec2[float] a = {3.0f, 0.0f};
@@ -165,7 +187,8 @@ int main() {
 #include <stdio.h>
 #include <stdlib.h>
 
-#pragma generic T: auto
+// Automatic type inference, can be any type
+#definefor T $type
 typedef struct Stack[T] Stack[T];
 struct Stack[T] {
   T* data;
@@ -193,7 +216,8 @@ inline void (Stack[T] *s) push(T val) {
 inline T (Stack[T] *s) pop() {
   return s->data[--s->top];
 }
-#pragma endgeneric
+
+#undef T
 
 int main() {
   Stack[int] *s = &Stack::new[int](10);
@@ -223,7 +247,8 @@ int main() {
 #include <stdio.h>
 #include <stdlib.h>
 
-#pragma generic K: auto, V: auto
+#definefor K $type
+#definefor V $type
 
 typedef struct MapEntry[K,V] MapEntry[K,V];
 struct MapEntry[K,V] {
@@ -253,7 +278,7 @@ inline Map[K,V] (Map[K,V] m) __del__() {
   return m;
 }
 
-void (Map[K,V] *m) put(K key, V value) {
+void (Map[K,V] *m) put(K key, V value) __attribute__((linkonce)) {
   /* If the map is full, double its capacity */
   size_t new_len = (m->count + 1) * sizeof(MapEntry[K,V]);
   if (new_len >= m->capacity) {
@@ -269,7 +294,7 @@ void (Map[K,V] *m) put(K key, V value) {
   };
 }
 
-V (Map[K,V] m) get(K key) {
+V (Map[K,V] m) get(K key) __attribute__((linkonce)) {
   for (size_t i = 0; i < m.count; i++) {
     if (m.buckets[i].key == key)
       return m.buckets[i].val;
@@ -277,7 +302,9 @@ V (Map[K,V] m) get(K key) {
   // Not found
   return (V){0};
 }
-#pragma endgeneric
+
+#undef V
+#undef K
 
 int main() {
   Map[char*,int] map1 = Map::new[char*,int]();
@@ -315,20 +342,22 @@ int main() {
 #include "stack.h"
 #include "map.h"
 
-#pragma generic K: auto, V: auto
+#definefor K $type
+#definefor V $type
 /* Higher-order method */
 inline void (Map[K,V] m) foreach(void (*callback)(K,V)) {
   for (size_t i = 0; i < m.count; i++)
     callback(m.buckets[i].key, m.buckets[i].val);
 }
-#pragma endgeneric
+#undef V
+#undef K
 
 int main() {
   Stack[int] *s = &Stack::new[int](10);
   defer ~s;
   my_stack.push(99);
 
-  Stack[Stack[int]] *stack_of_stacks = &Stack::new[Stack[int]*](10);
+  Stack[Stack[int]] *stack_of_stacks = &Stack::new[Stack[int]](10);
   defer ~stack_of_stacks;
 
   stack_of_stacks.push(my_stack);
