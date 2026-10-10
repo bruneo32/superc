@@ -96,9 +96,9 @@ Many cases can be covered with one of the following before using generics:
 ## Symbol mangle
 When a *type* is used inside **square brackets** next to an *identifier*, that makes it part of the *identifier*. So `math::sum[int]` is a **whole** *identifier*, just like `math_sum_int`.
 
-To differentiate the assembly identifiers, the compiler uses ***"\$\$"*** for **namespaces** and ***".."*** for **generics**, so `math::sum[int]` will be ***"math\$\$sum..i"*** and does not conflict with `math::sum::int` (***"math\$\$sum\$\$int"***).
+To differentiate the assembly identifiers, the compiler uses ***"\$\$"*** for **namespaces** and ***"G\<type\>."*** for **generics**, so `math::sum[int]` will be ***"math\$\$sumGi."*** and does not conflict with `math::sum::int` (***"math\$\$sum\$\$int"***).
 
-Note that unlike `::`, the compiler will transform the type inside square brackets to it's assembly type name ***(i.e., `int`=>`i`, `float`=>`f`, `char*`=>`Pc`, `struct Point[int]`=>`S8Point..i`, etc)***, so the symbol of `math::sum[int]` will be `math$$sum..i`.
+Note that unlike `::`, the compiler will transform the type inside square brackets to it's assembly type name ***(i.e., `int`=>`i`, `float`=>`f`, `char*`=>`Pc`, `struct Point[int]`=>`S8PointGi.`, etc)***, so the symbol of `math::sum[int]` will be `math$$sumG.i.`.
 
 ```c
 #include <stdio.h>
@@ -116,8 +116,8 @@ void caution::symbol[T](T a, T b) __attribute__((symbol("caution_" #T)));
 
 #undef T
 
-// math::sum[int]   => "math$$sum..i"
-// math::sum[float] => "math$$sum..f"
+// math::sum[int]   => "math$$sumGi."
+// math::sum[float] => "math$$sumGf."
 // math::sum::int   => "math$$sum$$int"
 // math::sum::float => "math$$sum$$float"
 
@@ -125,11 +125,11 @@ void caution::symbol[T](T a, T b) __attribute__((symbol("caution_" #T)));
 // something like: "math$$sum$$char*", would break the assembler or linker,
 // or even worse: "math$$sum$$struct Point".
 
-// point_i.add(1)   => "add$PS8Point..ii"
-// point_f.add(1.0) => "add$PS8Point..ff"
+// point_i.add(1)   => "add$PS8PointGi.i"
+// point_f.add(1.0) => "add$PS8PointGf.f"
 
-// math::sum[struct Point[int]]   => "math$$sum..S8Point..i"
-// math::sum[struct Point[float]] => "math$$sum..S8Point..f"
+// math::sum[struct Point[int]]   => "math$$sumGS8PointGi.."
+// math::sum[struct Point[float]] => "math$$sumGS8PointGf.."
 
 // control::symbol[int]   => "control_i"
 // control::symbol[float] => "control_f"
