@@ -1036,7 +1036,10 @@ static void gen_stmt(Node *node, bool is_root_block) {
       break;
 
     case ND_GOTO:
+    case ND_BREAK:
+    case ND_CONTINUE:
       gen_jmp(node->label);
+      node->label->is_live = true;
       break;
 
     case ND_GOTO_EXPR: {
