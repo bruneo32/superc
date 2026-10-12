@@ -308,13 +308,17 @@ static LLVM *gen_blockaddress(Type *ty, Label *label, Obj *fn) {
 
 static LLVM *gen_addr(Node *node) {
   switch (node->kind) {
+  case ND_COMMA:
+    gen_expr(node->lhs); // discard value, keep side effects
+    return gen_addr(node->rhs);
   case ND_ADDR:
   case ND_DEREF:
     return gen_expr(node->lhs);
   case ND_VAR:
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
-    return gen_getelementptr(node->member->ty, gen_expr(node->lhs), 0, gen_inum(ty_int, node->member->idx));
+    return gen_getelementptr(node->member->ty, gen_expr(node->lhs),
+                             0, gen_inum(ty_int, node->member->idx));
   case ND_LABEL_VAL:
     return gen_blockaddress(node->ty, node->label, node->var);
   default:
@@ -404,7 +408,7 @@ static LLVM *gen_store(Type *ty, LLVM *src, LLVM *dst) {
   llvm->dst = dst;
 
   advance_emit(llvm);
-  return llvm;
+  return src;
 }
 
 static LLVM *gen_store_param(count_t ssa, Type *ty, Obj *param, LLVM *dst) {
@@ -1094,6 +1098,49 @@ static void gen_stmt(Node *node, bool is_root_block) {
       br->label2 = (node->els) ? lels : lout;
     } break;
 
+    case ND_FOR: {
+      if (node->init)
+        gen_stmt(node->init, false);
+
+      /* Labels: cond, body + continue/break */
+      Label *lcond = calloc(1, sizeof(Label));
+      Label *lbody = calloc(1, sizeof(Label));
+      Label *lcont = node->cont_label ?: calloc(1, sizeof(Label));
+      Label *lbrk  = node->brk_label ?: calloc(1, sizeof(Label));
+
+      /* Evaluate condition */
+      if (node->cond) {
+        gen_label(lcond);
+        lcond->is_live = true;
+        LLVM *cond = gen_expr(node->cond);
+        LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+          ? cond
+          : gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+        gen_branch(cmp, lbody, lbrk);
+      }
+
+      /* Generate body */
+      gen_label(lbody);
+      lbody->is_live = true;
+      gen_stmt(node->then, false);
+      // If there's no increment statement, just jump to the condition,
+      // if none, loop to body
+      gen_jmp((node->inc) ? lcont :
+              ((node->cond) ? lcond : lbody));
+
+      /* Continue label + increment */
+      if (node->inc) {
+        gen_label(lcont);
+        lcont->is_live = true;
+        gen_expr(node->inc);
+        gen_jmp((node->cond) ? lcond : lbody);
+      }
+
+      /* Break label (loop exit) */
+      gen_label(lbrk);
+      lbrk->is_live = true;
+    } break;
+
     default:
       error_tok(node->tok, "unsupported stmt in minimal IR");
   }
@@ -1299,7 +1346,9 @@ static count_t emit_llvm(LLVM *llvm) {
     if (llvm->ssa)
       emitf("%%%ld = ", llvm->ssa);
 
-    emitf("call %s %s(", llvm->sret ? llvm_type(ty_void) : llvm_type(llvm->ty), get_symvar(llvm->lhs));
+    emitf("call %s %s(",
+      (llvm->sret || llvm->ty->kind == TY_VOID) ? "void" : llvm_type(llvm->ty),
+      get_symvar(llvm->lhs));
 
     Type *param = llvm->lhs->var->ty->params;
 

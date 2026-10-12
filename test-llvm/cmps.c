@@ -60,5 +60,16 @@ int main() {
     if ((_true && !_false) || _false)
         nop();
 
+
+    int x = 3;
+    while (x) {
+        x--;
+        nop();
+    }
+
+    for (int x = 0; x < 10; x++) {
+        nop();
+    }
+
 	return 0;
 }
