@@ -1158,6 +1158,29 @@ static void gen_stmt(Node *node, bool is_root_block) {
       lbrk->is_live = true;
     } break;
 
+    case ND_DO: {
+      Label *lbody = calloc(1, sizeof(Label));
+      Label *lcond = calloc(1, sizeof(Label));
+
+      // Generate body
+      gen_label(lbody);
+      lbody->is_live = true;
+      gen_stmt(node->then, false);
+
+      // Generate condition
+      gen_label(lcond);
+      lcond->is_live = true;
+      LLVM *cond = gen_expr(node->cond);
+      LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
+        ? cond
+        : gen_icmp(LLICMP_NE, cond, gen_inum(cond->ty, 0));
+      gen_branch(cmp, lbody, node->brk_label);
+
+      // Break label (loop exit)
+      gen_label(node->brk_label);
+      node->brk_label->is_live = true;
+    } break;
+
     case ND_SWITCH: {
       // Generate exit label if no default case is provided
       Label *ldefault = node->default_case

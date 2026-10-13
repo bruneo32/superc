@@ -71,6 +71,11 @@ int main() {
         nop();
     }
 
+    do {
+        nop();
+        x++;
+    } while (x < 10);
+
     switch (x) {
         case 0 ... 1:
             nop();

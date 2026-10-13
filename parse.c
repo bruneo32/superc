@@ -1946,7 +1946,7 @@ static Node *stmt(Token **rest, Token *tok) {
     node->brk_label = push_brk_label(new_label(NULL));
 
     Label *cont = cont_label;
-    cont_label = node->cont_label = new_label(NULL);;
+    cont_label = node->cont_label = new_label(NULL);
 
     node->then = stmt(&tok, tok->next);
 
