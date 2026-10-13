@@ -204,7 +204,8 @@ static LLVM *gen_jmp(Label *label) {
 }
 
 static LLVM *gen_label(Label *label) {
-  /* Emit even if unreachable */
+  /* Recover reachability */
+  _is_reachable_code = true;
 
   // Insert explicit jmp if the previous block wasn't terminated
   if (_emit_cur && !is_block_terminator_ll(_emit_cur))
@@ -215,7 +216,6 @@ static LLVM *gen_label(Label *label) {
   llvm->label = label;
 
   current_label = label;
-  _is_reachable_code = true;
   advance_emit(llvm);
   return llvm;
 }
@@ -526,6 +526,21 @@ static LLVM *gen_phi_node(Type *ty, LLVM *lhs, Label *lfrom, LLVM *rhs, Label *r
   return llvm;
 }
 
+static LLVM *gen_switch(LLVM *cond, Label *ldefault, ListLLVM *cases) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_SWITCH;
+  llvm->lhs = cond;
+  llvm->label = ldefault;
+  llvm->args = cases;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -650,6 +665,7 @@ static LLVM *gen_expr(Node *node) {
       return gen_num(node->ty, node);
     }
     case ND_ADDR:
+        return gen_addr(node);
     case ND_DEREF:
     case ND_VAR:
     case ND_MEMBER:
@@ -992,7 +1008,7 @@ static LLVM *gen_expr(Node *node) {
 
 static void gen_stmt(Node *node, bool is_root_block) {
   /* Don't emit if unreachable (except for LABELS that recover the reachability) */
-  if (!_is_reachable_code && node->kind != ND_LABEL)
+  if (!_is_reachable_code && node->kind != ND_LABEL && node->kind != ND_CASE)
     return;
 
   switch (node->kind) {
@@ -1003,11 +1019,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
         gen_stmt(m, false);
         count++;
         /* A terminator ends the block */
-        if (is_block_terminator_ll(_emit_cur)) {
+        if (is_block_terminator_ll(_emit_cur))
           _is_reachable_code = false;
-          if (!is_root_block)
-            break;
-        }
       }
 
       if (count > 1 && !is_block_terminator_ll(_emit_cur)) {
@@ -1018,7 +1031,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
       }
     } break;
 
-    case ND_LABEL:
+    case ND_CASE:
+    case ND_LABEL: {
       // Generate label and get its SSA to save in the list
       LLVM *ssa_label = gen_label(node->label);
 
@@ -1033,7 +1047,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
 
       llabel->llvm = ssa_label;
       gen_stmt(node->lhs, is_root_block);
-      break;
+    } break;
 
     case ND_GOTO:
     case ND_BREAK:
@@ -1142,6 +1156,54 @@ static void gen_stmt(Node *node, bool is_root_block) {
       /* Break label (loop exit) */
       gen_label(lbrk);
       lbrk->is_live = true;
+    } break;
+
+    case ND_SWITCH: {
+      // Generate exit label if no default case is provided
+      Label *ldefault = node->default_case
+                          ? node->default_case->label
+                          : node->brk_label;
+      ldefault->is_live = true;
+
+      // Get cases from the linked list
+      size_t ncases = 0;
+      for (Node *c = node->case_next; c; c = c->case_next)
+        ncases++;
+
+      Node *cases[ncases];
+      size_t ci = ncases;
+      for (Node *c = node->case_next; c; c = c->case_next)
+        cases[--ci] = c;
+
+      // Prepare labels for each case
+      ListLLVM llbl_cases = {};
+      ListLLVM *cur = &llbl_cases;
+      for (size_t ci = 0; ci < ncases; ci++) {
+        Node *nd_case = cases[ci];
+        nd_case->label->is_live = true;
+
+        // Create a label for each case range
+        for (long cr = nd_case->begin; cr <= nd_case->end; cr++) {
+          ListLLVM *casew = calloc(1, sizeof(ListLLVM));
+          casew->llvm = calloc(1, sizeof(LLVM));
+          casew->llvm->label = nd_case->label;
+          casew->llvm->val = cr;
+          cur = cur->next = casew;
+        }
+      }
+
+      // Evaluate the expression
+      LLVM *cond = gen_expr(node->cond);
+
+      // Generate the switch
+      gen_switch(cond, ldefault, llbl_cases.next);
+
+      // Generate the cases
+      gen_stmt(node->then, false);
+
+      // Break label (switch exit)
+      gen_label(node->brk_label);
+      node->brk_label->is_live = true;
     } break;
 
     default:
@@ -1314,6 +1376,18 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symvar(llvm->rhs),
             llvm->label2->ssa);
     return llvm->ssa;
+
+  case LL_SWITCH: {
+    emitfln("  switch %s %s, label %%%ld [",
+      llvm_type(llvm->lhs->ty), get_symvar(llvm->lhs),
+      llvm->label->ssa);
+
+    for (ListLLVM *llabel = llvm->args; llabel; llabel = llabel->next)
+      emitfln("    i32 %ld, label %%%ld", llabel->llvm->val, llabel->llvm->label->ssa);
+
+    emitfln("  ]");
+    return llvm->ssa;
+  }
 
   case LL_ALLOCA:
     return emit_alloca(0, llvm);

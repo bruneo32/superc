@@ -71,5 +71,35 @@ int main() {
         nop();
     }
 
+    switch (x) {
+        case 0 ... 1:
+            nop();
+            break;
+        case 2 ... 3:
+            nop();
+            nop();
+            nop();
+            break;
+    }
+
+    switch (x) {
+    case 1:
+        nop();
+    case 2:
+        nop();
+        nop();
+    case 3 ... 5:
+        nop();
+        nop();
+        nop();
+        break;
+    default:
+        nop();
+        nop();
+        nop();
+        nop();
+        break;
+    }
+
 	return 0;
 }

@@ -512,6 +512,7 @@ enum LLKind {
   LL_ICMP,
   LL_FCMP,
   LL_PHI,
+  LL_SWITCH,
   /* Literals & vars */
   LL_NUM,
   LL_NUMF,
