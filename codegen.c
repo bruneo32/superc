@@ -461,26 +461,34 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
 
-  switch (from->kind) {
-  case TY_PTR:
-  case TY_ARRAY:
+  bool from_is_ptr = from->kind == TY_PTR || from->kind == TY_ARRAY;
+  bool to_is_ptr   = to->kind   == TY_PTR || to->kind   == TY_ARRAY;
+
+  if (from_is_ptr && to_is_ptr) {
+    // cast ptr to ptr
     llvm->kind = LL_BITCAST;
-    break;
-  case TY_BOOL:
-  case TY_CHAR:
-  case TY_SHORT:
-  case TY_INT:
-  case TY_LONG:
-  case TY_FLOAT:
-  case TY_DOUBLE:
-  case TY_LDOUBLE:
-    // Use table lookup for now
-    int t1 = getTypeId(from);
-    int t2 = getTypeId(to);
-    llvm->kind = cast_table[t1][t2];
-    break;
-  default:
-    unreachable();
+  } else if (from_is_ptr || to_is_ptr) {
+    // cast int->ptr or ptr->int
+    llvm->kind = (from_is_ptr) ? LL_PTR2INT : LL_INT2PTR;
+  } else {
+    // Use table lookup
+    switch (from->kind) {
+    case TY_BOOL:
+    case TY_CHAR:
+    case TY_SHORT:
+    case TY_INT:
+    case TY_LONG:
+    case TY_FLOAT:
+    case TY_DOUBLE:
+    case TY_LDOUBLE:
+      // Use table lookup for now
+      int t1 = getTypeId(from);
+      int t2 = getTypeId(to);
+      llvm->kind = cast_table[t1][t2];
+      break;
+    default:
+      unreachable();
+    }
   }
 
   if (llvm->kind == LL_NOOP)
@@ -696,6 +704,8 @@ static LLVM *gen_expr(Node *node) {
         rhs->sret = ptr;
         return rhs;
       }
+      // Guarantee type alignment
+      rhs = gen_cast(rhs->ty, ptr->ty, rhs);
       return gen_store(node->ty, rhs, ptr);
     }
     case ND_FUNCALL: {
@@ -1294,8 +1304,8 @@ static count_t emit_getelementptr(count_t ssa, LLVM *ll) {
     pointee  = ll->src->ty;
     src_llty = format("%s*", llvm_type(pointee));
   } else {
-    src_llty = llvm_type(ll->src->ty);
     pointee  = ll->src->ty->base;
+    src_llty = llvm_type(ll->src->ty);
   }
 
   emitf("  %%%ld = getelementptr inbounds %s, %s %s",
@@ -1342,6 +1352,28 @@ static count_t emit_bitcast(count_t ssa, LLVM *ll) {
   return ssa;
 }
 
+static count_t emit_ptrtoint(count_t ssa, LLVM *ll) {
+  assert(ll->src);
+  if (!ssa) ssa = ll->ssa;
+
+  emitfln("  %%%ld = ptrtoint %s %s to %s", ssa,
+          llvm_type(ll->src->ty), get_symvar(ll->src),
+          llvm_type(ll->ty));
+
+  return ssa;
+}
+
+static count_t emit_inttoptr(count_t ssa, LLVM *ll) {
+  assert(ll->src);
+  if (!ssa) ssa = ll->ssa;
+
+  emitfln("  %%%ld = inttoptr %s %s to %s", ssa,
+          llvm_type(ll->src->ty), get_symvar(ll->src),
+          llvm_type(ll->ty));
+
+  return ssa;
+}
+
 static count_t emit_label(Label *label) {
   if (!label->is_live)
     return 0;
@@ -1355,8 +1387,8 @@ static count_t emit_store(LLVM *src, LLVM *dst) {
   assert(dst);
   emitfln("  store %s %s, %s* %s, align %d",
           llvm_type(src->ty), get_symvar(src),
-          llvm_type(src->ty), get_symvar(dst),
-          src->ty->align);
+          llvm_type(dst->ty), get_symvar(dst),
+          dst->ty->align);
   return 0;
 }
 
@@ -1424,10 +1456,14 @@ static count_t emit_llvm(LLVM *llvm) {
             get_symbol(llvm->var), llvm->label->ssa,
             current_label->ssa);
     return llvm->ssa;
-  case LL_BITCAST:
-    return emit_bitcast(0, llvm);
   case LL_STORE:
     return emit_store(llvm->src, llvm->dst);
+  case LL_BITCAST:
+    return emit_bitcast(0, llvm);
+  case LL_PTR2INT:
+    return emit_ptrtoint(0, llvm);
+  case LL_INT2PTR:
+    return emit_inttoptr(0, llvm);
 
   case LL_STORE_PARAM: {
     emitfln("  store %s %%%ld, %s* %s, align %d",

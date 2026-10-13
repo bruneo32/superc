@@ -526,6 +526,8 @@ enum LLKind {
   LL_FUNCALL,
   /* Cast PTR */
   LL_BITCAST, // bitcast     (transform a kind of ptr to another)
+  LL_INT2PTR, // inttoptr
+  LL_PTR2INT, // ptrtoint
   /* Cast INT primitives */
   LL_TRUN,    // truncate    (shrink an integer)
   LL_ZEXT,    // zero-extend (extend an unsigned int)
