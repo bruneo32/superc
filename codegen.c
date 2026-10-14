@@ -308,12 +308,14 @@ static LLVM *gen_blockaddress(Type *ty, Label *label, Obj *fn) {
 
 static LLVM *gen_addr(Node *node) {
   switch (node->kind) {
+  case ND_CAST:
+  case ND_DEREF:
+    return gen_expr(node->lhs);
+  case ND_ADDR:
+    return gen_addr(node->lhs);
   case ND_COMMA:
     gen_expr(node->lhs); // discard value, keep side effects
     return gen_addr(node->rhs);
-  case ND_ADDR:
-  case ND_DEREF:
-    return gen_expr(node->lhs);
   case ND_VAR:
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
@@ -705,7 +707,7 @@ static LLVM *gen_expr(Node *node) {
         return rhs;
       }
       // Guarantee type alignment
-      rhs = gen_cast(rhs->ty, ptr->ty, rhs);
+      rhs = gen_cast(node->rhs->ty, node->ty, rhs);
       return gen_store(node->ty, rhs, ptr);
     }
     case ND_FUNCALL: {
@@ -1382,13 +1384,14 @@ static count_t emit_label(Label *label) {
   return label->ssa;
 }
 
-static count_t emit_store(LLVM *src, LLVM *dst) {
+static count_t emit_store(Type *ty, LLVM *src, LLVM *dst) {
   assert(src);
   assert(dst);
+  const char *llty = llvm_type(ty);
   emitfln("  store %s %s, %s* %s, align %d",
-          llvm_type(src->ty), get_symvar(src),
-          llvm_type(dst->ty), get_symvar(dst),
-          dst->ty->align);
+          llty, get_symvar(src),
+          llty, get_symvar(dst),
+          ty->align);
   return 0;
 }
 
@@ -1457,7 +1460,7 @@ static count_t emit_llvm(LLVM *llvm) {
             current_label->ssa);
     return llvm->ssa;
   case LL_STORE:
-    return emit_store(llvm->src, llvm->dst);
+    return emit_store(llvm->ty, llvm->src, llvm->dst);
   case LL_BITCAST:
     return emit_bitcast(0, llvm);
   case LL_PTR2INT:

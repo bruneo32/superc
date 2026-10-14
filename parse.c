@@ -2342,7 +2342,8 @@ flt_number eval_double(Node *node) {
 // However, if a given expression is of form `A.x op= C`, the input is
 // converted to `tmp = &A, (*tmp).x = (*tmp).x op C` to handle assignments
 // to bitfields.
-static Node *to_assign(Node *binary) {
+static Node *to_assign(Node *binary, Node *lvalue) {
+  binary->lhs = lvalue;
   add_type(binary->lhs);
   add_type(binary->rhs);
   Token *tok = binary->tok;
@@ -2558,7 +2559,7 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot add non-numeric types, no operator overload for (%s) += (%s)",
                    type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
-      return to_assign(new_add(node, rhs, tok));
+      return to_assign(new_add(node, rhs, tok), node);
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2590,7 +2591,7 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot subtract non-numeric types, no operator overload for (%s) -= (%s)",
                    type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
-      return to_assign(new_sub(node, rhs, tok));
+      return to_assign(new_sub(node, rhs, tok), node);
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2622,7 +2623,7 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot multiply non-numeric types, no operator overload for (%s) *= (%s)",
                    type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
-      return to_assign(new_binary(ND_MUL, node, rhs, tok));
+      return to_assign(new_binary(ND_MUL, node, rhs, tok), node);
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2654,7 +2655,7 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) /= (%s)",
                    type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
-      return to_assign(new_binary(ND_DIV, node, rhs, tok));
+      return to_assign(new_binary(ND_DIV, node, rhs, tok), node);
     }
 
     return operator_overload(fn, node, rhs, tok);
@@ -2686,26 +2687,26 @@ static Node *assign(Token **rest, Token *tok) {
         error_tok(tok, "cannot divide non-numeric types, no operator overload for (%s) %%= (%s)",
                    type_to_string(pty), type_to_string(pty->next));
       /* Return normal arithmetic */
-      return to_assign(new_binary(ND_MOD, node, rhs, tok));
+      return to_assign(new_binary(ND_MOD, node, rhs, tok), node);
     }
 
     return operator_overload(fn, node, rhs, tok);
   }
 
   if (equal(tok, "&="))
-    return to_assign(new_binary(ND_BITAND, node, assign(rest, tok->next), tok));
+    return to_assign(new_binary(ND_BITAND, node, assign(rest, tok->next), tok), node);
 
   if (equal(tok, "|="))
-    return to_assign(new_binary(ND_BITOR, node, assign(rest, tok->next), tok));
+    return to_assign(new_binary(ND_BITOR, node, assign(rest, tok->next), tok), node);
 
   if (equal(tok, "^="))
-    return to_assign(new_binary(ND_BITXOR, node, assign(rest, tok->next), tok));
+    return to_assign(new_binary(ND_BITXOR, node, assign(rest, tok->next), tok), node);
 
   if (equal(tok, "<<="))
-    return to_assign(new_binary(ND_SHL, node, assign(rest, tok->next), tok));
+    return to_assign(new_binary(ND_SHL, node, assign(rest, tok->next), tok), node);
 
   if (equal(tok, ">>="))
-    return to_assign(new_binary(ND_SHR, node, assign(rest, tok->next), tok));
+    return to_assign(new_binary(ND_SHR, node, assign(rest, tok->next), tok), node);
 
   *rest = tok;
   return node;
@@ -3440,12 +3441,16 @@ static Node *unary(Token **rest, Token *tok) {
   }
 
   // Read ++i as i+=1
-  if (equal(tok, "++"))
-    return to_assign(new_add(unary(rest, tok->next), new_num(1, tok), tok));
+  if (equal(tok, "++")) {
+    Node *lvalue = unary(rest, tok->next);
+    return to_assign(new_add(lvalue, new_num(1, tok), tok), lvalue);
+  }
 
   // Read --i as i-=1
-  if (equal(tok, "--"))
-    return to_assign(new_sub(unary(rest, tok->next), new_num(1, tok), tok));
+  if (equal(tok, "--")) {
+    Node *lvalue = unary(rest, tok->next);
+    return to_assign(new_sub(lvalue, new_num(1, tok), tok), lvalue);
+  }
 
   // [GNU] labels-as-values
   if (equal(tok, "&&")) {
@@ -3762,7 +3767,7 @@ static Node *struct_ref(Node *node, Token *tok) {
 // Convert A++ to `(typeof A)((A += 1) - 1)`
 static Node *new_inc_dec(Node *node, Token *tok, int addend) {
   add_type(node);
-  return new_cast(new_add(to_assign(new_add(node, new_num(addend, tok), tok)),
+  return new_cast(new_add(to_assign(new_add(node, new_num(addend, tok), tok), node),
                           new_num(-addend, tok), tok),
                   node->ty);
 }
