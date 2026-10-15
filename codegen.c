@@ -695,14 +695,8 @@ static LLVM *gen_expr(Node *node) {
     case ND_CAST: {
       /* If lhs is a primitive, don't need to cast,
        * just return it as the other kind */
-      if (node->lhs->kind == ND_NUM) {
-        int t1 = getTypeId(node->ty);
-        int t2 = getTypeId(node->lhs->ty);
-        /* But, if one is float and another is int, then we need to cast it */
-        if (t1 != I1 && t2 != I1 &&
-            is_float_tid(t1) == is_float_tid(t2))
-          return gen_num(node->ty, node->lhs);
-      }
+      if (is_integer(node->ty) && node->lhs->kind == ND_NUM)
+        return gen_num(node->ty, node->lhs);
       return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     }
     case ND_ASSIGN: {
