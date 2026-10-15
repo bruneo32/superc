@@ -6,11 +6,13 @@ static Node  *current_loop;
 static Label *current_label;
 static ListLLVM *current_fn_all_labels;
 
-static LLVM   *gen_expr(Node *node);
-static void    gen_stmt(Node *node, bool is_root_block);
-static LLVM   *gen_fnum(Type *ty, flt_number val);
-static LLVM   *gen_inum(Type *ty, int64_t val);
-static LLVM   *gen_num(Type *ty, Node *node);
+static LLVM *gen_expr(Node *node);
+static LLVM *gen_fnum(Type *ty, flt_number val);
+static LLVM *gen_inum(Type *ty, int64_t val);
+static LLVM *gen_num(Type *ty, Node *node);
+static LLVM *gen_cast(Type *from, Type *to, LLVM *ref);
+static void  gen_stmt(Node *node, bool is_root_block);
+
 static count_t emit_llvm(LLVM *llvm);
 
 LLVM *fn_retval_ll = NULL;
@@ -286,7 +288,13 @@ static LLVM *gen_getelementptr(Type *ty, LLVM *src, int base_idx, LLVM *elem_idx
   llvm->ty   = ty;
   llvm->src  = src;
   llvm->base_idx = base_idx;
-  llvm->elem_idx = elem_idx;
+
+  if (elem_idx) {
+    // Cast to i32 if not integer
+    if (!is_integer(elem_idx->ty))
+      elem_idx = gen_cast(elem_idx->ty, ty_int, elem_idx);
+    llvm->elem_idx = elem_idx;
+  }
 
   advance_emit(llvm);
   return llvm;
