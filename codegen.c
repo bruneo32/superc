@@ -201,17 +201,26 @@ static LLVM *gen_jmp(Label *label) {
   llvm->kind = LL_JMP;
   llvm->label = label;
   label->is_live = true;
+
+  // The code will only be reachable at a label
+  _is_reachable_code = false;
   advance_emit(llvm);
   return llvm;
 }
 
 static LLVM *gen_label(Label *label) {
+  if (!label->is_live)
+    return NULL;
+
   /* Recover reachability */
   _is_reachable_code = true;
 
   // Insert explicit jmp if the previous block wasn't terminated
-  if (_emit_cur && !is_block_terminator_ll(_emit_cur))
+  if (_emit_cur && !is_block_terminator_ll(_emit_cur)) {
     gen_jmp(label);
+    // gen_jmp disables reachability
+    _is_reachable_code = true;
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LABEL;
@@ -232,6 +241,8 @@ static LLVM *gen_ind_br(LLVM *addr, ListLLVM *labels) {
   llvm->dst = addr;
   llvm->args = labels;
 
+  // The code will only be reachable at a label
+  _is_reachable_code = false;
   advance_emit(llvm);
   return llvm;
 }
@@ -252,6 +263,8 @@ static LLVM *gen_branch(LLVM *cond, Label *then, Label *els) {
   if (els)
     els->is_live = true;
 
+  // The code will only be reachable at a label
+  _is_reachable_code = false;
   advance_emit(llvm);
   return llvm;
 }
@@ -391,11 +404,11 @@ static LLVM *builtint_alloca(count_t size) {
 }
 
 static LLVM *gen_load(Type *ty, LLVM *src) {
-  assert(src);
-
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  assert(src);
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_LOAD;
@@ -925,9 +938,9 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
-      return gen_icmp(
-        (lhs->ty->is_unsigned || rhs->ty->is_unsigned) ? LLICMP_ULT : LLICMP_SLT,
-        lhs, rhs);
+      return gen_icmp((lhs->ty->is_unsigned || rhs->ty->is_unsigned)
+                      ? LLICMP_ULT : LLICMP_SLT,
+                      lhs, rhs);
     }
 
     case ND_LE: {
@@ -947,9 +960,9 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
-      return gen_icmp(
-        (lhs->ty->is_unsigned || rhs->ty->is_unsigned) ? LLICMP_ULE : LLICMP_SLE,
-        lhs, rhs);
+      return gen_icmp((lhs->ty->is_unsigned || rhs->ty->is_unsigned)
+                      ? LLICMP_ULE : LLICMP_SLE,
+                      lhs, rhs);
     }
 
     case ND_LOGOR:
@@ -1039,9 +1052,6 @@ static void gen_stmt(Node *node, bool is_root_block) {
       for (Node *m = node->body; m; m = m->next) {
         gen_stmt(m, false);
         count++;
-        /* A terminator ends the block */
-        if (is_block_terminator_ll(_emit_cur))
-          _is_reachable_code = false;
       }
 
       if (count > 1 && !is_block_terminator_ll(_emit_cur)) {
@@ -1055,6 +1065,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
     case ND_CASE:
     case ND_LABEL: {
       // Generate label and get its SSA to save in the list
+      node->label->is_live = true;
       LLVM *ssa_label = gen_label(node->label);
 
       /* Add named label to the list of labels in the current function */
@@ -1074,7 +1085,6 @@ static void gen_stmt(Node *node, bool is_root_block) {
     case ND_BREAK:
     case ND_CONTINUE:
       gen_jmp(node->label);
-      node->label->is_live = true;
       break;
 
     case ND_GOTO_EXPR: {
@@ -1148,8 +1158,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
 
       /* Evaluate condition */
       if (node->cond) {
-        gen_label(lcond);
         lcond->is_live = true;
+        gen_label(lcond);
         LLVM *cond = gen_expr(node->cond);
         LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
           ? cond
@@ -1158,8 +1168,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
       }
 
       /* Generate body */
-      gen_label(lbody);
       lbody->is_live = true;
+      gen_label(lbody);
       gen_stmt(node->then, false);
       // If there's no increment statement, just jump to the condition,
       // if none, loop to body
@@ -1168,15 +1178,15 @@ static void gen_stmt(Node *node, bool is_root_block) {
 
       /* Continue label + increment */
       if (node->inc) {
-        gen_label(lcont);
         lcont->is_live = true;
+        gen_label(lcont);
         gen_expr(node->inc);
         gen_jmp((node->cond) ? lcond : lbody);
       }
 
       /* Break label (loop exit) */
-      gen_label(lbrk);
       lbrk->is_live = true;
+      gen_label(lbrk);
     } break;
 
     case ND_DO: {
@@ -1184,13 +1194,13 @@ static void gen_stmt(Node *node, bool is_root_block) {
       Label *lcond = calloc(1, sizeof(Label));
 
       // Generate body
-      gen_label(lbody);
       lbody->is_live = true;
+      gen_label(lbody);
       gen_stmt(node->then, false);
 
       // Generate condition
-      gen_label(lcond);
       lcond->is_live = true;
+      gen_label(lcond);
       LLVM *cond = gen_expr(node->cond);
       LLVM *cmp = (cond->kind == LL_ICMP || cond->kind == LL_FCMP)
         ? cond
@@ -1198,8 +1208,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
       gen_branch(cmp, lbody, node->brk_label);
 
       // Break label (loop exit)
-      gen_label(node->brk_label);
       node->brk_label->is_live = true;
+      gen_label(node->brk_label);
     } break;
 
     case ND_SWITCH: {
@@ -1246,8 +1256,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
       gen_stmt(node->then, false);
 
       // Break label (switch exit)
-      gen_label(node->brk_label);
       node->brk_label->is_live = true;
+      gen_label(node->brk_label);
     } break;
 
     default:
@@ -1386,8 +1396,6 @@ static count_t emit_inttoptr(count_t ssa, LLVM *ll) {
 }
 
 static count_t emit_label(Label *label) {
-  if (!label->is_live)
-    return 0;
   assert(label);
   emitfln("%ld:", label->ssa);
   return label->ssa;
