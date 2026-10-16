@@ -676,9 +676,16 @@ static LLVM *gen_expr(Node *node) {
       gen_expr(node->lhs);
       return gen_expr(node->rhs);
     case ND_STMT_EXPR:
-      for (Node *n = node->body; n; n = n->next)
+      LLVM *ret = _emit_cur;
+      for (Node *n = node->body; n; n = n->next) {
+        if (n->kind == ND_EXPR_STMT) {
+          ret = gen_expr(n->lhs);
+          continue;
+        }
         gen_stmt(n, false);
-      return NULL;
+        ret = _emit_cur;
+      }
+      return ret;
     case ND_NUM: {
       return gen_num(node->ty, node);
     }
