@@ -579,7 +579,7 @@ typedef enum LLCmpOp {
   LLFCMP_OLT,   // Ordered and less than
   LLFCMP_OLE,   // Ordered and less than or equal
   LLFCMP_ONE,   // Ordered and not equal
-  LLFCMP_ORD,   // Ordered (no nans)
+  LLFCMP_ORD,   // Ordered: true if neither operand is NaN
 
   LLFCMP_UEQ,   // Unordered or equal
   LLFCMP_UGT,   // Unordered or greater than
@@ -587,7 +587,7 @@ typedef enum LLCmpOp {
   LLFCMP_ULT,   // Unordered or less than
   LLFCMP_ULE,   // Unordered or less than or equal
   LLFCMP_UNE,   // Unordered or not equal
-  LLFCMP_UNO,   // Unordered (no nans)
+  LLFCMP_UNO,   // Unordered: true if one operand is NaN
 
   LLFCMP_TRUE,  // Always true
 } LLCmpOp;
