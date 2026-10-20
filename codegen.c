@@ -2137,7 +2137,20 @@ static void emit_text(Obj *prog) {
     // No code is emitted for "static inline" functions
     // if no one is referencing them.
     if (!fn->is_live)
+    skip_emitfn:
       continue;
+
+    if (!fn->is_definition) {
+      // If this is a forward declaration instead of an
+      // extern function, we don't need to emit anything.
+      const char *fnsym = get_symbol(fn);
+      for (Obj *fw = fn->next; fw; fw = fw->next) {
+        if (!strcmp(fnsym, get_symbol(fw)))
+          goto skip_emitfn;
+      }
+      // If is not a forward declaration, emit a declaration
+      // normally, because this is an extern function.
+    }
 
     /* Reset LLVM cursor */
     LLVM ll_head;
