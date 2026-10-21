@@ -1267,12 +1267,11 @@ static void gen_stmt(Node *node, bool is_root_block) {
               ((node->cond) ? lcond : lbody));
 
       /* Continue label + increment */
-      if (node->inc) {
-        lcont->is_live = true;
-        gen_label(lcont);
+      lcont->is_live = true;
+      gen_label(lcont);
+      if (node->inc)
         gen_expr(node->inc);
-        gen_jmp((node->cond) ? lcond : lbody);
-      }
+      gen_jmp((node->cond) ? lcond : lbody);
 
       /* Break label (loop exit) */
       lbrk->is_live = true;
@@ -1280,12 +1279,11 @@ static void gen_stmt(Node *node, bool is_root_block) {
     } break;
 
     case ND_DO: {
-      Label *lbody = calloc(1, sizeof(Label));
       Label *lcond = calloc(1, sizeof(Label));
 
       // Generate body
-      lbody->is_live = true;
-      gen_label(lbody);
+      node->cont_label->is_live = true;
+      gen_label(node->cont_label);
       gen_stmt(node->then, false);
 
       // Generate condition
@@ -1300,7 +1298,7 @@ static void gen_stmt(Node *node, bool is_root_block) {
         else
           cmp = gen_icmp(LLICMP_NE, cmp, gen_inum(cmp->ty, 0));
       }
-      gen_branch(cmp, lbody, node->brk_label);
+      gen_branch(cmp, node->cont_label, node->brk_label);
 
       // Break label (loop exit)
       node->brk_label->is_live = true;
