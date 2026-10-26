@@ -101,7 +101,7 @@ int (int a) sum(int b) {
 
 int main() {
   printf("%s:%d -> %s()\n", __FILE__, __LINE__, __FUNCTION__);
-  // myfile.c:15 -> main()
+  // myfile.c:16 -> main()
 
   add(5, 10);
   // myadd_function(5, 10)

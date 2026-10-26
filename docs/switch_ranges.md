@@ -13,6 +13,8 @@ This can be done using ranges, which are written as `case low ... high`, it has 
 > Note: Space around the `1 ... 10` is important, otherwise you could get an error when parsing integer values.
 
 ### Examples
+{% tabs switch_ranges1 %}
+{% tab switch_ranges1 SuperC %}
 ```cpp
 #include <stdio.h>
 
@@ -48,6 +50,8 @@ int main() {
   return 0;
 }
 ```
+{% endtab %}
+{% endtabs %}
 <br>
 
 ## Wait? Characters are numbers?

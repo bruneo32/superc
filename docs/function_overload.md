@@ -66,10 +66,11 @@ int main(void) {
 }
 ```
 {% endtab %}
-
 {% endtabs %}
 
 ### Examples
+{% tabs fnov2 %}
+{% tab fnov2 Methods %}
 ```cpp
 #include <stdio.h>
 
@@ -101,6 +102,8 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% tab fnov2 Explicit reference %}
 ```cpp
 #include <stdio.h>
 
@@ -139,3 +142,5 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% endtabs %}

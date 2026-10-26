@@ -1,6 +1,6 @@
 ---
 layout: blog
-title: SuperC attributes
+title: (DRAFT) SuperC attributes
 ---
 
 > ⚠️ This is a **PROPOSAL DRAFT**. Some attributes are currently **not implemented**. Syntax may change<br>

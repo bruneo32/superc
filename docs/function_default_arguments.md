@@ -9,7 +9,7 @@ Unlike C, **SuperC** allows parameters to have optional default values.
 
 {% tabs functions1 %}
 {% tab functions1 SuperC %}
-```cpp
+```c
 #include <stdio.h>
 
 int add(int a, int b = 1) {
@@ -56,7 +56,7 @@ When a parameter has a *default value*, it can be selected by **name** instead o
 
 {% tabs functions2 %}
 {% tab functions2 SuperC %}
-```cpp
+```c
 #include <stdio.h>
 
 struct Point {
@@ -105,7 +105,7 @@ int main() {
 
 {% tabs functions3 %}
 {% tab functions3 SuperC %}
-```cpp
+```c
 #include <stdio.h>
 
 #define C_BLACK 0x000000FF
@@ -147,26 +147,12 @@ int main() {
 #define C_WHITE 0xFFFFFFFF
 #define C_RED   0xFF0000FF
 
-struct ButtonParams {
-  int background;
-  int color;
-  const char *text;
-  const char *tooltip;
-};
-
-Button Button_new(ButtonParams params);
+Button Button_new(int background, int color, const char *text, const char *tooltip);
 
 int main() {
-  Button btn_play = Button_new((ButtonParams){
-    .text = "Play!",
-    .tooltip = "Start a new adventure",
-  });
+  Button btn_play = Button_new(C_BLACK, C_WHITE, "Play!", "Start a new adventure");
 
-  Button btn_quit = Button_new((ButtonParams){
-    .color = C_RED,
-    .text = "Quit",
-    .tooltip = "Exit the game",
-  });
+  Button btn_quit = Button_new(C_BLACK, C_RED, "Quit", "Exit the game");
 
   ...
 

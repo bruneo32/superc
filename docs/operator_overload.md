@@ -63,6 +63,8 @@ There are some rules that the compiler follows:
 > Note: operator `~` is mostly used as [object destructor](soft_objects.md#constructors-and-destructors), rather than **arithmetic inversion**. That is why it is called \_\_del\_\_ instead of \_\_inv\_\_.
 
 ### Examples
+{% tabs opov1 %}
+{% tab opov1 string concat %}
 ```cpp
 #include <stdio.h>
 #include <string.h>
@@ -79,6 +81,8 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% tab opov1 Custom type %}
 ```cpp
 #include <stdio.h>
 #include <string.h>
@@ -119,6 +123,8 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% tab opov1 Errors %}
 ```cpp
 #include <stdio.h>
 #include <string.h>
@@ -138,3 +144,5 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% endtabs %}

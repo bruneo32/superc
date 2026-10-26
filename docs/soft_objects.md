@@ -1,5 +1,5 @@
 ---
-title: Soft objects (OOP)
+title: (DRAFT) Soft objects (OOP)
 layout: blog
 ---
 

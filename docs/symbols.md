@@ -9,6 +9,8 @@ Allows the user to change the output symbol of a variable or function.
 - New keyword `symbolof(identifier)`; returns the expected symbol name of the variable or function as a string literal.
 
 ### Examples
+{% tabs symbols1 %}
+{% tab symbols1 SuperC %}
 ```cpp
 #include <stdio.h>
 
@@ -50,6 +52,8 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% endtabs %}
 
 # Aliases
 Symbol mangling can be used to create syntax aliases to existing variables and functions in the compiled binary.
@@ -57,6 +61,8 @@ Symbol mangling can be used to create syntax aliases to existing variables and f
 Sure you can do `#define def abc`, but you cannot use preprocessor for [type methods](methods.md), so this is a useful feature of the symbol mangling.
 
 ### Examples
+{% tabs symbols2 %}
+{% tab symbols2 hard-alias %}
 ```cpp
 #include <stdio.h>
 #include <string.h>
@@ -78,6 +84,8 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% tab symbols2 soft-alias %}
 ```cpp
 #include <stdio.h>
 
@@ -100,3 +108,5 @@ int main(void) {
   return 0;
 }
 ```
+{% endtab %}
+{% endtabs %}
