@@ -3,6 +3,8 @@ title: (DRAFT) Default arguments in functions
 layout: blog
 ---
 
+> ⚠️ This is a **PROPOSAL DRAFT**. Default arguments are currently **not implemented**. Syntax may change<br>
+
 # Default arguments in functions
 Unlike C, **SuperC** allows parameters to have optional default values.
 - If an argument is not provided, the default value is used instead of an error.
