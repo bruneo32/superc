@@ -108,7 +108,15 @@ li {
 }
 
 li>p {
-	display: inline-block;
+	display: inline;
+}
+
+li:has(>hr) {
+	list-style: none;
+}
+
+li>hr {
+	margin: 10px 0;
 }
 
 h1,
