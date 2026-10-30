@@ -10,7 +10,7 @@ Struct embedding refers to the ability of a struct to:
 - copy members from another struct ***(composition)***
 - inherit behaviour from another struct ***(inheritance)***
 
-## Struct composition
+# Struct composition
 - A struct can copy members from another *(or more)* struct as an ***anonymous member***.
 - You can specify the *[offset](<https://www.geeksforgeeks.org/c/structure-member-alignment-padding-and-data-packing/>){:target="_blank"}* where the *anonymous member* will be placed.
 - All the *anonymous members* of a struct are considered ***parents*** of the struct. See [struct inheritance](#struct-inheritance).
@@ -100,7 +100,7 @@ int main(void) {
 {% endtab %}
 {% endtabs %}
 
-### Extract anonymous members
+## Extract anonymous members
 Even if a member is *anonymous*, you can still extract it or point to it, just by casting it to its ***parent*** type.
 
 - Casting a struct pointer to another *(that is **not a parent**)* is just a reinterpretation of that pointer type (same as classic **C**).
@@ -224,7 +224,7 @@ int main() {
 {% endtab %}
 {% endtabs %}
 
-### Opaque casting to parent
+## Opaque casting to parent
 What if you want to cast a struct to a ***parent*** type without performing any offset?
 - You can reinterpret a struct pointer to a ***parent*** without offset, by casting to `void*` before.
 
@@ -233,7 +233,7 @@ What if you want to cast a struct to a ***parent*** type without performing any 
 Animal *a = (Animal*)(void*)&mycat;
 ```
 
-## Struct inheritance
+# Struct inheritance
 > When a struct has composition, it also has inheritance.
 
 All the anonymous members of a struct are considered ***parents***, and the struct will inherit any [type method](type_methods.md) from them.
@@ -379,6 +379,225 @@ int main() {
   printf("My cat %s is %d years old, weights %.2f kg\n", mycat.name, mycat.parent_animal.age, mycat.parent_animal.weight);
   // My cat Mr. Pants is 4 years old, weights 5.0 kg
 
+  return 0;
+}
+```
+{% endtab %}
+{% endtabs %}
+
+## Struct encapsulation
+Along with *inheritance* and *composition*, **SuperC** also support a set of read and write access permissions for struct ***members*** and ***methods***. See the ***[access](attributes.md#__attribute__access)*** attribute.
+
+- All *members* and *methods* are ***public*** by default
+- All the *members* can be *defined* in the struct **literal initializator**. *If this is a concern for you, see [constructors with encapsulation](soft_objects.md#constructors-with-encapsulation)*
+
+> **Do not forget this!** Encapsulation in **SuperC** is only a *compile-time* **harness** to prevent naive **errors** in complex codebases. But **malicious** access to **private** and **protected** data is always **possible** in low level programming, as you can see the "HACKED" examples below. It's not a bug, it's how computers work.
+
+{% tabs struct_inheritance4 %}
+{% tab struct_inheritance4 simple %}
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+#define public    __attribute__((access(public)))
+#define private   __attribute__((access(private)))
+#define protected __attribute__((access(protected)))
+
+struct Account {
+  bool   is_active      private;
+  double accountBalance private;
+} [[packed]];
+
+void (struct Account *a) transfer(double value) {
+  // Perform here checks like:
+  // - is value valid?
+  // - is this account active?
+  // - ...
+  a->accountBalance += value;
+}
+
+double (struct Account a) balance() {
+  return a.accountBalance;
+}
+
+int main() {
+  struct Account acc = {
+    // Literal initialization is permitted
+    .accountBalance = 123.0
+  };
+
+  // Compile error: cannot modify accountBalance
+  // acc.accountBalance = 999999.99;
+
+  (&acc).transfer(100.5);
+  printf("Account balance: %.2f\n", acc.balance());
+
+  // Account balance: 223.50
+  return 0;
+}
+```
+{% endtab %}
+{% tab struct_inheritance4 members %}
+```c
+#include <stdio.h>
+
+#define public    __attribute__((access(public)))
+#define private   __attribute__((access(private)))
+#define protected __attribute__((access(protected)))
+
+struct A {
+  int pub public; // Already was public by default
+  int prv private;
+  int prt protected;
+};
+
+void (struct A a) dostuff() {
+  // Type method with receiver "struct A"
+  // has full access to protected and private
+  a.pub = 10;
+  a.prv = 11;
+  a.prt = 12;
+}
+
+struct B {
+  struct A; // inherit from struct A
+  int prv_b private;
+}
+
+void (struct B b) dostuff() {
+  // Receiver "struct B" inherits from 'struct A'
+  // so this scope has full access to
+  // protected members from 'struct A', but not privates
+  b.pub = 13;
+  b.prt = 14;
+  b.prv_b = 15;
+  // b.prv = 16;  // Error: 'prv' is private for 'struct A'
+}
+
+int main() {
+  struct A stt_a = {1,2,3};
+  stt_a.pub = 7;     // public is accessible anywhere
+  // stt_a.prv = 8;  // Error: 'prv' is private for 'struct A'
+  // stt_a.prt = 9;  // Error: 'prt' is protected for 'struct A'
+  return 0;
+}
+```
+{% endtab %}
+{% tab struct_inheritance4 readonly access %}
+```c
+#define public    __attribute__((access(public)))
+#define private   __attribute__((access(private)))
+#define protected __attribute__((access(protected)))
+
+// In this kind of struct, you really
+// don't want anyone messing with
+// 'capacity' or 'size', but still
+// 'size' can be publicly readable
+
+typedef struct IntList IntList;
+struct IntList {
+  int *data;
+                  // read is public, write is private
+  size_t size     [[access(public,private)]];
+  size_t capacity private;
+};
+
+// ... here goes methods to manipulate size and capacity safely ...
+```
+{% endtab %}
+{% tab struct_inheritance4 methods %}
+```c
+#include <stdio.h>
+
+#define public    __attribute__((access(public)))
+#define private   __attribute__((access(private)))
+#define protected __attribute__((access(protected)))
+
+struct A {
+  int abc;
+};
+
+// Already was public by default
+void (struct A a) pub_func() public {
+  printf("A.pub_func\n");
+}
+
+void (struct A a) prv_func() private {
+  printf("A.prv_func\n");
+}
+
+void (struct A a) prt_func() protected {
+  printf("A.prt_func\n");
+}
+
+struct B {
+  struct A; // inherit from struct A
+};
+
+void (struct B b) dostuff() {
+  b.pub_func();
+  b.prt_func();
+  // b.prv_func();  // Error: 'prv_func()' is private for 'struct A'
+}
+
+int main() {
+  struct A stt_a = {1};
+  stt_a.pub_func();     // public is accessible anywhere
+  // stt_a.prv_func();  // Error: 'prv_func()' is private for 'struct A'
+  // stt_a.prt_func();  // Error: 'prt_func()' is protected for 'struct A'
+  return 0;
+}
+```
+{% endtab %}
+{% tab struct_inheritance4 hacked1 %}
+```c
+// Imagine that Account type is very well protected.
+// We can still easily hoist the private data
+// Method 1. By creating a new type method
+
+#include <stdio.h>
+
+// From SIMPLE example
+#include "account.h"
+
+void (struct Account *a) myhack() {
+  a->accountBalance += 999999.99;
+}
+
+int main() {
+  struct Account acc = {0, 123.0};
+
+  (&acc).myhack();
+
+  printf("Account balance: %.2f\n", acc.balance());
+  // Account balance: 1000122.99
+  return 0;
+}
+```
+{% endtab %}
+{% tab struct_inheritance4 hacked2 %}
+```c
+// Imagine that Account type is very well protected,
+// even using [[closed]].
+// We can still easily access the private data
+// Method 2. By knowing the offset of the data
+
+#include <stdio.h>
+
+// From SIMPLE example
+#include "account.h"
+
+int main() {
+  struct Account acc = {0, 123.0};
+
+  // Get a raw pointer to 'acc', plus the offset of bytes
+  // to skip to access the data.
+  // In this case, we have to skip 1 byte to get to 'accountBalance'
+  double *accountBalance = 1 + (void*)&acc;
+  *accountBalance = 696969.69;
+
+  printf("Account balance: %.2f\n", acc.balance());
+  // Account balance: 696969.69
   return 0;
 }
 ```

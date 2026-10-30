@@ -75,3 +75,41 @@ Makes the *struct/union* members *packed*, so they are aligned to their natural 
 
 ## \_\_attribute\_\_((symbol))
 Changes the symbol of the *variable* or *function*. See [symbols](symbols.md) for more information.
+
+## \_\_attribute\_\_((noinit))
+> Not implemented yet
+
+Prevents aggregate initialization and compound-literal initialization of the attributed type outside its declaration file *(same \_\_FILE\_\_)*.
+
+## \_\_attribute\_\_((closed))
+> Not implemented yet
+
+Prevents defining new type methods outside the declaration file of the receiver's declaring type.
+
+A method must be declared in the same declaration file as its receiver's declaring type. Its implementation may reside in another file, provided its declaration belongs to the type's declaration file.
+
+## \_\_attribute\_\_((access))
+> Not implemented yet
+
+Controls the **access permissions** of struct **members**, and the call *visibility* of type **methods**.
+- With **one** argument, sets both **read** and **write** *permissions*
+- With **two** arguments, the first specifies **read** *permission* and the second specifies **write** *permission*
+
+For type methods:
+- The **read** argument specifies ***call visibility***
+- The **write** argument is *ignored*
+
+Access levels:
+- **public**: accessible from any scope.
+- **private**: accessible only from methods whose receiver is the declaring type.
+- **protected**: accessible from methods whose receiver is the declaring type or one of its descendants.
+
+Access permissions are checked at compile time and do not change the memory representation or ABI of the type.
+
+```c
+// Set both read and write permission to private
+__attribute__((access(private)))
+
+// Set read permission to public, and write to private
+__attribute__((access(public, private)))
+```
