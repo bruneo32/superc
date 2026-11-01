@@ -15,8 +15,7 @@ static void  gen_stmt(Node *node, bool is_root_block);
 
 static count_t emit_llvm(LLVM *llvm);
 
-LLVM *fn_retval_ll = NULL;
-Label fn_label_ret = {};
+Label *fn_label_ret = NULL;
 
 static bool _is_reachable_code;
 static count_t ssa_id;
@@ -1178,8 +1177,8 @@ static void gen_stmt(Node *node, bool is_root_block) {
 
     case ND_RETURN: {
       if (node->lhs)
-        gen_store(current_fn->ty->return_ty, gen_expr(node->lhs), fn_retval_ll);
-      gen_jmp(&fn_label_ret);
+        gen_store(current_fn->ty->return_ty, gen_expr(node->lhs), current_fn->retvar);
+      gen_jmp(fn_label_ret);
     } break;
 
     case ND_IF: {
@@ -1944,8 +1943,6 @@ static void emitd_initializer(Initializer *init) {
     } break;
 
     case ND_LABEL_VAL: {
-      // FIXME: In this moment of the emission,
-      //        the label is not yet assigned an SSA.
       emitf("blockaddress(@%s, %%%ld)",
         get_symbol(init->expr->var),
         init->expr->label->ssa);
@@ -2127,7 +2124,7 @@ static void emit_data(Obj *prog) {
   }
 }
 
-static void emit_text(Obj *prog) {
+static void gen_text(Obj *prog) {
   for (Obj *fn = prog; fn; fn = fn->next) {
     if (!fn->is_function || is_builtin_fn(fn))
       continue;
@@ -2170,13 +2167,114 @@ static void emit_text(Obj *prog) {
     const char *symbol = get_symbol(fn);
 
     Type *ret_ty = fn->ty->sret_ty ? ty_void : fn->ty->return_ty;
-    const char *ll_ret_ty = (ret_ty == ty_void) ? "void" : llvm_type(ret_ty);
 
-    /* Allocate return value */
-    if (ret_ty->kind != TY_VOID) {
-      fn_retval_ll = gen_alloca(ret_ty, 0);
-    } else
-      fn_retval_ll = NULL;
+    /* Allocate return value and label */
+    fn_label_ret = calloc(1, sizeof(Label));
+
+    if (ret_ty->kind != TY_VOID)
+      fn->retvar = gen_alloca(ret_ty, 0);
+    else
+      fn->retvar = NULL;
+
+    /* ==== Function header ==== */
+    ssa_id = 0;
+
+    // A buffer for a struct/union return value is passed
+    // as the hidden first parameter.
+    if (fn->ty->sret_ty)
+      /* Refer to the sret when returning */
+      fn->retvar = gen_addr_var(fn->ty->sret_ty, make_ssa_var(0, fn->ty->sret_ty));
+
+    if (fn->is_definition) { // fn declarations do: fn->params = 0x0
+      // Reserve the ssa of the parameter declaration
+      for (Type *param = fn->ty->params; param; param = param->next)
+        new_ssa;
+
+      Obj *param_var = fn->params;
+      for (Type *param = fn->ty->params; param; param = param->next) {
+        param_var->llvm = gen_alloca(param, 0);
+        param_var = param_var->next;
+      }
+    }
+
+    /* ==== Prologue ==== */
+
+    /* Allocate local variables */
+    for (Obj *local = fn->locals; local; local = local->next) {
+      /* Create cross-reference so it can be addressed */
+      local->llvm = gen_alloca(local->ty, 0);
+    }
+
+    // [https://www.sigbus.info/n1570#5.1.2.2.3p1] The C spec defines
+    // a special rule for the main function. Reaching the end of the
+    // main function is equivalent to returning 0, even though the
+    // behavior is undefined for the other functions.
+    if (strcmp(symbol, "main") == 0)
+      gen_store(ret_ty, gen_inum(ret_ty, 0), fn->retvar);
+
+    /* Generate stores for parameters */
+    count_t pssa = 0;
+    for (Obj *param = fn->params; param; param = param->next)
+      gen_store_param(pssa++, param->ty, param, param->llvm);
+
+    /* ==== BODY ==== */
+    /* Generate LLVM IR AST */
+    if (fn->body)
+      gen_stmt(fn->body, true);
+    // Return label receive the last SSA
+    gen_label(fn_label_ret);
+
+    /* ==== Epilogue ==== */
+    // TODO: Defers
+    if (ret_ty->kind != TY_VOID)
+      gen_load(ret_ty, fn->retvar);
+
+    /* Reset SSA indexes.
+    * > Note that if the first instruction is a label,
+    *   then ssa shall start at 0: instead of 1:
+    *   (if there was no params) */
+    fn->llvm = ll_head.next; /* Skip dummy head */
+    if (fn->llvm && fn->llvm->kind != LL_LABEL)
+      new_ssa;
+
+    /* Enumerate instructions before emitting */
+    for (LLVM *ll = fn->llvm; ll; ll = ll->next) {
+      if (is_assignable_ll(ll)) {
+        ll->ssa = new_ssa;
+        /* Propagate ssa to label */
+        if (ll->kind == LL_LABEL)
+          ll->label->ssa = ll->ssa;
+      }
+    }
+  }
+}
+
+static void emit_text(Obj *prog) {
+  for (Obj *fn = prog; fn; fn = fn->next) {
+    if (!fn->is_function || is_builtin_fn(fn))
+      continue;
+
+    // No code is emitted for "static inline" functions
+    // if no one is referencing them.
+    if (!fn->is_live)
+    skip_emitfn:
+      continue;
+
+    if (!fn->is_definition) {
+      // If this is a forward declaration instead of an
+      // extern function, we don't need to emit anything.
+      const char *fnsym = get_symbol(fn);
+      for (Obj *fw = fn->next; fw; fw = fw->next) {
+        if (!strcmp(fnsym, get_symbol(fw)))
+          goto skip_emitfn;
+      }
+      // If is not a forward declaration, emit a declaration
+      // normally, because this is an extern function.
+    }
+
+    const char *symbol = get_symbol(fn);
+    Type *ret_ty = fn->ty->sret_ty ? ty_void : fn->ty->return_ty;
+    const char *ll_ret_ty = (ret_ty == ty_void) ? "void" : llvm_type(ret_ty);
 
     /* ==== Function header ==== */
     if (!fn->is_definition) {
@@ -2199,23 +2297,14 @@ static void emit_text(Obj *prog) {
     // as the hidden first parameter.
     if (fn->ty->sret_ty) {
       const char *llvmty_sret = llvm_type(fn->ty->sret_ty);
-      emitf("%s* noalias sret(%s) align %d %%%ld", llvmty_sret, llvmty_sret, fn->ty->sret_ty->align, new_ssa);
-      /* Refer to the sret when returning */
-      fn_retval_ll = gen_addr_var(fn->ty->sret_ty, make_ssa_var(0, fn->ty->sret_ty));
+      emitf("%s* noalias sret(%s) align %d %%%ld",
+            llvmty_sret, llvmty_sret,
+            fn->ty->sret_ty->align, new_ssa);
     }
 
-    Obj *last_param = 0;
     for (Type *param = fn->ty->params; param; param = param->next) {
-      if (ssa_id != 0)
+      if (param != fn->ty->params)
         emitf(", ");
-
-      // fn declarations do: fn->params = 0x0
-      if (fn->is_definition) {
-        Obj *param_var = last_param ? last_param->next : fn->params;
-        param_var->llvm = gen_alloca(param, 0);
-        last_param = param_var;
-      }
-
       emitf("%s%s %%%ld", llvm_type(param), is_noundef(param) ? " noundef" : "",
             new_ssa);
     }
@@ -2231,82 +2320,21 @@ static void emit_text(Obj *prog) {
       continue;
     }
 
-    /* ==== Prologue ==== */
-
-    /* Allocate local variables */
-    for (Obj *local = fn->locals; local; local = local->next) {
-      /* Create cross-reference so it can be addressed */
-      local->llvm = gen_alloca(local->ty, 0);
-    }
-
-    // [https://www.sigbus.info/n1570#5.1.2.2.3p1] The C spec defines
-    // a special rule for the main function. Reaching the end of the
-    // main function is equivalent to returning 0, even though the
-    // behavior is undefined for the other functions.
-    if (strcmp(symbol, "main") == 0)
-      gen_store(ret_ty, gen_inum(ret_ty, 0), fn_retval_ll);
-
-    /* Generate stores for parameters */
-    count_t pssa = 0;
-    for (Obj *param = fn->params; param; param = param->next) {
-      gen_store_param(pssa++, param->ty, param, param->llvm);
-    }
-    LLVM *fn_header_last = _emit_cur;
-
     /* ==== BODY ==== */
-
-    /* Generate LLVM IR AST */
-    gen_stmt(fn->body, true);
-    /* Recover reachability */
-    _is_reachable_code = true;
-
-    /* End header block with a terminator */
-    if (fn_header_last->next && fn_header_last->next->kind == LL_LABEL) {
-      Label *label = fn_header_last->next->label;
-      LLVM *llvm = calloc(1, sizeof(LLVM));
-      llvm->kind = LL_JMP;
-      llvm->label = label;
-      label->is_live = true;
-      /* Insert before the label */
-      llvm->next = fn_header_last->next;
-      fn_header_last->next = llvm;
-    }
-
-    /* Reset SSA indexes.
-    * > Note that if the first instruction is a label,
-    * then ssa shall start at 0: instead of 1:
-    * (if there was no params) */
-    LLVM *ll_body = ll_head.next; /* Skip dummy head */
-    if (ll_body && ll_body->kind != LL_LABEL)
-      ssa_id++;
-
-    /* Enumerate instructions before emitting */
-    for (LLVM *ll = ll_body; ll; ll = ll->next) {
-      if (is_assignable_ll(ll)) {
-        ll->ssa = new_ssa;
-        /* Propagate ssa to label */
-        if (ll->kind == LL_LABEL)
-          ll->label->ssa = ll->ssa;
-      }
-    }
-    /* Return label receive the last SSA */
-    fn_label_ret.ssa = new_ssa;
-
-    /* Emit LLVM IR */
+    LLVM *ll_body = fn->llvm;
+    count_t last_ssa;
     while (ll_body) {
       emit_llvm(ll_body);
+      last_ssa = ll_body->ssa;
       ll_body = ll_body->next;
     }
 
     /* ==== Epilogue ==== */
     // TODO: Defers
-    emit_label(&fn_label_ret);
-
     if (ret_ty->kind == TY_VOID)
       emitf("  ret void");
     else
-      emitf("  ret %s %%%ld", llvm_type(ret_ty),
-            emit_load(new_ssa, gen_load(ret_ty, fn_retval_ll)));
+      emitf("  ret %s %%%ld", llvm_type(ret_ty), last_ssa);
     emitln;
 
     emitc('}');
@@ -2335,6 +2363,7 @@ void codegen(Obj *prog, FILE *out) {
   llvmty_usize = llvm_type(ty_usize);
 
   _is_reachable_code = true;
+  gen_text(prog);
 
   emit_union_structs_decl();
   emitln;

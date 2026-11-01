@@ -216,6 +216,7 @@ struct Obj {
   Obj *va_area;
   int stack_size;
   Node *defers;
+  LLVM *retvar;
 
   // Static inline function
   bool is_live;
