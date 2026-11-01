@@ -25,7 +25,7 @@ version.h: .git/HEAD $(shell git rev-parse --git-dir)/refs/heads/$(shell git bra
 	echo "#endif // _VERSION_H_IN" >> version.h
 
 test/%.exe: superc test/%.c
-	./superc -Iinclude -Itest -c -o test/$*.o test/$*.c
+	./superc -fpic -Iinclude -Itest -c -o test/$*.o test/$*.c
 	$(CC) -pthread -o $@ test/$*.o -xc test/common
 
 test: $(TESTS)

@@ -613,6 +613,9 @@ static void assemble(char *input, char *output) {
   strarray_push(&arr, "-mtriple=x86_64-pc-linux-gnu");
   strarray_push(&arr, "--filetype=obj");
 
+  if (opt_fpic)
+    strarray_push(&arr, "-relocation-model=pic");
+
   for (int i = 0; i < as_extra_args.len; i++)
     strarray_push(&arr, as_extra_args.data[i]);
 
