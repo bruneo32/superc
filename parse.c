@@ -3443,13 +3443,17 @@ static Node *unary(Token **rest, Token *tok) {
   // Read ++i as i+=1
   if (equal(tok, "++")) {
     Node *lvalue = unary(rest, tok->next);
-    return to_assign(new_add(lvalue, new_num(1, tok), tok), lvalue);
+    Node *num = new_num(1, tok);
+    num->fval = 1;
+    return to_assign(new_add(lvalue, num, tok), lvalue);
   }
 
   // Read --i as i-=1
   if (equal(tok, "--")) {
     Node *lvalue = unary(rest, tok->next);
-    return to_assign(new_sub(lvalue, new_num(1, tok), tok), lvalue);
+    Node *num = new_num(1, tok);
+    num->fval = 1;
+    return to_assign(new_sub(lvalue, num, tok), lvalue);
   }
 
   // [GNU] labels-as-values
@@ -3767,9 +3771,12 @@ static Node *struct_ref(Node *node, Token *tok) {
 // Convert A++ to `(typeof A)((A += 1) - 1)`
 static Node *new_inc_dec(Node *node, Token *tok, int addend) {
   add_type(node);
-  return new_cast(new_add(to_assign(new_add(node, new_num(addend, tok), tok), node),
-                          new_num(-addend, tok), tok),
-                  node->ty);
+  Node *anum = new_num(addend, tok);
+  anum->fval = addend;
+  Node *bnum = new_num(-addend, tok);
+  bnum->fval = -addend;
+  return new_cast(new_add(to_assign(new_add(node, anum, tok), node),
+                  bnum, tok), node->ty);
 }
 
 // postfix = "(" type-name ")" "{" initializer-list "}"
