@@ -718,11 +718,11 @@ static LLVM *gen_expr(Node *node) {
     case ND_NUM:
       return gen_num(node->ty, node);
     case ND_ADDR:
+    case ND_LABEL_VAL:
         return gen_addr(node);
     case ND_DEREF:
     case ND_VAR:
-    case ND_MEMBER:
-    case ND_LABEL_VAL: {
+    case ND_MEMBER: {
       if (node->ty->kind == TY_ARRAY)
         return gen_addr(node);
       return gen_load(node->ty, gen_addr(node));
