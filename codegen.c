@@ -664,6 +664,21 @@ static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_mod(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_REM;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_neg(Type *ty, LLVM *src) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -885,6 +900,23 @@ static LLVM *gen_expr(Node *node) {
       }
 
       return gen_div(node->ty, lhs, rhs);
+    }
+
+    case ND_MOD: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+          int64_t val1 = eval2(node->lhs, NULL);
+          int64_t val2 = eval2(node->rhs, NULL);
+          return gen_inum(node->ty, val1 % val2);
+        }
+      }
+
+      return gen_mod(node->ty, lhs, rhs);
     }
 
     case ND_NEG: {
@@ -1716,6 +1748,14 @@ static count_t emit_llvm(LLVM *llvm) {
     emitfln("  %%%ld = %s %s %s, %s", llvm->ssa,
             (llvm->lhs->ty->is_unsigned || llvm->rhs->ty->is_unsigned)
               ? "udiv" : "sdiv",
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_REM:
+    emitfln("  %%%ld = %s %s %s, %s", llvm->ssa,
+            (llvm->lhs->ty->is_unsigned || llvm->rhs->ty->is_unsigned)
+              ? "urem" : "srem",
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));

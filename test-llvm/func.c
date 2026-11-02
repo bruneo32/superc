@@ -73,6 +73,11 @@ int main(int argc, char *argv[]) {
 	int b = 10 + (2 * 3);
 
 test_label: ;
+	int x = r.d % 3;
+	unsigned int y = (unsigned int)r.d % 4;
+	putc(x, stdout);
+	putc(y, stdout);
+	// float y = a % 2.0f;
 
 	float f = (float)b;
 	int c = (int)f;

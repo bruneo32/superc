@@ -543,6 +543,7 @@ typedef enum LLKind {
   LL_SUB,
   LL_MUL,
   LL_DIV,
+  LL_REM,
   /* FLOAT binops */
   LL_FADD,
   LL_FSUB,
