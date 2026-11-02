@@ -304,8 +304,24 @@ static LLVM *gen_getelementptr(Type *ty, LLVM *src, int base_idx, LLVM *elem_idx
 
   if (elem_idx) {
     // Cast to i32 if not integer
-    if (!is_integer(elem_idx->ty))
-      elem_idx = gen_cast(elem_idx->ty, ty_int, elem_idx);
+    if (!is_integer(elem_idx->ty)) {
+      // The front end lowers `p[N]` to `p + (void**)(N * sizeof(*p))`, i.e. it
+      // stores the *byte* offset in a pointer-typed constant. GEP wants the
+      // *element* index, so unwrap the cast and divide by the element size.
+      LLVM *inner = elem_idx;
+      if ((inner->kind == LL_PTR2INT || inner->kind == LL_INT2PTR) && inner->src)
+        inner = inner->src;
+
+      if (inner->kind == LL_NUM && ty && ty->base && ty->base->size > 1) {
+        LLVM *num = calloc(1, sizeof(LLVM));
+        num->kind = LL_NUM;
+        num->ty   = ty_int;
+        num->val  = inner->val / ty->base->size;
+        elem_idx  = num;
+      } else {
+        elem_idx = gen_cast(elem_idx->ty, ty_int, elem_idx);
+      }
+    }
     llvm->elem_idx = elem_idx;
   }
 
