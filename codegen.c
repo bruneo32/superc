@@ -708,6 +708,36 @@ static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_shl(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_SHL;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
+static LLVM *gen_shr(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = (ty->is_unsigned) ? LL_LSHR : LL_ASHR;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_funcall(Node *fn, ListLLVM *args) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -950,6 +980,34 @@ static LLVM *gen_expr(Node *node) {
       }
 
       return gen_bitand(node->ty, lhs, rhs);
+    }
+
+    case ND_SHL: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+        int64_t val1 = eval2(node->lhs, NULL);
+        int64_t val2 = eval2(node->rhs, NULL);
+        return gen_inum(node->ty, val1 << val2);
+      }
+
+      return gen_shl(node->ty, lhs, rhs);
+    }
+
+    case ND_SHR: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+        int64_t val1 = eval2(node->lhs, NULL);
+        int64_t val2 = eval2(node->rhs, NULL);
+        return gen_inum(node->ty, val1 >> val2);
+      }
+
+      return gen_shr(node->ty, lhs, rhs);
     }
 
     case ND_NOT: {
@@ -1804,6 +1862,24 @@ static count_t emit_llvm(LLVM *llvm) {
   /* BITWISE binops */
   case LL_BITAND:
     emitfln("  %%%ld = and %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_SHL:
+    emitfln("  %%%ld = shl %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_ASHR:
+    emitfln("  %%%ld = ashr %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_LSHR:
+    emitfln("  %%%ld = lshr %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
