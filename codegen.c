@@ -356,7 +356,7 @@ static LLVM *gen_addr(Node *node) {
   case ND_VAR:
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
-    return gen_getelementptr(node->member->ty, gen_expr(node->lhs),
+    return gen_getelementptr(node->member->ty, gen_addr(node->lhs),
                              0, gen_inum(ty_int, node->member->idx));
   case ND_LABEL_VAL:
     return gen_blockaddress(node->ty, node->label, node->var);
@@ -1653,7 +1653,7 @@ static count_t emit_llvm(LLVM *llvm) {
     if (llvm->sret) {
       const char *llvmty_sret = llvm_type(llvm->sret->ty);
       emitf("%s* sret(%s) align %d %s", llvmty_sret, llvmty_sret,
-        llvm->lhs->ty->align, get_symvar(llvm->sret));
+            llvm->sret->ty->align, get_symvar(llvm->sret));
       if (param)
         emitf(", ");
     }
