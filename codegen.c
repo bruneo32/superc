@@ -29,14 +29,8 @@ static HashMap mp_unions_structs = {0};
 
 void store_union_struct_decl(Type *ty) {
   assert(ty->tagname);
-
-  /* Get tagname */
-  char tagname[ty->tagname->len + 1];
-  strncpy(tagname, ty->tagname->loc, ty->tagname->len);
-  tagname[ty->tagname->len] = '\0';
-
-  if (!hashmap_get(&mp_unions_structs, tagname))
-    hashmap_put(&mp_unions_structs, tagname, ty);
+  if (!hashmap_get2(&mp_unions_structs, ty->tagname->loc, ty->tagname->len))
+    hashmap_put2(&mp_unions_structs, ty->tagname->loc, ty->tagname->len, ty);
 }
 
 // Round up `n` to the nearest multiple of `align`. For instance,

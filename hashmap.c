@@ -125,7 +125,7 @@ void *hashmap_get2(HashMap *map, char *key, int keylen) {
 }
 
 void hashmap_put(HashMap *map, char *key, void *val) {
-   hashmap_put2(map, key, strlen(key), val);
+  hashmap_put2(map, key, strlen(key), val);
 }
 
 void hashmap_put2(HashMap *map, char *key, int keylen, void *val) {
