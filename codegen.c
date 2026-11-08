@@ -530,6 +530,10 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   llvm->ty = to;
   llvm->src = ref;
 
+  // Reuse func_ty as a "dst_ty"
+  // for some extra cases
+  llvm->func_ty = from;
+
   advance_emit(llvm);
   return llvm;
 }
@@ -848,6 +852,12 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
+      // LLVM arithmetic operates on integers, not pointers
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+      if (ty_is_pointer(node->rhs->ty))
+        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+
       return gen_add(node->ty, lhs, rhs);
     }
     case ND_SUB: {
@@ -872,6 +882,12 @@ static LLVM *gen_expr(Node *node) {
           return gen_fnum(node->ty, val1 - val2);
         }
       }
+
+      // LLVM arithmetic operates on integers, not pointers
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+      if (ty_is_pointer(node->rhs->ty))
+        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
 
       return gen_sub(node->ty, lhs, rhs);
     }
@@ -898,6 +914,12 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
+      // LLVM arithmetic operates on integers, not pointers
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+      if (ty_is_pointer(node->rhs->ty))
+        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+
       return gen_mul(node->ty, lhs, rhs);
     }
     case ND_DIV: {
@@ -923,6 +945,12 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
+      // LLVM arithmetic operates on integers, not pointers
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+      if (ty_is_pointer(node->rhs->ty))
+        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+
       return gen_div(node->ty, lhs, rhs);
     }
 
@@ -939,6 +967,12 @@ static LLVM *gen_expr(Node *node) {
           return gen_inum(node->ty, val1 % val2);
         }
       }
+
+      // LLVM arithmetic operates on integers, not pointers
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+      if (ty_is_pointer(node->rhs->ty))
+        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
 
       return gen_mod(node->ty, lhs, rhs);
     }
@@ -1559,7 +1593,7 @@ static count_t emit_bitcast(count_t ssa, LLVM *ll) {
   if (!ssa) ssa = ll->ssa;
 
   emitfln("  %%%ld = bitcast %s* %s to %s", ssa,
-          llvm_type(ll->src->ty), get_symvar(ll->src),
+          llvm_type(ll->func_ty), get_symvar(ll->src),
           llvm_type(ll->ty));
 
   return ssa;
@@ -1570,7 +1604,7 @@ static count_t emit_ptrtoint(count_t ssa, LLVM *ll) {
   if (!ssa) ssa = ll->ssa;
 
   emitfln("  %%%ld = ptrtoint %s %s to %s", ssa,
-          llvm_type(ll->src->ty), get_symvar(ll->src),
+          llvm_type(ll->func_ty), get_symvar(ll->src),
           llvm_type(ll->ty));
 
   return ssa;
