@@ -2306,8 +2306,8 @@ flt_number eval_double(Node *node) {
 
   if (is_integer(node->ty)) {
     if (node->ty->is_unsigned)
-      return (flt_number)eval(node);
-    return (flt_number)eval(node);
+      return (uint64_t)eval(node);
+    return (int64_t)eval(node);
   }
 
   switch (node->kind) {

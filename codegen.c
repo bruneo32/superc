@@ -834,22 +834,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM &&
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 + val2);
-          return gen_inum(node->ty, val1 + val2);
-        } else if (lhs->kind == LL_NUMF &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 + val2);
-          return gen_fnum(node->ty, val1 + val2);
-        }
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       // LLVM arithmetic operates on integers, not pointers
@@ -865,22 +855,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM &&
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 - val2);
-          return gen_inum(node->ty, val1 - val2);
-        } else if (lhs->kind == LL_NUMF &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 - val2);
-          return gen_fnum(node->ty, val1 - val2);
-        }
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       // LLVM arithmetic operates on integers, not pointers
@@ -896,22 +876,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM &&
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 * val2);
-          return gen_inum(node->ty, val1 * val2);
-        } else if (lhs->kind == LL_NUMF &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 * val2);
-          return gen_fnum(node->ty, val1 * val2);
-        }
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       // LLVM arithmetic operates on integers, not pointers
@@ -927,22 +897,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM &&
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
           (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 / val2);
-          return gen_inum(node->ty, val1 / val2);
-        } else if (lhs->kind == LL_NUMF &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 / val2);
-          return gen_fnum(node->ty, val1 / val2);
-        }
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       // LLVM arithmetic operates on integers, not pointers
@@ -959,14 +919,9 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          return gen_inum(node->ty, val1 % val2);
-        }
-      }
+      if (opt_constant_folding && lhs->kind == LL_NUM &&
+        (rhs->kind == LL_NUM || rhs->kind == LL_NUMF))
+        return gen_inum(node->ty, eval2(node, NULL));
 
       // LLVM arithmetic operates on integers, not pointers
       if (ty_is_pointer(node->lhs->ty))
@@ -981,18 +936,8 @@ static LLVM *gen_expr(Node *node) {
       LLVM *lhs = gen_expr(node->lhs);
 
       /* If lhs is a number literal, evaluate it and return the number */
-      if (lhs->kind == LL_NUM) {
-        int64_t val = eval2(node->lhs, NULL);
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, -val);
-        return gen_inum(node->ty, -val);
-      } else if (lhs->kind == LL_NUMF) {
-        flt_number val = eval_double(node->lhs);
-        if (is_integer(node->ty))
-          return gen_inum(node->ty, -val);
-        return gen_fnum(node->ty, -val);
-      }
-
+      if (opt_constant_folding && lhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node, NULL));
       return gen_neg(node->ty, lhs);
     }
 
@@ -1001,12 +946,8 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-        int64_t val1 = eval2(node->lhs, NULL);
-        int64_t val2 = eval2(node->rhs, NULL);
-        return gen_inum(node->ty, val1 & val2);
-      }
-
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitand(node->ty, lhs, rhs);
     }
 
@@ -1015,12 +956,8 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-        int64_t val1 = eval2(node->lhs, NULL);
-        int64_t val2 = eval2(node->rhs, NULL);
-        return gen_inum(node->ty, val1 << val2);
-      }
-
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node, NULL));
       return gen_shl(node->ty, lhs, rhs);
     }
 
@@ -1029,12 +966,8 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-        int64_t val1 = eval2(node->lhs, NULL);
-        int64_t val2 = eval2(node->rhs, NULL);
-        return gen_inum(node->ty, val1 >> val2);
-      }
-
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node, NULL));
       return gen_shr(node->ty, lhs, rhs);
     }
 
@@ -1042,13 +975,10 @@ static LLVM *gen_expr(Node *node) {
       LLVM *lhs = gen_expr(node->lhs);
 
       /* If lhs is a number literal, evaluate it and return the number */
-      if (lhs->kind == LL_NUM) {
-        int64_t val = eval2(node->lhs, NULL);
-        return gen_inum(node->ty, !val);
-      } else if (lhs->kind == LL_NUMF) {
-        flt_number val = eval_double(node->lhs);
-        return gen_fnum(node->ty, !val);
-      }
+      if (lhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node->lhs, NULL));
+      else if (lhs->kind == LL_NUMF)
+        return gen_fnum(node->ty, eval_double(node->lhs));
 
       if (is_flonum(lhs->ty))
         /* False if either is NaN */
@@ -1061,20 +991,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 == val2);
-          return gen_inum(node->ty, val1 == val2);
-        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 == val2);
-          return gen_fnum(node->ty, val1 == val2);
-        }
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       if (is_flonum(lhs->ty))
@@ -1088,20 +1010,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 != val2);
-          return gen_inum(node->ty, val1 != val2);
-        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 != val2);
-          return gen_fnum(node->ty, val1 != val2);
-        }
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       if (is_flonum(lhs->ty))
@@ -1115,20 +1029,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 < val2);
-          return gen_inum(node->ty, val1 < val2);
-        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 < val2);
-          return gen_fnum(node->ty, val1 < val2);
-        }
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       if (is_flonum(lhs->ty))
@@ -1144,20 +1050,12 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding) {
-        if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
-          int64_t val1 = eval2(node->lhs, NULL);
-          int64_t val2 = eval2(node->rhs, NULL);
-          if (is_flonum(node->ty))
-            return gen_fnum(node->ty, val1 <= val2);
-          return gen_inum(node->ty, val1 <= val2);
-        } else if (lhs->kind == LL_NUMF && rhs->kind == LL_NUMF) {
-          flt_number val1 = eval_double(node->lhs);
-          flt_number val2 = eval_double(node->rhs);
-          if (is_integer(node->ty))
-            return gen_inum(node->ty, val1 <= val2);
-          return gen_fnum(node->ty, val1 <= val2);
-        }
+      if (opt_constant_folding &&
+          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
+          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
+        if (is_flonum(node->ty))
+          return gen_fnum(node->ty, eval_double(node));
+        return gen_inum(node->ty, eval2(node, NULL));
       }
 
       if (is_flonum(lhs->ty))
