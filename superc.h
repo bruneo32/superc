@@ -431,6 +431,7 @@ struct Type {
   Member *members;
   bool is_flexible;
   bool is_packed;
+  long trail_pad;
 
   // Function type
   Type *return_ty;
@@ -449,6 +450,8 @@ struct Member {
   int idx;
   int align;
   int offset;
+  int slot;   // LLVM struct slot index (for GEP)
+  long pad;   // LLVM bytes before this slot. [N x i8]
 
   // Bitfield
   bool is_bitfield;

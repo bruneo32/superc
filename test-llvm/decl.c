@@ -69,6 +69,8 @@ struct mypack {
 	long b;
 } __attribute__((packed)) mypacked;
 
+struct saligned { _Alignas(16) char x, y; } sa = {22,33};
+
 typedef unsigned long bit;
 
 struct ByteField {
@@ -160,6 +162,8 @@ int main() {
 		int c;
 		int d;
 	} def;
+
+	def.c = sa.y;
 
 	// printf("anonymous\n");
 	// printf("-> %c\n", l);

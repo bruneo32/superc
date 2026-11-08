@@ -351,7 +351,7 @@ static LLVM *gen_addr(Node *node) {
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
     return gen_getelementptr(node->member->ty, gen_addr(node->lhs),
-                             0, gen_inum(ty_int, node->member->idx));
+                             0, gen_inum(ty_int, node->member->slot));
   case ND_LABEL_VAL:
     return gen_blockaddress(node->ty, node->label, node->var);
   default:
@@ -2014,6 +2014,18 @@ static void emitd_initializer(Initializer *init) {
     emitc('{');
     bool first = true;
     for (Member *mem = init->ty->members; mem;) {
+      if (mem->is_bitfield && mem->bit_width == 0) {
+        mem = mem->next;
+        continue;
+      }
+
+      if (mem->pad) {
+        if (!first)
+          emitf(", ");
+        first = false;
+        emitf("[%ld x i8] zeroinitializer", mem->pad);
+      }
+
       if (!first)
         emitf(", ");
       first = false;
@@ -2029,48 +2041,37 @@ static void emitd_initializer(Initializer *init) {
 
       /* Handle bitfields */
       uint64_t nbits = mem->bit_width;
-      Member *mem_cx = mem;
-      while (mem_cx->next && mem_cx->next->is_bitfield) {
-        Member *_mem_next = mem_cx->next;
-        nbits += _mem_next->bit_width;
-        mem_cx = _mem_next;
+      Member *end = mem;
+      while (end->next && end->next->is_bitfield) {
+        end = end->next;
+        nbits += end->bit_width;
       }
-
-      /* Select bytespan */
-      uint64_t nbytes = ((nbits % 8) == 0)
-                          ? nbits / 8
-                          : (nbits / 8) + 1;
-
-      const char *bfty = llvm_type_for_size(nbytes, false);
+      const char *bfty = llvm_type_for_size((nbits + 7) / 8, false);
 
       int64_t databits = 0;
 
-      while (mem && mem->is_bitfield) {
-        if (!mem->bit_width) {
-          mem = mem->next;
+      for (Member *m = mem;; m = m->next) {
+        if (!m->bit_width)
           continue;
-        }
-
         Initializer *child = init->children[mem->idx];
 
         /* Evaluate initializer to an unsigned 64-bit value and mask to width.
          * Casting to uint64_t preserves two's-complement low bits for negatives. */
-        uint64_t raw = (uint64_t)eval2(child->expr, NULL);
-        uint64_t mask = (mem->bit_width >= 64) ? ~0ULL : ((1ULL << mem->bit_width) - 1);
-        uint64_t val = raw & mask;
-
-        /* Absolute start bit from beginning of struct: byte-offset * 8 + bit_offset */
-        size_t start_bit = (size_t)mem->offset * 8 + (size_t)mem->bit_offset;
-
-        databits |= (val << start_bit);
-
-        mem = mem->next;
+        uint64_t raw  = (uint64_t)eval2(child->expr, NULL);
+        uint64_t mask = (m->bit_width >= 64) ? ~0ULL : ((1ULL << m->bit_width) - 1);
+        databits |= ((raw & mask) << (m->offset * 8 + m->bit_offset));
+        if (m == end)
+          break;
       }
-
-      /* Emit the initializer */
       emitf("%s %ld", bfty, databits);
+      mem = end->next;
     }
 
+    if (init->ty->trail_pad) {
+      if (!first)
+        emitf(", ");
+      emitf("[%ld x i8] zeroinitializer", init->ty->trail_pad);
+    }
     emitc('}');
   } break;
 
@@ -2194,42 +2195,56 @@ static void emit_union_structs_decl() {
     // %struct.color = type { i8, i8, i8, i8 }
     // %struct.Car = type { i8*, %struct.color, i32 }
     // %struct.mypacked = type <{ i8, i64 }>
+    // %struct.saligned = type { i8, [15 x i8], i8, [15 x i8] }
 
     if (ty->is_packed)
       emitc('<');
     emitc('{');
 
     bool first = true;
-    for (Member *mem = ty->members; mem; mem = mem->next) {
+    for (Member *mem = ty->members; mem;) {
+      if (mem->is_bitfield && mem->bit_width == 0) {
+        mem = mem->next;
+        continue;
+      }
+
+      if (mem->pad) {
+        if (!first)
+          emitc(',');
+        first = false;
+        emitf(" [%ld x i8]", mem->pad);
+      }
+
       if (!first)
         emitc(',');
       first = false;
 
       if (!mem->is_bitfield) {
         emitf(" %s", llvm_type(mem->ty));
+        mem = mem->next;
         continue;
       }
 
-      /* Handle bitfields */
       uint64_t bits = mem->bit_width;
-      while (mem->next && mem->next->is_bitfield) {
-        Member *mem_next = mem->next;
-        bits += mem_next->bit_width;
-        mem = mem_next;
+      Member *end = mem;
+      while (end->next && end->next->is_bitfield) {
+        end = end->next;
+        bits += end->bit_width;
       }
+      emitf(" %s", llvm_type_for_size((bits + 7) / 8, false));
+      mem = end->next;
+    }
 
-      /* Select bytespan */
-      uint64_t bytes = ((bits % 8) == 0)
-                        ? bits / 8
-                        : (bits / 8) + 1;
-
-      emitf(" %s", llvm_type_for_size(bytes, false));
-      if (!mem) break; /* Avoid crashing the for loop */
+    if (ty->trail_pad) {
+      if (!first)
+        emitc(',');
+      emitf(" [%ld x i8]", ty->trail_pad);
     }
 
     emitf(" }");
     if (ty->is_packed)
       emitc('>');
+    emitln;
 
     emitln;
   }

@@ -3650,34 +3650,79 @@ static Type *struct_decl(Token **rest, Token *tok) {
   if (ty->size < 0)
     return ty;
 
-  // Assign offsets within the struct to members.
-  int bits = 0;
+  int  bits = 0;
+  int  slot = 0;
+  long byte = 0;
+  Member  *bf_run_start = NULL;
+  uint64_t bf_run_bits  = 0;
 
   for (Member *mem = ty->members; mem; mem = mem->next) {
     if (mem->is_bitfield && mem->bit_width == 0) {
-      // Zero-width anonymous bitfield has a special meaning.
-      // It affects only alignment.
+      // Zero-width: alignment hint only, emits nothing.
+      if (bf_run_start) {
+        slot++;
+        byte = bf_run_start->offset + (bf_run_bits + 7) / 8;
+        bf_run_start = NULL;
+      }
       bits = align_to(bits, mem->ty->size * 8);
-    } else if (mem->is_bitfield) {
+      continue;
+    }
+
+    if (mem->is_bitfield) {
       int sz = mem->ty->size;
-      if (bits / (sz * 8) != (bits + mem->bit_width - 1) / (sz * 8))
+      if ((bits / (sz * 8)) != ((bits + mem->bit_width - 1) / (sz * 8)))
         bits = align_to(bits, sz * 8);
 
-      mem->offset = align_down(bits / 8, sz);
+      mem->offset     = align_down(bits / 8, sz);
       mem->bit_offset = bits % (sz * 8);
       bits += mem->bit_width;
-    } else {
-      if (!ty->is_packed)
-        bits = align_to(bits, mem->align * 8);
-      mem->offset = bits / 8;
-      bits += mem->ty->size * 8;
+
+      if (!ty->is_packed && ty->align < mem->align)
+        ty->align = mem->align;
+
+      if (!bf_run_start) {
+        bf_run_start = mem;
+        bf_run_bits  = 0;
+        mem->pad  = mem->offset - byte;
+        if (mem->pad > 0)
+          slot++;
+      }
+
+      mem->slot = slot;
+      bf_run_bits += mem->bit_width;
+      continue;
     }
+
+    // Non-bitfield: flush any pending bitfield run first.
+    if (bf_run_start) {
+      slot++;
+      byte = bf_run_start->offset + (bf_run_bits + 7) / 8;
+      bf_run_start = NULL;
+    }
+
+    if (!ty->is_packed)
+      bits = align_to(bits, mem->align * 8);
+    mem->offset = bits / 8;
+    bits += mem->ty->size * 8;
 
     if (!ty->is_packed && ty->align < mem->align)
       ty->align = mem->align;
+
+    mem->pad = mem->offset - byte;
+    if (mem->pad > 0)
+      slot++;
+    mem->slot = slot++;
+    byte = mem->offset + mem->ty->size;
+  }
+
+  // Flush a trailing bitfield run
+  if (bf_run_start) {
+    slot++;
+    byte = bf_run_start->offset + (bf_run_bits + 7) / 8;
   }
 
   ty->size = align_to(bits, ty->align * 8) / 8;
+  ty->trail_pad = ty->size - byte;
   return ty;
 }
 
