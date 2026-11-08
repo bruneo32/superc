@@ -2361,7 +2361,11 @@ static void gen_text(Obj *prog) {
 
     /* Allocate local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
-      /* Create cross-reference so it can be addressed */
+      // Preserve object-specific alignment without modifying shared types
+      if (local->align > local->ty->align) {
+        local->ty = copy_type(local->ty);
+        local->ty->align = local->align;
+      }
       local->llvm = gen_alloca(local->ty, 0);
     }
 
