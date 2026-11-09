@@ -2143,8 +2143,6 @@ static void emit_union_structs_decl() {
     if (ty->is_packed)
       emitc('>');
     emitln;
-
-    emitln;
   }
 }
 
@@ -2189,6 +2187,7 @@ static void emit_data(Obj *prog) {
     if (!is_external)
       emitd_initializer(var->init);
 
+    /* C Convention: align arrays >= 16 bytes to 16 for SSE-friendly layout */
     int align = (var->ty->kind == TY_ARRAY && var->ty->size >= 16)
       ? MAX(16, var->align) : var->align;
 
@@ -2274,11 +2273,16 @@ static void gen_text(Obj *prog) {
 
     /* Allocate local variables */
     for (Obj *local = fn->locals; local; local = local->next) {
+      /* C Convention: align arrays >= 16 bytes to 16 for SSE-friendly layout */
+      if (local->ty->kind == TY_ARRAY && local->ty->size >= 16)
+        local->align = MAX(16, local->align);
+
       // Preserve object-specific alignment without modifying shared types
       if (local->align > local->ty->align) {
         local->ty = copy_type(local->ty);
         local->ty->align = local->align;
       }
+
       local->llvm = gen_alloca(local->ty, 0);
     }
 
