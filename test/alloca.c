@@ -1,5 +1,7 @@
 #include "test.h"
 
+#define alloca(size) __builtin_alloca((size))
+
 void *fn(int x, void *p, int y) { return p; }
 
 int main() {

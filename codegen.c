@@ -400,14 +400,16 @@ static LLVM *gen_alloca(Type *ty, int64_t val) {
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_ALLOCA;
-  llvm->ty = ty;
   llvm->val = val;
+
+  // 'alloca' itself returns a pointer to the allocated type
+  llvm->ty = pointer_to(ty);
 
   advance_emit(llvm);
   return llvm;
 }
 
-static LLVM *builtint_alloca(count_t size) {
+static LLVM *builtin_alloca(count_t size) {
   Type *ty = copy_type(ty_char);
   ty->align = 16;
   return gen_alloca(ty, size);
@@ -810,7 +812,7 @@ static LLVM *gen_expr(Node *node) {
       if (node->lhs->kind == ND_VAR &&
         !strcmp(get_symbol(node->lhs->var), "__builtin_alloca")) {
         int64_t sz = eval2(node->args, NULL);
-        return builtint_alloca(sz);
+        return builtin_alloca(sz);
       }
 
       ListLLVM head = {};
@@ -1411,12 +1413,15 @@ static void emitfln(char *fmt, ...) {
 
 static count_t emit_alloca(count_t ssa, LLVM *ll) {
   assert(ll);
-  if (!ssa) ssa = ll->ssa;
+  if (!ssa)
+    ssa = ll->ssa;
+
+  Type *ty = ll->ty->base;
   // %9 = alloca i8, i64 7, align 16
-  emitf("  %%%ld = alloca %s", ssa, llvm_type(ll->ty));
+  emitf("  %%%ld = alloca %s", ssa, llvm_type(ty));
   if (ll->val)
     emitf(", i64 %ld", ll->val);
-  emitfln(", align %d", ll->ty->align);
+  emitfln(", align %d", ty->align);
   return ssa;
 }
 
@@ -1886,8 +1891,10 @@ static void emitd_initializer(Initializer *init) {
         Initializer *child = init->children[i];
         unsigned char ch = child->expr->val;
 
-        /* Emit normal letter character */
-        if (ch >= ' ' && ch < 127)
+        /* Emit normal letter character.
+         * NB: " and \ must be escaped in LLVM IR string literals,
+         * otherwise the IR parser terminates the c"..." token early */
+        if (ch >= ' ' && ch < 127 && ch != '"' && ch != '\\')
           emitf("%c", ch);
         else
           emitf("\\%02X", ch);
