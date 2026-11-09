@@ -831,6 +831,10 @@ static LLVM *gen_expr(Node *node) {
         return gen_getelementptr(node->ty, gen_expr(node->lhs), 0, gen_expr(node->rhs));
       }
 
+      // Transform pointer arithmetic into ssize_t arithmetic
+      if (ty_is_pointer(node->ty))
+        node->ty = ty_ssize;
+
       // Normal arithmetic
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
@@ -853,6 +857,10 @@ static LLVM *gen_expr(Node *node) {
       return gen_add(node->ty, lhs, rhs);
     }
     case ND_SUB: {
+      // Transform pointer arithmetic into ssize_t arithmetic
+      if (ty_is_pointer(node->ty))
+        node->ty = ty_ssize;
+
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
@@ -874,6 +882,10 @@ static LLVM *gen_expr(Node *node) {
       return gen_sub(node->ty, lhs, rhs);
     }
     case ND_MUL: {
+      // Transform pointer arithmetic into ssize_t arithmetic
+      if (ty_is_pointer(node->ty))
+        node->ty = ty_ssize;
+
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
@@ -895,6 +907,10 @@ static LLVM *gen_expr(Node *node) {
       return gen_mul(node->ty, lhs, rhs);
     }
     case ND_DIV: {
+      // Transform pointer arithmetic into ssize_t arithmetic
+      if (ty_is_pointer(node->ty))
+        node->ty = ty_ssize;
+
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
@@ -917,6 +933,10 @@ static LLVM *gen_expr(Node *node) {
     }
 
     case ND_MOD: {
+      // Transform pointer arithmetic into ssize_t arithmetic
+      if (ty_is_pointer(node->ty))
+        node->ty = ty_ssize;
+
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
