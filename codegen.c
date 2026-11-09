@@ -2322,7 +2322,7 @@ static void gen_text(Obj *prog) {
     // as the hidden first parameter.
     if (fn->ty->sret_ty)
       /* Refer to the sret when returning */
-      fn->retvar = gen_addr_var(fn->ty->sret_ty, make_ssa_var(0, fn->ty->sret_ty));
+      fn->retvar = gen_addr_var(fn->ty->sret_ty, make_ssa_var(new_ssa, fn->ty->sret_ty));
 
     if (fn->is_definition) { // fn declarations do: fn->params = 0x0
       // Reserve the ssa of the parameter declaration
