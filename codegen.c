@@ -1671,10 +1671,10 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_inttoptr(0, llvm);
 
   case LL_STORE_PARAM: {
-    emitfln("  store %s %%%ld, %s* %s, align %d",
+    emitfln("  store %s %%%ld, %s %s, align %d",
             llvm_type(llvm->var->ty), llvm->ssa,
             llvm_type(llvm->dst->ty), get_symvar(llvm->dst),
-            llvm->dst->ty->align);
+            llvm->var->ty->align);
     break;
   }
 
