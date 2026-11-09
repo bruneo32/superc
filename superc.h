@@ -558,6 +558,7 @@ typedef enum LLKind {
   LL_FNEG,
   /* BITWISE binops */
   LL_BITAND,
+  LL_BITXOR,
   LL_SHL,
   LL_ASHR,
   LL_LSHR,

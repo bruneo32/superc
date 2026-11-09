@@ -101,3 +101,12 @@ int early() {
 	earl_ret:
 	return 0;
 }
+
+void arithm() {
+	int z = 33;
+	int x = z ^ 3;
+	unsigned int y = (unsigned int)x ^ (unsigned int)z;
+
+	x = ~y;
+	y = ~(unsigned int)z;
+}
