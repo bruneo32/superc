@@ -34,6 +34,9 @@ int main() {
     _true  = a < e;
     _false = e < a;
 
+    // Test ternary condition
+    int t = (_true) ? 8 : 9;
+
     // Test LOGOR and LOGAND
     int g = _true || _false;
     int h = g && _false;
@@ -143,13 +146,16 @@ float mainf() {
     _true  = a < e;
     _false = e < a;
 
+    // Test ternary condition
+    float t = (_true) ? 8.3f : 9.3f;
+
     // Test LOGOR and LOGAND
-    int g = _true || _false;
-    int h = g && _false;
-    int i = h && _false || 0;
-    int j = i || _false && 1;
-    int k = j && (_false || _true);
-    int l = (_true && _false) || _false;
+    float g = _true || _false;
+    float h = g && _false;
+    float i = h && _false || 0.0f;
+    float j = i || _false && 1.0f;
+    float k = j && (_false || _true);
+    float l = (_true && _false) || _false;
     if (l)
         nop();
 

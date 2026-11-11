@@ -10,6 +10,35 @@ int main() {
   ASSERT(2, ({ int x; if (1) x=2; else x=3; x; }));
   ASSERT(2, ({ int x; if (2-1) x=2; else x=3; x; }));
 
+  ASSERT(3, 0 ? 2 : 3);
+  ASSERT(2, 1 ? 2 : 3);
+  ASSERT(2, -1 ? 2 : 3);
+  ASSERT(3, 0.0 ? 2 : 3);
+  ASSERT(2, 0.1 ? 2 : 3);
+
+  ASSERT(2, ({ int i=0; int x=1 ? ++i : (i+=10); x+i; }));
+  ASSERT(2, ({ int i=0; int x=0 ? (i+=10) : ++i; x+i; }));
+  ASSERT(31, ({ int i=0; int x=i++ ? 2 : 3; x*10+i; }));
+  ASSERT(22, ({ int i=1; int x=i++ ? 2 : 3; x*10+i; }));
+
+  ASSERT(2, 1 ? 2 : 0 ? 3 : 4);
+  ASSERT(3, 0 ? 2 : 1 ? 3 : 4);
+  ASSERT(4, 0 ? 2 : 0 ? 3 : 4);
+  ASSERT(3, 1 ? (0 ? 2 : 3) : 4);
+  ASSERT(2, 0 ? (1 ? 2 : 3) : (1 ? 2 : 4));
+
+  ASSERT(2, (0 || 1) ? 2 : 3);
+  ASSERT(3, (1 && 0) ? 2 : 3);
+  ASSERT(1, 1 ? (0 || 1) : (1 && 0));
+  ASSERT(2.0, 1 ? 2 : 3.0);
+  ASSERT(3.0, 0 ? 2.0 : 3);
+
+  ASSERT(2,  ({ int x=2 ?: 4; x; }));
+  ASSERT(4,  ({ int x=0 ?: 4; x; }));
+  ASSERT(4,  ({ int x=!2 ?: 4; x; }));
+  ASSERT(10, ({ int i=0; int x=i++ ?: 9; x+i; }));
+  ASSERT(5,  ({ int i=2; int x=i++ ?: 9; x+i; }));
+
   ASSERT(55, ({ int i=0; int j=0; for (i=0; i<=10; i=i+1) j=i+j; j; }));
 
   ASSERT(10, ({ int i=0; while(i<10) i=i+1; i; }));

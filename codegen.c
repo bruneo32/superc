@@ -1147,6 +1147,63 @@ static LLVM *gen_expr(Node *node) {
       return gen_icmp(is_unsigned ? LLICMP_ULE : LLICMP_SLE, lhs, rhs);
     }
 
+    case ND_COND: {
+      // Prepare the out label
+      const bool is_next_node_out = node->next && node->next->kind == ND_LABEL;
+      Label *lout = is_next_node_out ? node->next->label : calloc(1, sizeof(Label));
+      lout->is_live = true;
+
+      // Prepare the then and else labels
+      Label *lbl_then = calloc(1, sizeof(Label));
+      lbl_then->is_live = true;
+      Label *lbl_els = calloc(1, sizeof(Label));
+      lbl_els->is_live = true;
+
+      // Ensure there is a label for the current block
+      if (!current_label) {
+        Label *lbl_cond = calloc(1, sizeof(Label));
+        lbl_cond->is_live = true;
+        gen_label(lbl_cond);
+      }
+
+      // Evaluate the condition
+      LLVM *cond = gen_expr(node->cond);
+
+      // Convert the condition to a boolean if necessary
+      LLVM *cmp = cond;
+      if (cmp->kind != LL_ICMP && cmp->kind != LL_FCMP) {
+        if (is_flonum(cmp->ty))
+          /* False if either is NaN */
+          cmp = gen_fcmp(LLFCMP_ONE, cmp, gen_fnum(cmp->ty, 0));
+        else
+          cmp = gen_icmp(LLICMP_NE, cmp, gen_inum(cmp->ty, 0));
+      }
+
+      // Branch to the then or else block
+      gen_branch(cmp, lbl_then, lbl_els);
+
+      // Generate the then branch
+      gen_label(lbl_then);
+      LLVM *then_val = gen_expr(node->then);
+      Label *lbl_then_end = current_label;
+      gen_jmp(lout);
+
+      // Generate the else branch
+      gen_label(lbl_els);
+      LLVM *els_val = gen_expr(node->els);
+      Label *lbl_els_end = current_label;
+      gen_jmp(lout);
+
+      // Generate the out label if not
+      if (!is_next_node_out)
+        gen_label(lout);
+
+      return gen_phi_node(node->ty,
+          then_val, lbl_then_end,
+          els_val,  lbl_els_end
+        );
+    }
+
     case ND_LOGOR:
     case ND_LOGAND: {
       // Prepare out label
