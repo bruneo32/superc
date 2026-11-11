@@ -1057,9 +1057,9 @@ static LLVM *gen_expr(Node *node) {
 
       /* If lhs is a number literal, evaluate it and return the number */
       if (lhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node->lhs, NULL));
+        return gen_inum(node->ty, eval2(node, NULL));
       else if (lhs->kind == LL_NUMF)
-        return gen_fnum(node->ty, eval_double(node->lhs));
+        return gen_fnum(node->ty, eval_double(node));
 
       if (is_flonum(lhs->ty))
         /* False if either is NaN */
