@@ -491,7 +491,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   if (!_is_reachable_code)
     return NULL;
 
-  if (same_type(from, to))
+  if (to->kind == TY_VOID || same_type(from, to))
     return ref;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
