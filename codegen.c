@@ -708,6 +708,21 @@ static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
   return llvm;
 }
 
+static LLVM *gen_bitor(Type *ty, LLVM *lhs, LLVM *rhs) {
+  /* Don't emit if unreachable */
+  if (!_is_reachable_code)
+    return NULL;
+
+  LLVM *llvm = calloc(1, sizeof(LLVM));
+  llvm->kind = LL_BITOR;
+  llvm->ty = ty;
+  llvm->lhs = lhs;
+  llvm->rhs = rhs;
+
+  advance_emit(llvm);
+  return llvm;
+}
+
 static LLVM *gen_bitxor(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -995,6 +1010,16 @@ static LLVM *gen_expr(Node *node) {
       if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
         return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitand(node->ty, lhs, rhs);
+    }
+
+    case ND_BITOR: {
+      LLVM *lhs = gen_expr(node->lhs);
+      LLVM *rhs = gen_expr(node->rhs);
+
+      /* If both sides are number literals, evaluate them and return the number */
+      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+        return gen_inum(node->ty, eval2(node, NULL));
+      return gen_bitor(node->ty, lhs, rhs);
     }
 
     case ND_BITXOR: {
@@ -1847,6 +1872,12 @@ static count_t emit_llvm(LLVM *llvm) {
   /* BITWISE binops */
   case LL_BITAND:
     emitfln("  %%%ld = and %s %s, %s", llvm->ssa,
+            llvm_type(llvm->ty),
+            get_symvar(llvm->lhs),
+            get_symvar(llvm->rhs));
+    return llvm->ssa;
+  case LL_BITOR:
+    emitfln("  %%%ld = or %s %s, %s", llvm->ssa,
             llvm_type(llvm->ty),
             get_symvar(llvm->lhs),
             get_symvar(llvm->rhs));
