@@ -1056,15 +1056,18 @@ static LLVM *gen_expr(Node *node) {
       LLVM *lhs = gen_expr(node->lhs);
 
       /* If lhs is a number literal, evaluate it and return the number */
-      if (lhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
-      else if (lhs->kind == LL_NUMF)
-        return gen_fnum(node->ty, eval_double(node));
+      if (opt_constant_folding) {
+        if (lhs->kind == LL_NUM)
+          return gen_inum(node->ty, eval2(node, NULL));
+        else if (lhs->kind == LL_NUMF)
+          return gen_fnum(node->ty, eval_double(node));
+      }
 
-      if (is_flonum(lhs->ty))
-        /* False if either is NaN */
-        return gen_fcmp(LLFCMP_OEQ, lhs, gen_fnum(lhs->ty, 0));
-      return gen_icmp(LLICMP_EQ, lhs, gen_inum(lhs->ty, 0));
+      LLVM *cmp = is_flonum(lhs->ty)
+        ? gen_fcmp(LLFCMP_OEQ, lhs, gen_fnum(lhs->ty, 0))
+        : gen_icmp(LLICMP_EQ,  lhs, gen_inum(lhs->ty, 0));
+
+      return gen_cast(cmp->ty, ty_int, cmp);
     }
 
     case ND_EQ: {
@@ -1080,10 +1083,11 @@ static LLVM *gen_expr(Node *node) {
         return gen_inum(node->ty, eval2(node, NULL));
       }
 
-      if (is_flonum(lhs->ty))
-        /* False if either is NaN */
-        return gen_fcmp(LLFCMP_OEQ, lhs, rhs);
-      return gen_icmp(LLICMP_EQ, lhs, rhs);
+      LLVM *cmp = is_flonum(lhs->ty)
+        ? gen_fcmp(LLFCMP_OEQ, lhs, gen_fnum(lhs->ty, 0))
+        : gen_icmp(LLICMP_EQ,  lhs, gen_inum(lhs->ty, 0));
+
+      return gen_cast(cmp->ty, ty_int, cmp);
     }
 
     case ND_NE: {
@@ -1099,10 +1103,11 @@ static LLVM *gen_expr(Node *node) {
         return gen_inum(node->ty, eval2(node, NULL));
       }
 
-      if (is_flonum(lhs->ty))
-        /* True if either is NaN */
-        return gen_fcmp(LLFCMP_UNE, lhs, rhs);
-      return gen_icmp(LLICMP_NE, lhs, rhs);
+      LLVM *cmp = is_flonum(lhs->ty)
+        ? gen_fcmp(LLFCMP_UNE, lhs, gen_fnum(lhs->ty, 0))
+        : gen_icmp(LLICMP_NE,  lhs, gen_inum(lhs->ty, 0));
+
+      return gen_cast(cmp->ty, ty_int, cmp);
     }
 
     case ND_LT: {
@@ -1118,12 +1123,13 @@ static LLVM *gen_expr(Node *node) {
         return gen_inum(node->ty, eval2(node, NULL));
       }
 
-      if (is_flonum(lhs->ty))
-        /* False if either is NaN */
-        return gen_fcmp(LLFCMP_OLT, lhs, rhs);
-
       bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;;
-      return gen_icmp(is_unsigned ? LLICMP_ULT : LLICMP_SLT, lhs, rhs);
+
+      LLVM *cmp = is_flonum(lhs->ty)
+        ? gen_fcmp(LLFCMP_OLT, lhs, gen_fnum(lhs->ty, 0))
+        : gen_icmp(is_unsigned ? LLICMP_ULT : LLICMP_SLT, lhs, rhs);
+
+      return gen_cast(cmp->ty, ty_int, cmp);
     }
 
     case ND_LE: {
@@ -1139,12 +1145,13 @@ static LLVM *gen_expr(Node *node) {
         return gen_inum(node->ty, eval2(node, NULL));
       }
 
-      if (is_flonum(lhs->ty))
-        /* False if either is NaN */
-        return gen_fcmp(LLFCMP_OLE, lhs, rhs);
-
       bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;;
-      return gen_icmp(is_unsigned ? LLICMP_ULE : LLICMP_SLE, lhs, rhs);
+
+      LLVM *cmp = is_flonum(lhs->ty)
+        ? gen_fcmp(LLFCMP_OLE, lhs, gen_fnum(lhs->ty, 0))
+        : gen_icmp(is_unsigned ? LLICMP_ULE : LLICMP_SLE, lhs, rhs);
+
+      return gen_cast(cmp->ty, ty_int, cmp);
     }
 
     case ND_COND: {
@@ -1277,10 +1284,12 @@ static LLVM *gen_expr(Node *node) {
         br->label2 = lout;
       }
 
-      return gen_phi_node(ty_bool,
+      LLVM *phi = gen_phi_node(ty_bool,
           lhs_val, lbl_lhs_end,
           rhs_cmp, lbl_rhs_end
         );
+
+      return gen_cast(phi->ty, ty_int, phi);
     }
 
     default:

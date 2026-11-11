@@ -239,9 +239,10 @@ void add_type(Node *node) {
   case ND_NE:
   case ND_LT:
   case ND_LE:
-    // LLVM uses i1 for comparisons, so we will need
-    // to cast i1 to the desired type anyway
-    node->ty = ty_bool;
+    // According to the ISO C Standard, comparissons have type INT
+    // - ISO C 6.5.8.6
+    // - ISO C 6.5.9.3
+    node->ty = ty_int;
     return;
   case ND_FUNCALL:
     node->ty = node->func_ty->return_ty;
@@ -249,9 +250,11 @@ void add_type(Node *node) {
   case ND_NOT:
   case ND_LOGOR:
   case ND_LOGAND:
-    // LLVM uses i1 for comparisons, so we will need
-    // to cast i1 to the desired type anyway
-    node->ty = ty_bool;
+    // According to the ISO C Standard, comparissons have type INT
+    // - ISO C 6.5.3.3
+    // - ISO C 6.5.13.3
+    // - ISO C 6.5.14.3
+    node->ty = ty_int;
     return;
   case ND_BITNOT:
   case ND_SHL:
