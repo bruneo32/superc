@@ -2326,9 +2326,7 @@ flt_number eval_double(Node *node) {
   case ND_COMMA:
     return eval_double(node->rhs);
   case ND_CAST:
-    if (is_flonum(node->lhs->ty))
-      return eval_double(node->lhs);
-    return (flt_number)eval(node->lhs);
+    return eval_double(node->lhs);
   case ND_NUM:
     return node->fval;
   }

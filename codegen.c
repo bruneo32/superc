@@ -92,26 +92,123 @@ static const char *llvm_type_for_size(uint64_t bytes, bool is_flo) {
 
 static const char *llvmty_usize;
 
+/* Scale a positive value by an exact power of two without depending on
+ * the host long-double representation or on libm's frexpl/ldexpl ABI. */
+static long double scale_pow2(long double value, int exponent) {
+  while (exponent > 0) {
+    value *= 2.0L;
+    exponent--;
+  }
+  while (exponent < 0) {
+    value *= 0.5L;
+    exponent++;
+  }
+  return value;
+}
+
+/**
+ * Round a non-negative value below 2^64 to uint64_t.
+ * Returns true when rounding carries into bit 64.
+ */
+static bool round_to_u64(long double value, uint64_t *result) {
+  long double two64 = 1.0L;
+  for (int i = 0; i < 64; i++)
+    two64 *= 2.0L;
+
+  if (value >= two64)
+    return true;
+
+  uint64_t integer = (uint64_t)value;
+  long double fraction = value - (long double)integer;
+  if (fraction > 0.5L || (fraction == 0.5L && (integer & 1))) {
+    if (integer == UINT64_MAX)
+      return true;
+    integer++;
+  }
+
+  *result = integer;
+  return false;
+}
+
+/* Convert the host floating-point value to LLVM x86_fp80 literal format */
+static const char *get_x86_fp80_lit(flt_number value) {
+  bool negative = signbit(value);
+  long double x = negative ? -value : value;
+  uint16_t sign_exp = negative ? 0x8000 : 0;
+  uint64_t significand = 0;
+
+  if (x != x) {
+    // NaN
+    sign_exp |= 0x7fff;
+    significand = 0xC000000000000000;
+  } else if (x != 0.0L && x + x == x) {
+    // Infinity
+    sign_exp |= 0x7fff;
+    significand = 0x8000000000000000;
+  } else if (x != 0.0L) {
+    // Normalize x to [0.5, 1.0) * 2^exponent
+    int exponent = 0;
+    while (x >= 1.0L) {
+      x *= 0.5L;
+      exponent++;
+    }
+    while (x < 0.5L) {
+      x *= 2.0L;
+      exponent--;
+    }
+
+    if (exponent >= -16381) {
+      // Normal binary80: exponent field = exponent + bias - 1
+      int exp_field = exponent + 16382;
+      long double scaled = scale_pow2(x, 64);
+      bool carry = round_to_u64(scaled, &significand);
+      if (carry) {
+        significand = 0x8000000000000000;
+        exp_field++;
+      }
+
+      if (exp_field >= 0x7fff) {
+        sign_exp |= 0x7fff;
+        significand = 0x8000000000000000;
+      } else {
+        sign_exp |= (uint16_t)exp_field;
+      }
+    } else {
+      // Subnormal binary80 values have an exponent field of zero
+      // and are scaled in units of 2^-16445.
+      // Rounding may produce the min normal
+      long double scaled = scale_pow2(x, exponent + 16445);
+      round_to_u64(scaled, &significand);
+      if (significand >= UINT64_C(0x8000000000000000))
+        sign_exp |= 1;
+    }
+  }
+
+  unsigned char bytes[10];
+  bytes[0] = (unsigned char)(sign_exp >> 8);
+  bytes[1] = (unsigned char)sign_exp;
+  for (char i = 0; i < 8; i++)
+    bytes[i + 2] = (unsigned char)(significand >> (56 - 8 * i));
+
+  StringBuilder sb;
+  sb_init(&sb);
+  sb_append(&sb, "0xK");
+  for (int i = 0; i < 10; i++)
+    sb_appendf(&sb, "%02X", bytes[i]);
+
+  const char *result = strndup(sb.buf, sb.len);
+  sb_free(&sb);
+  return result;
+}
+
 static const char *get_float_lit(TypeKind kind, flt_number fval) {
   switch(kind) {
     case TY_BOOL:
     case TY_FLOAT:
     case TY_DOUBLE:
       return format("%.6e", (double)fval);
-    case TY_LDOUBLE: {
-      /* FIXME: x86_fp80 is not well emitted */
-      unsigned char bytes[10];
-      memcpy(bytes, &fval, 10);
-      StringBuilder sb;
-      sb_init(&sb);
-      sb_append(&sb, "0xK");
-      for (int i = 9; i >= 0; i--)
-        sb_appendf(&sb, "%02X", bytes[i]);
-
-      const char *res = strndup(sb.buf, sb.len);
-      sb_free(&sb);
-      return res;
-    }
+    case TY_LDOUBLE:
+      return get_x86_fp80_lit(fval);
   }
   unreachable();
 }
@@ -367,7 +464,8 @@ static LLVM *gen_inum(Type *ty, int64_t val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUM;
   llvm->ty = ty;
-  llvm->val = val;
+  llvm->val  = val;
+  llvm->fval = val;
   return llvm;
 };
 
@@ -379,6 +477,7 @@ static LLVM *gen_fnum(Type *ty, flt_number val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUMF;
   llvm->ty = ty;
+  llvm->val  = val;
   llvm->fval = val;
   return llvm;
 }
@@ -388,8 +487,14 @@ static LLVM *gen_num(Type *ty, Node *node) {
   if (!_is_reachable_code)
     return NULL;
 
+  // Integer to float
   if (is_flonum(ty))
-    return gen_fnum(ty, node->fval);
+    return gen_fnum(ty, is_flonum(node->ty) ? eval_double(node) : (flt_number)node->val);
+
+  // Float to integer
+  if (is_flonum(node->ty))
+    return gen_inum(ty, eval_double(node));
+
   return gen_inum(ty, node->val);
 }
 
@@ -822,7 +927,7 @@ static LLVM *gen_expr(Node *node) {
       /* If lhs is a primitive, don't need to cast,
        * just return it as the other kind */
       if (is_numeric(node->ty) && node->lhs->kind == ND_NUM)
-        return gen_num(node->ty, node->lhs);
+          return gen_num(node->ty, node->lhs);
       return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     }
     case ND_ASSIGN: {
@@ -2148,8 +2253,8 @@ static void emitd_initializer(Initializer *init) {
     switch (init->expr->kind)
     {
     case ND_NUM: {
-      if (is_flonum(init->expr->ty)) {
-        emitf("%s", get_float_lit(init->ty->kind, init->expr->fval));
+      if (is_flonum(init->ty)) {
+        emitf("%s", get_float_lit(init->ty->kind, eval_double(init->expr)));
         return;
       }
       int64_t val = eval2(init->expr, NULL);
