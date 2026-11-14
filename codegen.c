@@ -11,6 +11,10 @@ static LLVM *gen_fnum(Type *ty, flt_number val);
 static LLVM *gen_inum(Type *ty, int64_t val);
 static LLVM *gen_num(Type *ty, Node *node);
 static LLVM *gen_cast(Type *from, Type *to, LLVM *ref);
+static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_sub(Type *ty, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs);
 static void  gen_stmt(Node *node, bool is_root_block);
 
 static count_t emit_llvm(LLVM *llvm);
@@ -41,6 +45,39 @@ int align_to(int n, int align) {
 
 int align_down(int n, int align) {
   return align_to(n - align + 1, align);
+}
+
+uint64_t wrap_bits(Type *ty, uint64_t v) {
+  uint64_t w;
+  switch (ty->kind) {
+    case TY_BOOL:
+      w = 8;
+      break;
+    case TY_CHAR:
+      w = 16;
+      break;
+    case TY_INT:
+      w = 32;
+      break;
+    case TY_LONG:
+      return v;
+    default:
+      assert(0); // Not integer
+  }
+
+  uint64_t mask = ((uint64_t)1 << w) - 1;
+  uint64_t u = v & mask;
+  // sign-extend if signed
+  if (!ty->is_unsigned && (u >> (w - 1)) & 1)
+    u |= ~mask;
+  return u;
+}
+
+LLVM *llvm_align_to(LLVM *n, LLVM *align) {
+  n = gen_add(n->ty, n, align);
+  n = gen_sub(n->ty, n, gen_inum(n->ty, 1));
+  n = gen_div(n->ty, n, gen_mul(align->ty, align, align));
+  return n;
 }
 
 const char *get_symbol(Obj *var) {
@@ -234,6 +271,17 @@ static const char *get_symvar(LLVM *llvm) {
   }
 }
 
+static inline bool is_numlit_ll(LLVM *ll) {
+  switch (ll->kind) {
+  /* List of instructions that don't emit an SSA */
+  case LL_NUM:
+  case LL_NUMF:
+    return true;
+  default:
+    return false;
+  }
+}
+
 static inline bool is_assignable_ll(LLVM *ll) {
   switch (ll->kind) {
   /* List of instructions that don't emit an SSA */
@@ -383,43 +431,6 @@ static LLVM *gen_addr_var(Type *ty, Obj *var) {
   return llvm;
 }
 
-static LLVM *gen_getelementptr(Type *ty, LLVM *src, int base_idx, LLVM *elem_idx) {
-  if (!_is_reachable_code)
-    return NULL;
-
-  LLVM *llvm = calloc(1, sizeof(LLVM));
-  llvm->kind = LL_GEP;
-  llvm->ty   = ty;
-  llvm->src  = src;
-  llvm->base_idx = base_idx;
-
-  if (elem_idx) {
-    // Cast to i32 if not integer
-    if (!is_integer(elem_idx->ty)) {
-      // The front end lowers `p[N]` to `p + (void**)(N * sizeof(*p))`, i.e. it
-      // stores the *byte* offset in a pointer-typed constant. GEP wants the
-      // *element* index, so unwrap the cast and divide by the element size.
-      LLVM *inner = elem_idx;
-      if ((inner->kind == LL_PTR2INT || inner->kind == LL_INT2PTR) && inner->src)
-        inner = inner->src;
-
-      if (inner->kind == LL_NUM && ty && ty->base && ty->base->size > 1) {
-        LLVM *num = calloc(1, sizeof(LLVM));
-        num->kind = LL_NUM;
-        num->ty   = ty_int;
-        num->val  = inner->val / ty->base->size;
-        elem_idx  = num;
-      } else {
-        elem_idx = gen_cast(elem_idx->ty, ty_int, elem_idx);
-      }
-    }
-    llvm->elem_idx = elem_idx;
-  }
-
-  advance_emit(llvm);
-  return llvm;
-}
-
 static LLVM *gen_blockaddress(Type *ty, Label *label, Obj *fn) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
@@ -447,8 +458,10 @@ static LLVM *gen_addr(Node *node) {
   case ND_VAR:
     return gen_addr_var(node->ty, node->var);
   case ND_MEMBER:
-    return gen_getelementptr(node->member->ty, gen_addr(node->lhs),
-                             0, gen_inum(ty_int, node->member->slot));
+    LLVM *base     = gen_cast(pointer_to(node->lhs->ty), ty_ssize, gen_addr(node->lhs));
+    LLVM *m_offset = gen_inum(ty_ssize, node->member->offset);
+    LLVM *m_addr   = gen_add(ty_ssize, base, m_offset);
+    return gen_cast(ty_ssize, pointer_to(node->member->ty), m_addr);
   case ND_LABEL_VAL:
     return gen_blockaddress(node->ty, node->label, node->var);
   default:
@@ -498,14 +511,14 @@ static LLVM *gen_num(Type *ty, Node *node) {
   return gen_inum(ty, node->val);
 }
 
-static LLVM *gen_alloca(Type *ty, int64_t val) {
+static LLVM *gen_alloca(Type *ty, LLVM *size) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_ALLOCA;
-  llvm->val = val;
+  llvm->lhs = gen_cast(size->ty, ty_usize, size);
 
   // 'alloca' itself returns a pointer to the allocated type
   llvm->ty = pointer_to(ty);
@@ -514,9 +527,10 @@ static LLVM *gen_alloca(Type *ty, int64_t val) {
   return llvm;
 }
 
-static LLVM *builtin_alloca(count_t size) {
+static LLVM *builtin_alloca(LLVM *size) {
   Type *ty = copy_type(ty_char);
   ty->align = 16;
+  size = llvm_align_to(size, gen_inum(size->ty, ty->align));
   return gen_alloca(ty, size);
 }
 
@@ -596,7 +610,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   if (!_is_reachable_code)
     return NULL;
 
-  if (to->kind == TY_VOID || same_type(from, to))
+  if (to->kind == TY_VOID || !strcmp(llvm_type(from), llvm_type(to)))
     return ref;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -621,6 +635,12 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
     case TY_FLOAT:
     case TY_DOUBLE:
     case TY_LDOUBLE:
+      // Do not do "%9 = sext i32 1 to i64", just return "i64 1"
+      if (ref->kind == LL_NUM && is_integer(to) && to->kind > from->kind)
+        return gen_inum(to, ref->val);
+      else if (ref->kind == LL_NUMF && is_flonum(to) && to->kind > from->kind)
+        return gen_fnum(to, ref->fval);
+
       // Use table lookup for now
       int t1 = getTypeId(from);
       int t2 = getTypeId(to);
@@ -714,6 +734,14 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+      if (lhs->kind == LL_NUMF)
+        return gen_fnum(ty, lhs->fval + rhs->fval);
+      return gen_inum(ty, wrap_bits(ty, lhs->val + rhs->val));
+    }
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FADD : LL_ADD;
   llvm->ty = ty;
@@ -728,6 +756,14 @@ static LLVM *gen_sub(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  if (opt_constant_folding) {
+    if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+      if (lhs->kind == LL_NUMF)
+        return gen_fnum(ty, lhs->fval - rhs->fval);
+      return gen_inum(ty, wrap_bits(ty, lhs->val - rhs->val));
+    }
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FSUB : LL_SUB;
@@ -744,6 +780,14 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+      if (lhs->kind == LL_NUMF)
+        return gen_fnum(ty, lhs->fval * rhs->fval);
+      return gen_inum(ty, wrap_bits(ty, lhs->val * rhs->val));
+    }
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FMUL : LL_MUL;
   llvm->ty = ty;
@@ -758,6 +802,14 @@ static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  if (opt_constant_folding) {
+    if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+      if (lhs->kind == LL_NUMF)
+        return gen_fnum(ty, lhs->fval / rhs->fval);
+      return gen_inum(ty, wrap_bits(ty, lhs->val / rhs->val));
+    }
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FDIV : LL_DIV;
@@ -774,6 +826,11 @@ static LLVM *gen_mod(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+      return gen_inum(ty, wrap_bits(ty, lhs->val % rhs->val));
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_REM;
   llvm->ty = ty;
@@ -789,6 +846,14 @@ static LLVM *gen_neg(Type *ty, LLVM *src) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (is_numlit_ll(src)) {
+      if (src->kind == LL_NUMF)
+        return gen_fnum(ty, -src->fval);
+      return gen_inum(ty, wrap_bits(ty, -src->val));
+    }
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = is_flonum(ty) ? LL_FNEG : LL_NEG;
   llvm->ty = ty;
@@ -802,6 +867,11 @@ static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+      return gen_inum(ty, wrap_bits(ty, lhs->val & rhs->val));
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_BITAND;
@@ -818,6 +888,11 @@ static LLVM *gen_bitor(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+      return gen_inum(ty, wrap_bits(ty, lhs->val | rhs->val));
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_BITOR;
   llvm->ty = ty;
@@ -832,6 +907,11 @@ static LLVM *gen_bitxor(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+      return gen_inum(ty, wrap_bits(ty, lhs->val ^ rhs->val));
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_BITXOR;
@@ -848,6 +928,11 @@ static LLVM *gen_shl(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (!_is_reachable_code)
     return NULL;
 
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
+      return gen_inum(ty, wrap_bits(ty, lhs->val << rhs->val));
+  }
+
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_SHL;
   llvm->ty = ty;
@@ -862,6 +947,14 @@ static LLVM *gen_shr(Type *ty, LLVM *lhs, LLVM *rhs) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
+
+  if (opt_constant_folding) {
+    if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
+      if (ty->is_unsigned && ty->size == 8)
+        return gen_inum(ty, wrap_bits(ty, (uint64_t)lhs->val >> rhs->val));
+      return gen_inum(ty, wrap_bits(ty, lhs->val >> rhs->val));
+    }
+  }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = (ty->is_unsigned) ? LL_LSHR : LL_ASHR;
@@ -946,8 +1039,7 @@ static LLVM *gen_expr(Node *node) {
     case ND_FUNCALL: {
       if (node->lhs->kind == ND_VAR &&
         !strcmp(get_symbol(node->lhs->var), "__builtin_alloca")) {
-        int64_t sz = eval2(node->args, NULL);
-        return builtin_alloca(sz);
+        return builtin_alloca(gen_expr(node->args));
       }
 
       ListLLVM head = {};
@@ -961,199 +1053,115 @@ static LLVM *gen_expr(Node *node) {
       return gen_funcall(node, head.next);
     }
     case ND_ADD: {
-      // Pointer arithmetic
-      if (node->ty->kind == TY_PTR || node->ty->kind == TY_ARRAY) {
-        return gen_getelementptr(node->ty, gen_expr(node->lhs), 0, gen_expr(node->rhs));
-      }
-
-      // Transform pointer arithmetic into ssize_t arithmetic
-      if (ty_is_pointer(node->ty))
-        node->ty = ty_ssize;
-
-      // Normal arithmetic
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
-      }
-
       // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
       if (ty_is_pointer(node->lhs->ty))
-        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
       if (ty_is_pointer(node->rhs->ty))
-        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+        rhs = gen_cast(node->rhs->ty, ty, rhs);
 
-      return gen_add(node->ty, lhs, rhs);
+      return gen_cast(ty, node->ty, gen_add(ty, lhs, rhs));
     }
     case ND_SUB: {
-      // Transform pointer arithmetic into ssize_t arithmetic
-      if (ty_is_pointer(node->ty))
-        node->ty = ty_ssize;
-
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
-      }
-
       // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
       if (ty_is_pointer(node->lhs->ty))
-        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
       if (ty_is_pointer(node->rhs->ty))
-        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+        rhs = gen_cast(node->rhs->ty, ty, rhs);
 
-      return gen_sub(node->ty, lhs, rhs);
+      return gen_cast(ty, node->ty, gen_sub(ty, lhs, rhs));
     }
     case ND_MUL: {
-      // Transform pointer arithmetic into ssize_t arithmetic
-      if (ty_is_pointer(node->ty))
-        node->ty = ty_ssize;
-
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
-      }
-
       // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
       if (ty_is_pointer(node->lhs->ty))
-        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
       if (ty_is_pointer(node->rhs->ty))
-        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+        rhs = gen_cast(node->rhs->ty, ty, rhs);
 
-      return gen_mul(node->ty, lhs, rhs);
+      return gen_cast(ty, node->ty, gen_mul(ty, lhs, rhs));
     }
     case ND_DIV: {
-      // Transform pointer arithmetic into ssize_t arithmetic
-      if (ty_is_pointer(node->ty))
-        node->ty = ty_ssize;
-
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
-      }
-
       // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
       if (ty_is_pointer(node->lhs->ty))
-        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
       if (ty_is_pointer(node->rhs->ty))
-        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+        rhs = gen_cast(node->rhs->ty, ty, rhs);
 
-      return gen_div(node->ty, lhs, rhs);
+      return gen_cast(ty, node->ty, gen_div(ty, lhs, rhs));
     }
 
     case ND_MOD: {
-      // Transform pointer arithmetic into ssize_t arithmetic
-      if (ty_is_pointer(node->ty))
-        node->ty = ty_ssize;
-
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
 
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM &&
-        (rhs->kind == LL_NUM || rhs->kind == LL_NUMF))
-        return gen_inum(node->ty, eval2(node, NULL));
-
       // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
       if (ty_is_pointer(node->lhs->ty))
-        lhs = gen_cast(node->lhs->ty, node->ty, lhs);
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
       if (ty_is_pointer(node->rhs->ty))
-        rhs = gen_cast(node->rhs->ty, node->ty, rhs);
+        rhs = gen_cast(node->rhs->ty, ty, rhs);
 
-      return gen_mod(node->ty, lhs, rhs);
+      return gen_cast(ty, node->ty, gen_mod(ty, lhs, rhs));
     }
 
     case ND_NEG: {
       LLVM *lhs = gen_expr(node->lhs);
 
-      /* If lhs is a number literal, evaluate it and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
-      return gen_neg(node->ty, lhs);
+      // LLVM arithmetic operates on integers, not pointers
+      Type *ty = ty_is_pointer(node->ty) ? ty_ssize : node->ty;
+      if (ty_is_pointer(node->lhs->ty))
+        lhs = gen_cast(node->lhs->ty, ty, lhs);
+
+      return gen_cast(ty, node->ty, gen_neg(ty, lhs));
     }
 
     case ND_BITNOT: {
       LLVM *lhs = gen_expr(node->lhs);
-
-      /* If lhs is a number literal, evaluate it and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitxor(node->ty, lhs, gen_inum(node->ty, -1));
     }
 
     case ND_BITAND: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
-
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitand(node->ty, lhs, rhs);
     }
 
     case ND_BITOR: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
-
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitor(node->ty, lhs, rhs);
     }
 
     case ND_BITXOR: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
-
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_bitxor(node->ty, lhs, rhs);
     }
 
     case ND_SHL: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
-
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_shl(node->ty, lhs, rhs);
     }
 
     case ND_SHR: {
       LLVM *lhs = gen_expr(node->lhs);
       LLVM *rhs = gen_expr(node->rhs);
-
-      /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding && lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-        return gen_inum(node->ty, eval2(node, NULL));
       return gen_shr(node->ty, lhs, rhs);
     }
 
@@ -1666,11 +1674,13 @@ static count_t emit_alloca(count_t ssa, LLVM *ll) {
   if (!ssa)
     ssa = ll->ssa;
 
+  // Alloca is always a pointer
   Type *ty = ll->ty->base;
+
   // %9 = alloca i8, i64 7, align 16
   emitf("  %%%ld = alloca %s", ssa, llvm_type(ty));
-  if (ll->val)
-    emitf(", i64 %ld", ll->val);
+  if (ll->lhs)
+    emitf(", %s %s", llvm_type(ll->lhs->ty), get_symvar(ll->lhs));
   emitfln(", align %d", ty->align);
   return ssa;
 }
@@ -1684,59 +1694,6 @@ static count_t emit_load(count_t ssa, LLVM *ll) {
   emitfln("  %%%ld = load %s, %s* %s, align %d", ssa,
           llty, llty, get_symvar(ll->src), ll->ty->align);
 
-  return ssa;
-}
-
-static count_t emit_getelementptr(count_t ssa, LLVM *ll) {
-  assert(ll);
-  assert(ll->src);
-  if (!ssa) ssa = ll->ssa;
-
-  // LL_VAR/LL_ALLOCA use the convention:
-  // ll->src->ty == the pointee type, the value's type is ll->src->ty*
-  // Everything else (bitcast, load, gep, ...) stores the value's
-  // actual LLVM type in ll->src->ty (which must be a pointer type).
-  bool src_is_addr = ll->src->kind == LL_VAR || ll->src->kind == LL_ALLOCA;
-
-  Type *pointee;
-  const char *src_llty;
-  if (src_is_addr) {
-    pointee  = ll->src->ty;
-    src_llty = format("%s*", llvm_type(pointee));
-  } else {
-    pointee  = ll->src->ty->base;
-    src_llty = llvm_type(ll->src->ty);
-  }
-
-  emitf("  %%%ld = getelementptr inbounds %s, %s %s",
-        ssa, llvm_type(pointee), src_llty, get_symvar(ll->src));
-
-  // Pointer-to-scalar: only one index
-  // Pointer-to-aggregate (array / struct): leading 0, then index.
-  bool pointee_is_aggregate = pointee->kind == TY_ARRAY ||
-                              pointee->kind == TY_STRUCT ||
-                              pointee->kind == TY_UNION;
-
-  if (!src_is_addr || !pointee_is_aggregate) {
-    // Single-index form
-    if (ll->elem_idx) {
-      const char *idx_ty  = llvm_type(ll->elem_idx->ty);
-      const char *idx_sym = get_symvar(ll->elem_idx);
-      emitf(", %s %s", idx_ty, idx_sym);
-    } else {
-      emitf(", i32 0");
-    }
-  } else {
-    // Aggregate: two indices
-    emitf(", i32 %d", ll->base_idx);
-    if (ll->elem_idx) {
-      const char *idx_ty  = llvm_type(ll->elem_idx->ty);
-      const char *idx_sym = get_symvar(ll->elem_idx);
-      emitf(", %s %s", idx_ty, idx_sym);
-    }
-  }
-
-  emitln;
   return ssa;
 }
 
@@ -1849,8 +1806,6 @@ static count_t emit_llvm(LLVM *llvm) {
     return emit_alloca(0, llvm);
   case LL_LOAD:
     return emit_load(0, llvm);
-  case LL_GEP:
-    return emit_getelementptr(0, llvm);
   case LL_BLKADDR:
     emitfln("  %%%ld = phi %s [ blockaddress(@%s, %%%ld), %%%ld ]",
             llvm->ssa, llvm_type(llvm->ty),
@@ -2513,7 +2468,7 @@ static void gen_text(Obj *prog) {
     fn_label_ret = calloc(1, sizeof(Label));
 
     if (ret_ty->kind != TY_VOID)
-      fn->retvar = gen_alloca(ret_ty, 0);
+      fn->retvar = gen_alloca(ret_ty, gen_inum(ty_usize, 0));
     else
       fn->retvar = NULL;
 
@@ -2533,7 +2488,7 @@ static void gen_text(Obj *prog) {
 
       Obj *param_var = fn->params;
       for (Type *param = fn->ty->params; param; param = param->next) {
-        param_var->llvm = gen_alloca(param, 0);
+        param_var->llvm = gen_alloca(param, gen_inum(ty_usize, 0));
         param_var = param_var->next;
       }
     }
@@ -2552,7 +2507,7 @@ static void gen_text(Obj *prog) {
         local->ty->align = local->align;
       }
 
-      local->llvm = gen_alloca(local->ty, 0);
+      local->llvm = gen_alloca(local->ty, gen_inum(ty_usize, 0));
     }
 
     // [https://www.sigbus.info/n1570#5.1.2.2.3p1] The C spec defines

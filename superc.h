@@ -642,10 +642,6 @@ struct LLVM {
   // Numeric literal
   int64_t val;
   flt_number fval;
-
-  // Getelementptr
-  int base_idx;
-  LLVM *elem_idx;
 };
 
 void codegen(Obj *prog, FILE *out);
