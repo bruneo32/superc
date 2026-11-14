@@ -1188,17 +1188,17 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
+      if (opt_constant_folding) {
+        if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+          if (is_flonum(node->ty))
+            return gen_fnum(node->ty, eval_double(node));
+          return gen_inum(node->ty, eval2(node, NULL));
+        }
       }
 
       LLVM *cmp = is_flonum(lhs->ty)
-        ? gen_fcmp(LLFCMP_OEQ, lhs, gen_fnum(lhs->ty, 0))
-        : gen_icmp(LLICMP_EQ,  lhs, gen_inum(lhs->ty, 0));
+        ? gen_fcmp(LLFCMP_OEQ, lhs, rhs)
+        : gen_icmp(LLICMP_EQ, lhs, rhs);
 
       return gen_cast(cmp->ty, ty_int, cmp);
     }
@@ -1208,17 +1208,17 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
+      if (opt_constant_folding) {
+        if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+          if (is_flonum(node->ty))
+            return gen_fnum(node->ty, eval_double(node));
+          return gen_inum(node->ty, eval2(node, NULL));
+        }
       }
 
       LLVM *cmp = is_flonum(lhs->ty)
-        ? gen_fcmp(LLFCMP_UNE, lhs, gen_fnum(lhs->ty, 0))
-        : gen_icmp(LLICMP_NE,  lhs, gen_inum(lhs->ty, 0));
+        ? gen_fcmp(LLFCMP_UNE, lhs, rhs)
+        : gen_icmp(LLICMP_NE,  lhs, rhs);
 
       return gen_cast(cmp->ty, ty_int, cmp);
     }
@@ -1228,18 +1228,18 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
+      if (opt_constant_folding) {
+        if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+          if (is_flonum(node->ty))
+            return gen_fnum(node->ty, eval_double(node));
+          return gen_inum(node->ty, eval2(node, NULL));
+        }
       }
 
       bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;;
 
       LLVM *cmp = is_flonum(lhs->ty)
-        ? gen_fcmp(LLFCMP_OLT, lhs, gen_fnum(lhs->ty, 0))
+        ? gen_fcmp(LLFCMP_OLT, lhs, rhs)
         : gen_icmp(is_unsigned ? LLICMP_ULT : LLICMP_SLT, lhs, rhs);
 
       return gen_cast(cmp->ty, ty_int, cmp);
@@ -1250,18 +1250,18 @@ static LLVM *gen_expr(Node *node) {
       LLVM *rhs = gen_expr(node->rhs);
 
       /* If both sides are number literals, evaluate them and return the number */
-      if (opt_constant_folding &&
-          (lhs->kind == LL_NUM || lhs->kind == LL_NUMF) &&
-          (rhs->kind == LL_NUM || rhs->kind == LL_NUMF)) {
-        if (is_flonum(node->ty))
-          return gen_fnum(node->ty, eval_double(node));
-        return gen_inum(node->ty, eval2(node, NULL));
+      if (opt_constant_folding) {
+        if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
+          if (is_flonum(node->ty))
+            return gen_fnum(node->ty, eval_double(node));
+          return gen_inum(node->ty, eval2(node, NULL));
+        }
       }
 
       bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;;
 
       LLVM *cmp = is_flonum(lhs->ty)
-        ? gen_fcmp(LLFCMP_OLE, lhs, gen_fnum(lhs->ty, 0))
+        ? gen_fcmp(LLFCMP_OLE, lhs, rhs)
         : gen_icmp(is_unsigned ? LLICMP_ULE : LLICMP_SLE, lhs, rhs);
 
       return gen_cast(cmp->ty, ty_int, cmp);
