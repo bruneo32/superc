@@ -28,7 +28,7 @@ test/%.ll: superc test/%.c
 	-./superc -fpic -Iinclude -Itest -S -o test/$*.ll test/$*.c
 
 test/%.s: test/%.ll
-	-llc --filetype=asm -O3 -o test/$*.s test/$*.ll 2>/dev/null
+	-llc --filetype=asm -O3 -o test/$*.s test/$*.ll
 
 test/%.exe: superc test/%.c test/%.s
 	@if ./superc -fpic -Iinclude -Itest -c -o test/$*.o test/$*.c && \
@@ -40,13 +40,19 @@ test/%.exe: superc test/%.c test/%.s
 	fi
 
 test: $(TESTS)
-	@build_failed=""; test_failed=""; test_ok="" \
-	build_failed_count=0; test_failed_count=0; test_ok_count=0; \
+	@build_failed=""; llc_failed=""; test_failed=""; test_ok="" \
+	build_failed_count=0; llc_failed_count=0; \
+	test_failed_count=0; test_ok_count=0; \
 	driver_failed=0; \
 	for i in $(TESTS); do \
-		if [ ! -x "$$i" ]; then \
-			build_failed="$$build_failed $$i"; \
+		if [ ! -r "$${i%.exe}.ll" ]; then \
+			build_failed="$$build_failed $${i%.exe}.c"; \
 			build_failed_count=$$((build_failed_count + 1)); \
+			continue; \
+		fi; \
+		if [ ! -r "$${i%.exe}.s" ]; then \
+			llc_failed="$$llc_failed $${i%.exe}.ll"; \
+			llc_failed_count=$$((llc_failed_count + 1)); \
 			continue; \
 		fi; \
 		echo "$$i"; \
@@ -67,10 +73,13 @@ test: $(TESTS)
 	if [ -n "$$test_ok" ]; then \
 		printf "\033[1;32mPassed ($$test_ok_count):\033[0m$$test_ok\n"; \
 	fi; \
-	if [ -n "$$test_failed" ]; then \
+	if [ -n "$$build_failed" ]; then \
 		printf "\033[1;31mCError ($$build_failed_count):\033[0m$$build_failed\n"; \
 	fi; \
-	if [ -n "$$build_failed" ]; then \
+	if [ -n "$$llc_failed" ]; then \
+		printf "\033[1;31mLError ($$llc_failed_count):\033[0m$$llc_failed\n"; \
+	fi; \
+	if [ -n "$$test_failed" ]; then \
 		printf "\033[1;31mFailed ($$test_failed_count):\033[0m$$test_failed\n"; \
 	fi; \
 	if [ $$driver_failed ]; then \
