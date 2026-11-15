@@ -25,13 +25,13 @@ version.h: .git/HEAD $(shell git rev-parse --git-dir)/refs/heads/$(shell git bra
 	echo "#endif // _VERSION_H_IN" >> version.h
 
 test/%.ll: superc test/%.c
-	-./superc -fpic -Iinclude -Itest -S -o test/$*.ll test/$*.c
+	-./superc -fpic -fno-constant-folding -Iinclude -Itest -S -o test/$*.ll test/$*.c
 
 test/%.s: test/%.ll
 	-llc --filetype=asm -O3 -o test/$*.s test/$*.ll
 
 test/%.exe: superc test/%.c test/%.s
-	@if ./superc -fpic -Iinclude -Itest -c -o test/$*.o test/$*.c && \
+	@if ./superc -fpic -fno-constant-folding -Iinclude -Itest -c -o test/$*.o test/$*.c && \
 	    $(CC) -pthread -o $@ test/$*.o -xc test/common; then \
 		:; \
 	else \
