@@ -2213,6 +2213,13 @@ static void emitd_initializer(Initializer *init) {
         return;
       }
       int64_t val = eval2(init->expr, NULL);
+      if (init->ty->kind == TY_PTR) {
+        if (val == 0)
+          emitf("null");
+        else
+          emitf("inttoptr (i64 %ld to %s)", val, llvm_type(init->ty));
+        return;
+      }
       emitf("%ld", val);
     } break;
 
