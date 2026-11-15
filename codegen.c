@@ -1237,7 +1237,7 @@ static LLVM *gen_expr(Node *node) {
         }
       }
 
-      bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;;
+      bool is_unsigned = lhs->ty->is_unsigned || rhs->ty->is_unsigned;
 
       LLVM *cmp = is_flonum(lhs->ty)
         ? gen_fcmp(LLFCMP_OLT, lhs, rhs)
@@ -1306,12 +1306,14 @@ static LLVM *gen_expr(Node *node) {
       // Generate the then branch
       gen_label(lbl_then);
       LLVM *then_val = gen_expr(node->then);
+      then_val = gen_cast(then_val->ty, node->ty, then_val);
       Label *lbl_then_end = current_label;
       gen_jmp(lout);
 
       // Generate the else branch
       gen_label(lbl_els);
       LLVM *els_val = gen_expr(node->els);
+      els_val = gen_cast(els_val->ty, node->ty, els_val);
       Label *lbl_els_end = current_label;
       gen_jmp(lout);
 
@@ -1319,7 +1321,7 @@ static LLVM *gen_expr(Node *node) {
       if (!is_next_node_out)
         gen_label(lout);
 
-      return gen_phi_node(node->ty,
+      return gen_phi_node(then_val->ty,
           then_val, lbl_then_end,
           els_val,  lbl_els_end
         );
@@ -1374,6 +1376,7 @@ static LLVM *gen_expr(Node *node) {
           else
             rhs_cmp = gen_icmp(LLICMP_NE, rhs_cmp, gen_inum(rhs_cmp->ty, 0));
         }
+        rhs_cmp = gen_cast(rhs_cmp->ty, ty_bool, rhs_cmp);
       }
       Label *lbl_rhs_end = current_label;
       gen_jmp(lout);
@@ -1397,6 +1400,7 @@ static LLVM *gen_expr(Node *node) {
         br->label = lbl_rhs;
         br->label2 = lout;
       }
+      lhs_val = gen_cast(lhs_val->ty, ty_bool, lhs_val);
 
       LLVM *phi = gen_phi_node(ty_bool,
           lhs_val, lbl_lhs_end,
