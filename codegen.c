@@ -240,11 +240,15 @@ static const char *get_x86_fp80_lit(flt_number value) {
 }
 
 static const char *get_float_lit(TypeKind kind, flt_number fval) {
-  switch(kind) {
-    case TY_BOOL:
+  switch (kind) {
     case TY_FLOAT:
-    case TY_DOUBLE:
-      return format("%.6e", (double)fval);
+    case TY_DOUBLE: {
+      union {
+        double f64;
+        uint64_t bits;
+      } f = { .f64 = ((kind == TY_FLOAT) ? (float)fval : (double)fval) };
+      return format("0x%016lX", f.bits);
+    }
     case TY_LDOUBLE:
       return get_x86_fp80_lit(fval);
   }
