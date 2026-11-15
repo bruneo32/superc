@@ -81,10 +81,51 @@ LLVM *llvm_align_to(LLVM *n, LLVM *align) {
   return n;
 }
 
+static bool is_llvm_ident_ok(const char *name) {
+  if (!name[0])
+    return false;
+  for (int i = 0; name[i]; i++) {
+    const uint8_t c  = name[i];
+    const uint8_t cl = c | 32;
+    const bool is_letter = cl >= 'a' && cl <= 'z';
+    const bool is_punct  = c == '-' || c == '$' || c == '.' || c == '_';
+    const bool is_digit  = c >= '0' && c <= '9';
+
+    if (is_letter || is_punct)
+      continue;
+    if (is_digit && i != 0)
+      continue;
+    return false;
+  }
+  return true;
+}
+
 const char *get_symbol(Obj *var) {
-  if (var->symbol)
-    return var->symbol;
-  return var->name;
+  const char *sym = (var->symbol) ? var->symbol : var->name;
+
+  if (is_llvm_ident_ok(sym))
+    return sym;
+
+  /* If symbol is invalid, use LLVM escape quote
+   * Example:
+   * - Invalid: @π = dso_local global i32 3, align 4
+   * - Valid:   @"\CF\80" = dso_local global i32 3, align 4
+   */
+  StringBuilder sb;
+  sb_init(&sb);
+  sb_append(&sb, "\"");
+  for (const uint8_t *p = (const uint8_t *)sym; *p; p++) {
+    uint8_t c = *p;
+    if (c >= ' ' && c < 127 && c != '"' && c != '\\')
+      sb_appendf(&sb, "%c", c);
+    else
+      sb_appendf(&sb, "\\%02X", c);
+  }
+  sb_append(&sb, "\"");
+
+  const char *res = strndup(sb.buf, sb.len);
+  sb_free(&sb);
+  return res;
 }
 
 static inline bool ty_is_pointer(Type *ty) {
