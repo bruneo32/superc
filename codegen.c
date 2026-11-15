@@ -51,9 +51,10 @@ uint64_t wrap_bits(Type *ty, uint64_t v) {
   uint64_t w;
   switch (ty->kind) {
     case TY_BOOL:
+    case TY_CHAR:
       w = 8;
       break;
-    case TY_CHAR:
+    case TY_SHORT:
       w = 16;
       break;
     case TY_INT:
@@ -477,7 +478,7 @@ static LLVM *gen_inum(Type *ty, int64_t val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUM;
   llvm->ty = ty;
-  llvm->val  = val;
+  llvm->val  = wrap_bits(ty, val);
   llvm->fval = val;
   return llvm;
 };
@@ -738,7 +739,7 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs) {
     if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
       if (lhs->kind == LL_NUMF)
         return gen_fnum(ty, lhs->fval + rhs->fval);
-      return gen_inum(ty, wrap_bits(ty, lhs->val + rhs->val));
+      return gen_inum(ty, lhs->val + rhs->val);
     }
   }
 
@@ -761,7 +762,7 @@ static LLVM *gen_sub(Type *ty, LLVM *lhs, LLVM *rhs) {
     if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
       if (lhs->kind == LL_NUMF)
         return gen_fnum(ty, lhs->fval - rhs->fval);
-      return gen_inum(ty, wrap_bits(ty, lhs->val - rhs->val));
+      return gen_inum(ty, lhs->val - rhs->val);
     }
   }
 
@@ -784,7 +785,7 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs) {
     if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
       if (lhs->kind == LL_NUMF)
         return gen_fnum(ty, lhs->fval * rhs->fval);
-      return gen_inum(ty, wrap_bits(ty, lhs->val * rhs->val));
+      return gen_inum(ty, lhs->val * rhs->val);
     }
   }
 
@@ -807,7 +808,7 @@ static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs) {
     if (is_numlit_ll(lhs) && rhs->kind == lhs->kind) {
       if (lhs->kind == LL_NUMF)
         return gen_fnum(ty, lhs->fval / rhs->fval);
-      return gen_inum(ty, wrap_bits(ty, lhs->val / rhs->val));
+      return gen_inum(ty, lhs->val / rhs->val);
     }
   }
 
@@ -828,7 +829,7 @@ static LLVM *gen_mod(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-      return gen_inum(ty, wrap_bits(ty, lhs->val % rhs->val));
+      return gen_inum(ty, lhs->val % rhs->val);
   }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -850,7 +851,7 @@ static LLVM *gen_neg(Type *ty, LLVM *src) {
     if (is_numlit_ll(src)) {
       if (src->kind == LL_NUMF)
         return gen_fnum(ty, -src->fval);
-      return gen_inum(ty, wrap_bits(ty, -src->val));
+      return gen_inum(ty, -src->val);
     }
   }
 
@@ -870,7 +871,7 @@ static LLVM *gen_bitand(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-      return gen_inum(ty, wrap_bits(ty, lhs->val & rhs->val));
+      return gen_inum(ty, lhs->val & rhs->val);
   }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -890,7 +891,7 @@ static LLVM *gen_bitor(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-      return gen_inum(ty, wrap_bits(ty, lhs->val | rhs->val));
+      return gen_inum(ty, lhs->val | rhs->val);
   }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -910,7 +911,7 @@ static LLVM *gen_bitxor(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-      return gen_inum(ty, wrap_bits(ty, lhs->val ^ rhs->val));
+      return gen_inum(ty, lhs->val ^ rhs->val);
   }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -930,7 +931,7 @@ static LLVM *gen_shl(Type *ty, LLVM *lhs, LLVM *rhs) {
 
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM)
-      return gen_inum(ty, wrap_bits(ty, lhs->val << rhs->val));
+      return gen_inum(ty, lhs->val << rhs->val);
   }
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -951,8 +952,8 @@ static LLVM *gen_shr(Type *ty, LLVM *lhs, LLVM *rhs) {
   if (opt_constant_folding) {
     if (lhs->kind == LL_NUM && rhs->kind == LL_NUM) {
       if (ty->is_unsigned && ty->size == 8)
-        return gen_inum(ty, wrap_bits(ty, (uint64_t)lhs->val >> rhs->val));
-      return gen_inum(ty, wrap_bits(ty, lhs->val >> rhs->val));
+        return gen_inum(ty, (uint64_t)lhs->val >> rhs->val);
+      return gen_inum(ty, lhs->val >> rhs->val);
     }
   }
 
