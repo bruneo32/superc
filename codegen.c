@@ -545,16 +545,9 @@ static LLVM *gen_num(Type *ty, Node *node) {
   /* Don't emit if unreachable */
   if (!_is_reachable_code)
     return NULL;
-
-  // Integer to float
   if (is_flonum(ty))
-    return gen_fnum(ty, is_flonum(node->ty) ? eval_double(node) : (flt_number)node->val);
-
-  // Float to integer
-  if (is_flonum(node->ty))
-    return gen_inum(ty, eval_double(node));
-
-  return gen_inum(ty, node->val);
+    return gen_fnum(ty, eval_double(node));
+  return gen_inum(ty, eval2(node, NULL));
 }
 
 static LLVM *gen_alloca(Type *ty, LLVM *size) {
