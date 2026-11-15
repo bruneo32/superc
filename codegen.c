@@ -1680,7 +1680,8 @@ static count_t emit_alloca(count_t ssa, LLVM *ll) {
 
   // %9 = alloca i8, i64 7, align 16
   emitf("  %%%ld = alloca %s", ssa, llvm_type(ty));
-  if (ll->lhs)
+  // Do not emit sentinel value "0"
+  if (ll->lhs && !(ll->lhs->kind == LL_NUM && ll->lhs->val == 0))
     emitf(", %s %s", llvm_type(ll->lhs->ty), get_symvar(ll->lhs));
   emitfln(", align %d", ty->align);
   return ssa;
