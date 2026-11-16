@@ -15,6 +15,8 @@ static LLVM *gen_add(Type *ty, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_sub(Type *ty, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_icmp(LLCmpOp op, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_fcmp(LLCmpOp op, LLVM *lhs, LLVM *rhs);
 static void  gen_stmt(Node *node, bool is_root_block);
 
 static count_t emit_llvm(LLVM *llvm);
@@ -524,7 +526,6 @@ static LLVM *gen_inum(Type *ty, int64_t val) {
   llvm->kind = LL_NUM;
   llvm->ty = ty;
   llvm->val  = wrap_bits(ty, val);
-  llvm->fval = val;
   return llvm;
 };
 
@@ -536,7 +537,6 @@ static LLVM *gen_fnum(Type *ty, flt_number val) {
   LLVM *llvm = calloc(1, sizeof(LLVM));
   llvm->kind = LL_NUMF;
   llvm->ty = ty;
-  llvm->val  = val;
   llvm->fval = val;
   return llvm;
 }
@@ -631,17 +631,17 @@ static const char *llcmp_op_table[] = {
 static LLKind cast_table[][12] = {
 // i1     i8       i16      i32      i64      u8       u16      u32      u64      f32      f64      f80
 {LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // i1
-{LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i8
-{LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i16
-{LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i32
-{LL_TRUN, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SI_F, LL_SI_F, LL_SI_F}, // i64
-{LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u8
-{LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u16
-{LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u32
-{LL_TRUN, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_UI_F, LL_UI_F, LL_UI_F}, // u64
-{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_NOOP, LL_FEXT, LL_FEXT}, // f32
-{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_NOOP, LL_FEXT}, // f64
-{LL_F_UI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_FTRN, LL_NOOP}, // f80
+{LL_ICMP, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_NOOP, LL_SEXT, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i8
+{LL_ICMP, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_TRUN, LL_NOOP, LL_SEXT, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i16
+{LL_ICMP, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_SEXT, LL_SI_F, LL_SI_F, LL_SI_F}, // i32
+{LL_ICMP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_SI_F, LL_SI_F, LL_SI_F}, // i64
+{LL_ICMP, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u8
+{LL_ICMP, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_TRUN, LL_NOOP, LL_ZEXT, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u16
+{LL_ICMP, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_TRUN, LL_TRUN, LL_NOOP, LL_ZEXT, LL_UI_F, LL_UI_F, LL_UI_F}, // u32
+{LL_ICMP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_TRUN, LL_TRUN, LL_TRUN, LL_NOOP, LL_UI_F, LL_UI_F, LL_UI_F}, // u64
+{LL_FCMP, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_NOOP, LL_FEXT, LL_FEXT}, // f32
+{LL_FCMP, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_NOOP, LL_FEXT}, // f64
+{LL_FCMP, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_SI, LL_F_UI, LL_F_UI, LL_F_UI, LL_F_UI, LL_FTRN, LL_FTRN, LL_NOOP}, // f80
 };
 
 static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
@@ -649,7 +649,7 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
   if (!_is_reachable_code)
     return NULL;
 
-  if (to->kind == TY_VOID || !strcmp(llvm_type(from), llvm_type(to)))
+  if (to->kind == TY_VOID || same_type(from, to))
     return ref;
 
   LLVM *llvm = calloc(1, sizeof(LLVM));
@@ -684,14 +684,25 @@ static LLVM *gen_cast(Type *from, Type *to, LLVM *ref) {
       int t1 = getTypeId(from);
       int t2 = getTypeId(to);
       llvm->kind = cast_table[t1][t2];
+      if (llvm->kind == LL_ICMP) {
+        free(llvm);
+        return gen_icmp(LLICMP_NE, ref, gen_inum(from, 0));
+      }
+      if (llvm->kind == LL_FCMP) {
+        free(llvm);
+        return gen_fcmp(LLFCMP_UNE, ref, gen_fnum(from, 0.0));
+      }
       break;
     default:
       unreachable();
     }
   }
 
-  if (llvm->kind == LL_NOOP)
+  if (llvm->kind == LL_NOOP) {
+    free(llvm);
+    ref->ty = to;
     return ref;
+  }
 
   llvm->ty = to;
   llvm->src = ref;
@@ -1047,20 +1058,15 @@ static LLVM *gen_expr(Node *node) {
       return gen_num(node->ty, node);
     case ND_ADDR:
     case ND_LABEL_VAL:
-        return gen_addr(node);
+      return gen_addr(node);
+    case ND_CAST:
+      return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     case ND_DEREF:
     case ND_VAR:
     case ND_MEMBER: {
       if (node->ty->kind == TY_ARRAY)
         return gen_addr(node);
       return gen_load(node->ty, gen_addr(node));
-    }
-    case ND_CAST: {
-      /* If lhs is a primitive, don't need to cast,
-       * just return it as the other kind */
-      if (is_numeric(node->ty) && node->lhs->kind == ND_NUM)
-          return gen_num(node->ty, node->lhs);
-      return gen_cast(node->lhs->ty, node->ty, gen_expr(node->lhs));
     }
     case ND_ASSIGN: {
       LLVM *ptr = gen_addr(node->lhs);
