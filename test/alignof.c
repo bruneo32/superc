@@ -15,13 +15,13 @@ int main() {
   ASSERT(8, _Alignof(long long));
   ASSERT(1, _Alignof(char[3]));
   ASSERT(4, _Alignof(int[3]));
-  ASSERT(1, _Alignof(struct {char a; char b;}[2]));
-  ASSERT(8, _Alignof(struct {char a; long b;}[2]));
+  ASSERT(1, _Alignof(struct { char a; char b; }[2]));
+  ASSERT(8, _Alignof(struct { char a; long b; }[2]));
 
-  ASSERT(1, ({ _Alignas(char) char x, y; &y-&x; }));
-  ASSERT(8, ({ _Alignas(long) char x, y; &y-&x; }));
-  ASSERT(32, ({ _Alignas(32) char x, y; &y-&x; }));
-  ASSERT(32, ({ _Alignas(32) int *x, *y; ((char *)&y)-((char *)&x); }));
+  ASSERT(1, ({ struct { _Alignas(char) char x, y; } a; &a.y-&a.x; }));
+  ASSERT(8, ({ struct { _Alignas(long) char x, y; } a; &a.y-&a.x; }));
+  ASSERT(32, ({ struct { _Alignas(32) char x, y; } a; &a.y-&a.x; }));
+  ASSERT(32, ({ struct { _Alignas(32) int *x, *y; } a; ((char *)&a.y)-((char *)&a.x); }));
   ASSERT(16, ({ struct { _Alignas(16) char x, y; } a; &a.y-&a.x; }));
   ASSERT(8, ({ struct T { _Alignas(8) char a; }; _Alignof(struct T); }));
 
