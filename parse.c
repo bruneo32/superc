@@ -758,7 +758,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
   };
 
   Qualifiers_t quals = Q_NONE;
-  Type *ty = ty_usize;
+  Type *ty = ty_int;
   int counter = 0;
   bool is_atomic = false;
 
