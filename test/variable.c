@@ -48,8 +48,8 @@ int main() {
   ASSERT(2, ({ int x=2; { int x=3; } int y=4; x; }));
   ASSERT(3, ({ int x=2; { x=3; } x; }));
 
-  ASSERT(7, ({ int x; int y; char z; char *a=&y; char *b=&z; b-a; }));
-  ASSERT(1, ({ int x; char y; int z; char *a=&y; char *b=&z; b-a; }));
+  ASSERT(7, ({ char x[8]; char *a = &x[0]; char *b = &x[7]; b-a; }));
+  ASSERT(1, ({ char x[2]; char *a = &x[0]; char *b = &x[1]; b-a; }));
 
   ASSERT(8, ({ long x; sizeof(x); }));
   ASSERT(2, ({ short x; sizeof(x); }));
@@ -61,7 +61,7 @@ int main() {
   ASSERT(12, ({ char (x[3])[4]; sizeof(x); }));
   ASSERT(4, ({ char (x[3])[4]; sizeof(x[0]); }));
   ASSERT(3, ({ char *x[3]; char y; x[0]=&y; y=3; x[0][0]; }));
-  ASSERT(4, ({ char x[3]; char (*y)[3]=x; y[0][0]=4; y[0][0]; }));
+  ASSERT(4, ({ char x[3]; char (*y)[3]=&x; y[0][0]=4; y[0][0]; }));
 
   { void *x; }
 
