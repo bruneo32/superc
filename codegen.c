@@ -2347,25 +2347,30 @@ static void emit_union_structs_decl() {
 
     /* == Unions == */
     if (ty->kind == TY_UNION) {
-      // %union.numbers = type { i64 }
-      // %union.idk_bigf = type { double, [504 x i8] } ; _Alignas(512)
       Member *mem = ty->members;
-      int max_size = mem->align;
+      int max_align = mem->align;
       bool is_flo = is_flonum(mem->ty);
 
       while (mem->next) {
         Member *mem_next = mem->next;
-        if (mem_next->align > max_size) {
-          max_size = mem_next->align;
+        if (mem_next->align > max_align) {
+          max_align = mem_next->align;
           is_flo = is_flonum(mem_next->ty);
         }
         mem = mem_next;
       }
 
-      if (max_size <= 8)
-        emitfln("{ %s }", llvm_type_for_size(max_size, is_flo));
+      int head_size = MIN(max_align, 8);
+      const char *head_ty = llvm_type_for_size(head_size, is_flo);
+
+      int tail_size = ty->size - head_size;
+      assert(tail_size >= 0);
+
+      if (tail_size > 0)
+        emitfln("{ %s, [%d x i8] }", head_ty, tail_size);
       else
-        emitfln("{ %s, %s }", !is_flo ? "i64" : "double", llvm_type_for_size(max_size - 8, is_flo));
+        emitfln("{ %s }", head_ty);
+
       continue;
     }
 
