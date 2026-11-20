@@ -28,7 +28,7 @@ test/%.ll: superc test/%.c
 	-./superc -fpic -fno-constant-folding -Iinclude -Itest -S -o test/$*.ll test/$*.c
 
 test/%.s: test/%.ll
-	-llc --filetype=asm -O3 -o test/$*.s test/$*.ll
+	-llc --filetype=asm -O3 -relocation-model=pic -o test/$*.s test/$*.ll
 
 test/%.exe: superc test/%.c test/%.s
 	@if ./superc -fpic -fno-constant-folding -Iinclude -Itest -c -o test/$*.o test/$*.c && \

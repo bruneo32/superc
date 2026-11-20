@@ -17,6 +17,8 @@ static LLVM *gen_mul(Type *ty, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_div(Type *ty, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_icmp(LLCmpOp op, LLVM *lhs, LLVM *rhs);
 static LLVM *gen_fcmp(LLCmpOp op, LLVM *lhs, LLVM *rhs);
+static LLVM *gen_alloca(Type *ty, LLVM *size);
+static LLVM *gen_store(Type *ty, LLVM *src, LLVM *dst);
 static void  gen_stmt(Node *node, bool is_root_block);
 
 static count_t emit_llvm(LLVM *llvm);
@@ -512,6 +514,18 @@ static LLVM *gen_addr(Node *node) {
     return gen_cast(ty_ssize, pointer_to(node->member->ty), m_addr);
   case ND_LABEL_VAL:
     return gen_blockaddress(node->ty, node->label, node->var);
+  case ND_ASSIGN:
+    //(x = y) yields an lvalue for x.
+    gen_expr(node);
+    return gen_addr(node->lhs);
+  case ND_COND: {
+    // (cond ? a : b) is an rvalue so spill it
+    // to a temp so we can take its address
+    LLVM *val = gen_expr(node);
+    LLVM *ptr = gen_alloca(node->ty, gen_inum(ty_usize, 1));
+    gen_store(node->ty, val, ptr);
+    return ptr;
+  }
   default:
     unreachable();
   }
@@ -2343,6 +2357,11 @@ static void emit_union_structs_decl() {
       continue;
 
     Type *ty = ent->val;
+    if (ty->size < 0) {
+      emitfln("%s = type opaque", llvm_type(ty));
+      continue;
+    }
+
     emitf("%s = type ", llvm_type(ty));
 
     /* == Unions == */

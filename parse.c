@@ -3600,6 +3600,9 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     ty->size = -1;
     ty->tagname = tag;
     push_tag_scope(tag, ty);
+    // Keep incomplete tagged types so codegen
+    // can emit an opaque LLVM type
+    store_union_struct_decl(ty);
     return ty;
   }
 
